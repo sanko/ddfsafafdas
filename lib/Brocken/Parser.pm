@@ -89,6 +89,16 @@ class Brocken::Parser {
             $self->expect(';');
             return Brocken::AST::VarDecl->new( name => $var_tok->{value}, type => $type, value => $expr );
         }
+        if ( $tok->{value} eq 'state' ) {
+            $self->advance();
+            my $type = 'Any';
+            if ( $self->current()->{type} eq 'KEYWORD' ) { $type = $self->current()->{value}; $self->advance(); }
+            my $var_tok = $self->expect('VAR');
+            $self->expect('=');
+            my $expr = $self->parse_expression();
+            $self->expect(';');
+            return Brocken::AST::StateDecl->new( name => $var_tok->{value}, type => $type, value => $expr );
+        }
         if ( $tok->{type} eq 'VAR' && $self->peek()->{value} eq '=' ) {
             my $var_name = $tok->{value};
             $self->advance();

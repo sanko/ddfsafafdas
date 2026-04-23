@@ -3,7 +3,7 @@ package Pulse::Emit {
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
-    #
+
     class Pulse::Emit::ARM64 {
         our %REG = (
             x0  => 0,
@@ -43,239 +43,216 @@ package Pulse::Emit {
         field $code : reader = '';
         field %labels;
         field @fixups;
-        method reg         ($r)   { $REG{ lc $r } // die "Unknown ARM64 register: $r" }
-        method append_code ($bin) { $code .= $bin }
-
-        method mov_imm ( $reg, $imm ) {
+        method reg($r)           { $REG{ lc $r } // die "Unknown ARM64 register: $r" }
+        method append_code($bin) { $code .= $bin }
+method push_reg($reg) { my $r = $self->reg($reg); $code .= pack('L<', 0xF81F0FE0 | $r); } # STR Xr, [SP, #-16]!
+        method pop_reg($reg)  { my $r = $self->reg($reg); $code .= pack('L<', 0xF84107E0 | $r); } # LDR Xr, [SP], #16
+        method push_imm($imm) { $self->mov_imm('x16', $imm); $self->push_reg('x16'); }
+        method mov_imm( $reg, $imm ) {
             my $r = $self->reg($reg);
             $code .= pack( 'L<', 0xD2800000 | ( ( $imm & 0xFFFF ) << 5 ) | $r );
-            if ( ( $imm >> 16 ) & 0xFFFF ) { $code .= pack( 'L<', 0xF2A00000 | ( 1 << 21 ) | ( ( ( $imm >> 16 ) & 0xFFFF ) << 5 ) | $r ); }
-            if ( ( $imm >> 32 ) & 0xFFFF ) { $code .= pack( 'L<', 0xF2C00000 | ( 2 << 21 ) | ( ( ( $imm >> 32 ) & 0xFFFF ) << 5 ) | $r ); }
+            if ( ( $imm >> 16 ) & 0xFFFF ) { $code .= pack( 'L<', 0xF2A00000 | ( 1 << 21 ) | ( ( ( $imm >> 16 ) & 0xFFFF ) << 5 ) | $r ) }
         }
-        method mov_reg ( $dest, $src ) { my $d = $self->reg($dest); my $s = $self->reg($src); $code .= pack( 'L<', 0xAA0003E0 | ( $s << 16 ) | $d ); }
-        method add_imm ( $reg, $imm ) { my $r = $self->reg($reg); $code .= pack( 'L<', 0x91000000 | ( ( $imm & 0xFFF ) << 10 ) | ( $r << 5 ) | $r ); }
-        method sub_imm ( $reg, $imm ) { my $r = $self->reg($reg); $code .= pack( 'L<', 0xD1000000 | ( ( $imm & 0xFFF ) << 10 ) | ( $r << 5 ) | $r ); }
+        method mov_reg( $dest, $src ) { my $d = $self->reg($dest); my $s = $self->reg($src); $code .= pack( 'L<', 0xAA0003E0 | ( $s << 16 ) | $d ) }
+        method add_imm( $reg, $imm )  { my $r = $self->reg($reg);  $code .= pack( 'L<', 0x91000000 | ( ( $imm & 0xFFF ) << 10 ) | ( $r << 5 ) | $r ) }
+        method sub_imm( $reg, $imm )  { my $r = $self->reg($reg);  $code .= pack( 'L<', 0xD1000000 | ( ( $imm & 0xFFF ) << 10 ) | ( $r << 5 ) | $r ) }
 
-        method add_reg ( $dest, $src ) {
+        method add_reg( $dest, $src ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
             $code .= pack( 'L<', 0x8B000000 | ( $s << 16 ) | ( $d << 5 ) | $d );
         }
 
-        method sub_reg ( $dest, $src ) {
-            my $d = $self->reg($dest);
-            my $s = $self->reg($src);
-            $code .= pack( 'L<', 0xCB000000 | ( $s << 16 ) | ( $d << 5 ) | $d );
-        }
-
-        method mul_reg ( $dest, $src ) {
+        method mul_reg( $dest, $src ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
             $code .= pack( 'L<', 0x9B007C00 | ( $s << 16 ) | ( $d << 5 ) | $d );
-        }    # madd d, d, s, xzr
-
-        method cmp_reg_reg ( $left, $right ) {
-            my $l = $self->reg($left);
-            my $r = $self->reg($right);
-            $code .= pack( 'L<', 0xEB000000 | ( $r << 16 ) | 31 | ( $l << 5 ) );
-        }
-        method setcc ( $cc, $dest ) { my $d = $self->reg($dest); my $inv_cc = $cc ^ 1; $code .= pack( 'L<', 0x9A9F03E0 | ( $inv_cc << 12 ) | $d ); }
-
-        method test_reg_reg ( $left, $right ) {
-            my $l = $self->reg($left);
-            my $r = $self->reg($right);
-            $code .= pack( 'L<', 0xEA000000 | ( $r << 16 ) | 31 | ( $l << 5 ) );
         }
 
-        method load_reg_mem ( $dest, $src ) {
+        method cmp_reg_reg( $l, $r ) {
+            my $ld = $self->reg($l);
+            my $rd = $self->reg($r);
+            $code .= pack( 'L<', 0xEB000000 | ( $rd << 16 ) | 31 | ( $ld << 5 ) );
+        }
+        method setcc( $cc, $dest ) { my $d = $self->reg($dest); my $inv = $cc ^ 1; $code .= pack( 'L<', 0x9A9F03E0 | ( $inv << 12 ) | $d ) }
+
+        method test_reg_reg( $l, $r ) {
+            my $ld = $self->reg($l);
+            my $rd = $self->reg($r);
+            $code .= pack( 'L<', 0xEA000000 | ( $rd << 16 ) | 31 | ( $ld << 5 ) );
+        }
+
+        # ARM64 Pointer Ops
+        method load_reg_mem( $dest, $src, $disp = 0 ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
-            $code .= pack( 'L<', 0xF9400000 | ( $s << 5 ) | $d );
+
+            # LDR d, [s, #imm]
+            $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( $s << 5 ) | $d );
         }
 
-        method lea_rva ( $reg, $target_rva, $text_rva ) {
-            my $r     = $self->reg($reg);
-            my $off   = $target_rva - ( $text_rva + length($code) );
-            my $immlo = $off & 0x3;
-            my $immhi = ( $off >> 2 ) & 0x7FFFF;
-            $code .= pack( 'L<', 0x10000000 | ( $immlo << 29 ) | ( $immhi << 5 ) | $r );
+        method load_reg_mem_byte( $dest, $src, $disp = 0 ) {
+            my $d = $self->reg($dest);
+            my $s = $self->reg($src);
+
+            # LDRB (unsigned byte)
+            $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( $s << 5 ) | $d );
         }
 
-        method call_rva ( $target_rva, $text_rva ) {
-            $self->lea_rva( 'x16', $target_rva, $text_rva );
-            $code .= pack( 'L<', 0xF9400000 | ( 16 << 5 ) | 16 );
-            $code .= pack( 'L<', 0xD63F0200 );
+        method store_mem_disp_reg( $base, $disp, $src ) {
+            my $b = $self->reg($base);
+            my $s = $self->reg($src);
+            $code .= pack( 'L<', 0xF9000000 | ( ( $disp >> 3 ) << 10 ) | ( $b << 5 ) | $s );
         }
-        method call_label ($label) { push @fixups, { offset => length($code), target => $label, type => 'call' }; $code .= pack( 'L<', 0x94000000 ); }
-        method syscall    ( $macos = 0 ) { $code .= pack( 'L<', $macos ? 0xD4001001 : 0xD4000001 ); }
 
-        method jcc ( $cc, $label ) {
-            push @fixups, { offset => length($code), target => $label, type => 'cond', cc => $cc };
+        method store_mem_disp_byte( $base, $disp, $src ) {
+            my $b = $self->reg($base);
+            my $s = $self->reg($src);
+            $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( $b << 5 ) | $s );
+        }
+
+        method lea_rva( $reg, $trva, $txtrva ) {
+            my $r   = $self->reg($reg);
+            my $off = $trva - ( $txtrva + length($code) );
+            my $lo  = $off & 0x3;
+            my $hi  = ( $off >> 2 ) & 0x7FFFF;
+            $code .= pack( 'L<', 0x10000000 | ( $lo << 29 ) | ( $hi << 5 ) | $r );
+        }
+        method call_label($l)    { push @fixups, { offset => length($code), target => $l, type => 'call' }; $code .= pack( 'L<', 0x94000000 ) }
+        method syscall( $m = 0 ) { $code .= pack( 'L<', $m ? 0xD4001001 : 0xD4000001 ) }
+
+        method jcc( $cc, $l ) {
+            push @fixups, { offset => length($code), target => $l, type => 'cond', cc => $cc };
             $code .= pack( 'L<', 0x54000000 | $cc );
         }
-        method jmp ($label) { push @fixups, { offset => length($code), target => $label, type => 'uncond' }; $code .= pack( 'L<', 0x14000000 ); }
-        method mark_label ($name) { $labels{$name} = length $code; }
+        method jmp($l)        { push @fixups, { offset => length($code), target => $l, type => 'uncond' }; $code .= pack( 'L<', 0x14000000 ) }
+        method mark_label($n) { $labels{$n} = length $code }
 
         method resolve {
             for (@fixups) {
-                my $target = $labels{ $_->{target} };
-                my $off    = ( $target - $_->{offset} ) / 4;
-                if ( $_->{type} eq 'cond' ) {
-                    my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
-                    $instr |= ( $off & 0x7FFFF ) << 5;
-                    substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
-                }
-                else {
-                    my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
-                    $instr |= ( $off & 0x3FFFFFF );
-                    substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
-                }
+                my $t     = $labels{ $_->{target} };
+                my $off   = ( $t - $_->{offset} ) / 4;
+                my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
+                if   ( $_->{type} eq 'cond' ) { $instr |= ( $off & 0x7FFFF ) << 5 }
+                else                          { $instr |= ( $off & 0x3FFFFFF ) }
+                substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
             }
         }
     }
 
-    class Pulse::Emit::X64 {
-        our %REG = (
-            rax => 0,
-            rcx => 1,
-            rdx => 2,
-            rbx => 3,
-            rsp => 4,
-            rbp => 5,
-            rsi => 6,
-            rdi => 7,
-            r8  => 8,
-            r9  => 9,
-            r10 => 10,
-            r11 => 11,
-            r12 => 12,
-            r13 => 13,
-            r14 => 14,
-            r15 => 15
-        );
+
+class Pulse::Emit::X64 {
         field $code : reader = '';
         field %labels;
         field @fixups;
-        method reg         ($r)               { $REG{ lc $r } // die "Unknown X64 register: $r" }
-        method append_code ($bin)             { $code .= $bin }
-        method rex         ( $w, $r, $x, $b ) { $self->_rex( $w, $r, $x, $b ) }
 
-        method _rex ( $w, $r, $x, $b ) {
+        method reg($r) {
+            # Use state to guarantee the map is numeric and local to this method's scope
+            state $MAP = {
+                rax => 0, rcx => 1, rdx => 2, rbx => 3, rsp => 4, rbp => 5, rsi => 6, rdi => 7,
+                r8  => 8, r9  => 9, r10 => 10, r11 => 11, r12 => 12, r13 => 13, r14 => 14, r15 => 15
+            };
+            return $r if $r =~ /^\d+$/; # If it's already a number, return it
+            my $name = lc($r // '');
+            $name =~ s/^\s+|\s+$//g;    # Trim
+            die "Unknown X64 register: '$r'" unless exists $MAP->{$name};
+            return $MAP->{$name};
+        }
+
+        method _rex($w, $r, $x, $b) {
+            my $ri = $self->reg($r // 0);
+            my $xi = $self->reg($x // 0);
+            my $bi = $self->reg($b // 0);
             my $rex = 0x40;
             $rex |= 0x08 if $w;
-            $rex |= 0x04 if $r >= 8;
-            $rex |= 0x01 if $b >= 8;
-            return ( $rex == 0x40 && !$w ) ? '' : pack( 'C', $rex );
-        }
-        method mov_imm ( $reg, $imm ) { my $r = $self->reg($reg); $code .= $self->_rex( 1, 0, 0, $r ) . pack( 'Cq<', 0xB8 + ( $r & 7 ), $imm ); }
-
-        method mov_reg ( $dest, $src ) {
-            my $d = $self->reg($dest);
-            my $s = $self->reg($src);
-            $code .= $self->_rex( 1, $s, 0, $d ) . pack( 'CC', 0x89, 0xC0 | ( ( $s & 7 ) << 3 ) | ( $d & 7 ) );
+            $rex |= 0x04 if $ri >= 8;
+            $rex |= 0x01 if $bi >= 8;
+            return ($rex == 0x40 && !$w) ? '' : pack('C', $rex);
         }
 
-        method add_imm ( $reg, $imm ) {
-            my $r = $self->reg($reg);
-            $code .= $self->_rex( 1, 0, 0, $r ) . pack( 'CCl<', 0x81, 0xC0 | ( $r & 7 ), $imm );
+        method _emit_modrm($opcode, $reg, $base, $disp, $w = 1, $prefix = '') {
+            my $ri = $self->reg($reg);
+            my $bi = $self->reg($base);
+            my $mod = ($disp == 0 && ($bi & 7) != 5) ? 0 : ($disp >= -128 && $disp <= 127 ? 1 : 2);
+            $code .= $self->_rex($w, $ri, 0, $bi);
+            $code .= $prefix if $prefix;
+            $code .= pack('C', $opcode);
+            $code .= pack('C', ($mod << 6) | (($ri & 7) << 3) | ($bi & 7));
+            $code .= pack('C', 0x24) if ($bi & 7) == 4; # RSP SIB
+            if    ($mod == 1) { $code .= pack('c', $disp); }
+            elsif ($mod == 2 || ($mod == 0 && ($bi & 7) == 5)) { $code .= pack('l<', $disp); }
         }
 
-        method sub_imm ( $reg, $imm ) {
-            my $r = $self->reg($reg);
-            $code .= $self->_rex( 1, 0, 0, $r ) . pack( 'CCl<', 0x81, 0xE8 | ( $r & 7 ), $imm );
+        method append_code($bin) { $code .= $bin }
+        method mov_reg($d, $s)   { my $di = $self->reg($d); my $si = $self->reg($s); $code .= $self->_rex(1, $si, 0, $di) . pack('CC', 0x89, 0xC0 | (($si & 7) << 3) | ($di & 7)); }
+        method mov_imm($r, $imm) { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack('Cq<', 0xB8 + ($ri & 7), $imm); }
+
+        method push_reg($r) {
+            my $ri = $self->reg($r);
+            if ($ri >= 8) { $code .= pack('CC', 0x41, 0x50 | ($ri & 7)); }
+            else          { $code .= pack('C', 0x50 | $ri); }
+        }
+        method pop_reg($r) {
+            my $ri = $self->reg($r);
+            if ($ri >= 8) { $code .= pack('CC', 0x41, 0x58 | ($ri & 7)); }
+            else          { $code .= pack('C', 0x58 | $ri); }
         }
 
-        method add_reg ( $dest, $src ) {
-            my $d = $self->reg($dest);
-            my $s = $self->reg($src);
-            $code .= $self->_rex( 1, $s, 0, $d ) . pack( 'CC', 0x01, 0xC0 | ( ( $s & 7 ) << 3 ) | ( $d & 7 ) );
+        # Safe wrappers for IDIV
+        method idiv_reg($src) {
+            my $si = $self->reg($src);
+            $code .= $self->_rex(1, 0, 0, $si) . pack('CC', 0xF7, 0xF8 | ($si & 7));
         }
 
-        method sub_reg ( $dest, $src ) {
-            my $d = $self->reg($dest);
-            my $s = $self->reg($src);
-            $code .= $self->_rex( 1, $s, 0, $d ) . pack( 'CC', 0x29, 0xC0 | ( ( $s & 7 ) << 3 ) | ( $d & 7 ) );
-        }
+        method store_mem_disp_byte($base, $disp, $src) { $self->_emit_modrm(0x88, $src, $base, $disp, 0); }
+        method store_mem_disp_reg($base, $disp, $src)  { $self->_emit_modrm(0x89, $src, $base, $disp, 1); }
+        method load_reg_mem($dest, $src, $disp = 0)    { $self->_emit_modrm(0x8B, $dest, $src, $disp, 1); }
+        method load_reg_mem_byte($dest, $src, $disp = 0) { $self->_emit_modrm(0xB6, $dest, $src, $disp, 1, pack('C', 0x0F)); }
+        method lea_reg_disp($dest, $base, $disp)       { $self->_emit_modrm(0x8D, $dest, $base, $disp, 1); }
 
-        method mul_reg ( $dest, $src ) {
-            my $d = $self->reg($dest);
-            my $s = $self->reg($src);
-            $code .= $self->_rex( 1, $d, 0, $s ) . pack( 'CCC', 0x0F, 0xAF, 0xC0 | ( ( $d & 7 ) << 3 ) | ( $s & 7 ) );
+        method cmp_reg_imm($r, $imm) { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack("CCl<", 0x81, 0xF8 | ($ri & 7), $imm); }
+        method setcc($cc, $r) {
+            my $ri = $self->reg($r);
+            $code .= pack('C', 0x40 | ($ri >= 8 ? 1 : 0)) . pack('CCC', 0x0F, $cc, 0xC0 | ($ri & 7));
         }
+        method add_imm($r, $i) { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack('CCl<', 0x81, 0xC0 | ($ri & 7), $i); }
+        method sub_imm($r, $i) { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack('CCl<', 0x81, 0xE8 | ($ri & 7), $i); }
+        method add_reg($d, $s) { my $di = $self->reg($d); my $si = $self->reg($s); $code .= $self->_rex(1, $si, 0, $di) . pack('CC', 0x01, 0xC0 | (($si & 7) << 3) | ($di & 7)); }
+        method sub_reg($d, $s) { my $di = $self->reg($d); my $si = $self->reg($s); $code .= $self->_rex(1, $si, 0, $di) . pack('CC', 0x29, 0xC0 | (($si & 7) << 3) | ($di & 7)); }
+        method mul_reg($d, $s) { my $di = $self->reg($d); my $si = $self->reg($s); $code .= $self->_rex(1, $di, 0, $si) . pack('CCC', 0x0F, 0xAF, 0xC0 | (($di & 7) << 3) | ($si & 7)); }
+        method test_reg_reg($l, $r) { my $li = $self->reg($l); my $ri = $self->reg($r); $code .= $self->_rex(1, $ri, 0, $li) . pack('CC', 0x85, 0xC0 | (($ri & 7) << 3) | ($li & 7)); }
+        method cmp_reg_reg($l, $r)  { my $li = $self->reg($l); my $ri = $self->reg($r); $code .= $self->_rex(1, $ri, 0, $li) . pack('CC', 0x39, 0xC0 | (($ri & 7) << 3) | ($li & 7)); }
 
-        method cmp_reg_reg ( $left, $right ) {
-            my $l = $self->reg($left);
-            my $r = $self->reg($right);
-            $code .= $self->_rex( 1, $r, 0, $l ) . pack( 'CC', 0x39, 0xC0 | ( ( $r & 7 ) << 3 ) | ( $l & 7 ) );
+        method lea_rva($reg, $trva, $txtrva) {
+            my $ri = $self->reg($reg);
+            my $next = $txtrva + length($code) + 7;
+            $code .= $self->_rex(1, $ri, 0, 0) . pack('CC l<', 0x8D, 0x05 | (($ri & 7) << 3), $trva - $next);
         }
-
-        method setcc ( $cc, $dest ) {
-            my $d = $self->reg($dest);
-            $code .= pack( 'C', 0x40 | ( $d >= 8 ? 1 : 0 ) ) . pack( 'CCC', 0x0F, $cc, 0xC0 | ( $d & 7 ) );
-        }
-
-        method test_reg_reg ( $left, $right ) {
-            my $l = $self->reg($left);
-            my $r = $self->reg($right);
-            $code .= $self->_rex( 1, $r, 0, $l ) . pack( 'CC', 0x85, 0xC0 | ( ( $r & 7 ) << 3 ) | ( $l & 7 ) );
-        }
-
-        method load_reg_mem ( $dest, $src ) {
-            my $d = $self->reg($dest);
-            my $s = $self->reg($src);
-            $code .= $self->_rex( 1, $d, 0, $s ) . pack( 'CC', 0x8B, 0x40 | ( ( $d & 7 ) << 3 ) | ( $s & 7 ) );
-            $code .= pack( 'C', 0x24 ) if ( $s & 7 ) == 4;
-            $code .= pack( 'c', 0 );
-        }
-
-        method lea_reg_disp ( $dest, $base, $disp ) {
-            my $d = $self->reg($dest);
-            my $b = $self->reg($base);
-            $code .= $self->_rex( 1, $d, 0, $b ) . pack( 'CC', 0x8D, 0x40 | ( ( $d & 7 ) << 3 ) | ( $b & 7 ) );
-            $code .= pack( 'C', 0x24 ) if ( $b & 7 ) == 4;
-            $code .= pack( 'c', $disp );
-        }
-
-        method store_mem_disp_reg ( $base, $disp, $src ) {
-            my $b = $self->reg($base);
-            my $s = $self->reg($src);
-            $code .= $self->_rex( 1, $s, 0, $b ) . pack( 'CC', 0x89, 0x40 | ( ( $s & 7 ) << 3 ) | ( $b & 7 ) );
-            $code .= pack( 'C', 0x24 ) if ( $b & 7 ) == 4;
-            $code .= pack( 'c', $disp );
-        }
-
-        method lea_rva ( $reg, $target_rva, $text_rva ) {
-            my $r        = $self->reg($reg);
-            my $next_rip = $text_rva + length($code) + 7;
-            $code .= $self->_rex( 1, $r, 0, 0 ) . pack( 'CC l<', 0x8D, 0x05 | ( ( $r & 7 ) << 3 ), $target_rva - $next_rip );
-        }
-
-        method call_rva ( $target_rva, $text_rva ) {
-            my $next_rip = $text_rva + length($code) + 6;
-            $code .= pack( 'CC l<', 0xFF, 0x15, $target_rva - $next_rip );
-        }
-
-        method call_label ($label) {
-            $code .= pack( 'C', 0xE8 );
-            push @fixups, { offset => length($code), target => $label };
-            $code .= pack( 'L<', 0 );
-        }
-        method syscall { $code .= pack 'CC', 0x0F, 0x05 }
-
-        method jcc ( $cc, $label ) {
-            $code .= pack( 'CC', 0x0F, 0x80 + $cc );
-            push @fixups, { offset => length($code), target => $label };
-            $code .= pack( 'L<', 0 );
-        }
-        method jmp ($label) { $code .= pack( 'C', 0xE9 ); push @fixups, { offset => length($code), target => $label }; $code .= pack( 'L<', 0 ); }
-        method mark_label ($name) { $labels{$name} = length $code; }
-
-        method resolve {
-            for (@fixups) {
-                my $target = $labels{ $_->{target} };
-                substr( $code, $_->{offset}, 4, pack( 'l<', $target - ( $_->{offset} + 4 ) ) );
-            }
-        }
+        method call_rva($trva, $txtrva) { my $next = $txtrva + length($code) + 6; $code .= pack('CC l<', 0xFF, 0x15, $trva - $next); }
+        method push_imm($imm) { $code .= pack("Cl<", 0x68, $imm); }
+        method syscall        { $code .= pack 'CC', 0x0F, 0x05 }
+        method call_label($l) { $code .= pack('C', 0xE8); push @fixups, { offset => length($code), target => $l }; $code .= pack('L<', 0) }
+        method mark_label($n) { $labels{$n} = length $code }
+        method jmp($l)        { $code .= pack('C', 0xE9); push @fixups, { offset => length($code), target => $l }; $code .= pack('L<', 0) }
+        method jcc($cc, $l)   { $code .= pack('CC', 0x0F, 0x80 + $cc); push @fixups, { offset => length($code), target => $l }; $code .= pack('L<', 0); }
+        method resolve        { for (@fixups) { my $t = $labels{$_->{target}}; substr($code, $_->{offset}, 4, pack('l<', $t - ($_->{offset} + 4))); } }
     }
-};
-1;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+}
+;1;

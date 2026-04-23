@@ -29,6 +29,9 @@ package Brocken::AST::Node {
     class Brocken::AST::VarDecl : isa(Brocken::AST::Node)
     { field $name : param : reader; field $type : param : reader; field $value : param : reader; }
 
+    class Brocken::AST::StateDecl : isa(Brocken::AST::Node)
+    { field $name : param : reader; field $type : param : reader; field $value : param : reader; }
+
     class Brocken::AST::Assignment : isa(Brocken::AST::Node) { field $name : param : reader; field $value : param : reader; }
 
     class Brocken::AST::Return : isa(Brocken::AST::Node) { field $expr : param : reader; }

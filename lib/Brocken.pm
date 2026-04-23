@@ -14,6 +14,8 @@ package Brocken {
     class Brocken::Symbol {
         field $name : param : reader;
         field $type : param : reader;
+        field $is_state : param : reader = 0;
+        field $state_idx : param : reader = undef;
 
         # For unboxed types (Int, String)
         field $ssa_reg;
@@ -34,9 +36,14 @@ package Brocken {
         field $parent : param : reader = undef;
         field %symbols;
 
-        method define( $name, $type ) {
+        method define( $name, $type, $is_state = 0, $state_idx = undef ) {
             die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
-            return $symbols{$name} = Brocken::Symbol->new( name => $name, type => $type );
+            return $symbols{$name} = Brocken::Symbol->new( 
+                name => $name, 
+                type => $type, 
+                is_state => $is_state, 
+                state_idx => $state_idx 
+            );
         }
         method resolve($name) { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
     }

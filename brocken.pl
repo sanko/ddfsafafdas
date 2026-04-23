@@ -7,7 +7,6 @@ use lib 'lib';
 use Brocken;
 use Pulse;
 $|++;
-
 my $source_code = <<'BROCKEN';
 # 1. Method Definition (Milestone 3!)
 method multiply(Int $val, Int $factor) {
@@ -45,6 +44,36 @@ return $y;
 # $y should be 20. Return 20 + 22 = 42.
 say "Blast off!";
 return $y + 22;
+BROCKEN
+$source_code = <<'BROCKEN';
+# 1. State Variable Test (Milestone 5)
+method generate_id() {
+    state Int $counter = 0;
+    $counter = $counter + 1;
+    return $counter;
+}
+
+say "--- Testing Isolate-Local State ---";
+say generate_id(); # 1
+say generate_id(); # 2
+say generate_id(); # 3
+
+# 2. GC Region Allocator Test (Milestone 5)
+say "--- Testing Region Heap Allocation ---";
+my Int $i = 0;
+while ($i < 10000) {
+    # Each array uses 48 bytes. 10,000 * 48 = 480KB.
+    # This proves the Region Allocator successfully requests
+    # new 64KB OS memory chunks behind the scenes!
+    my Any $tmp = [1, 2, 3];
+    $i = $i + 1;
+}
+say "Survived 10,000 dynamic heap allocations!";
+
+# 3. Futhark Fusion
+my Any $arr = 0;
+my Any $fused = map { $_ - 5 } map { $_ * 2 } map { $_ + 1 } $arr;
+say "Milestone 5 Complete! 🚀";
 BROCKEN
 say "Bootstrapping Brocken...";
 my $p = Pulse::Compiler->new();

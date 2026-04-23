@@ -76,11 +76,12 @@ package Pulse::Format {
             my $align       = sub { my ( $v, $a ) = @_; return ( $v + $a - 1 ) & ~( $a - 1 ); };
             my $text_padded = $text . ( "\0" x ( $align->( length($text), 0x1000 ) - length($text) ) );
             my $data_padded = $data . ( "\0" x ( $align->( length($data), 0x1000 ) - length($data) ) );
-            my $elf_hdr     = pack(
-                'A4 C C C C C x7 S S L Q Q Q L S S S S S S',
-                "\x7fELF", 2, 1, 1,  0,  0, 2, $machine, 1, $base + $text_off,
-                64,        0, 0, 64, 56, 2, 0, 0,        0
-            );
+            my $elf_hdr = pack(
+            'A4 C C C C C x7 S S L Q Q Q L S S S S S S',
+            "\x7fELF", 2, 1, 1, 0, 0, 2, $machine, 1,
+            $base + $text_off,
+            64, 0, 0, 64, 56, 2, 0, 0, 0
+        );
             my $ph_text = pack( 'LL Q Q Q Q Q Q', 1, 5, 0, $base, $base, $text_off + length($text_padded), $text_off + length($text_padded), 0x1000 );
             my $ph_data
                 = pack( 'LL Q Q Q Q Q Q', 1, 6, $data_off, $base + $data_off, $base + $data_off, length($data_padded), length($data_padded), 0x1000 );
@@ -94,75 +95,112 @@ package Pulse::Format {
             return $filename;
         }
     }
-
-    class Pulse::Format::PE : isa(Pulse::Format) {
+class Pulse::Format::PE : isa(Pulse::Format) {
 
         method write_bin ( $filename, $text, $data, $arch, $os = 'win64' ) {
-            $data = "\0" x 8 if length($data) == 0;    # Loader Fix
-            my $fa          = 0x200;
-            my $sa          = 0x1000;
+            # 1. Setup and Alignment
+            # Windows loader often fails if the data segment is completely empty
+            $data = "\0" x 8 if length($data) == 0;
+
+            my $fa          = 0x400; # File Alignment (1024 bytes) - Fixed for M5
+            my $sa          = 0x1000; # Section Alignment (4096 bytes)
             my $image_base  = hex '140000000';
             my $machine     = ( $arch eq 'arm64' ) ? 0xAA64 : 0x8664;
             my $align       = sub { my ( $v, $a ) = @_; return ( $v + $a - 1 ) & ~( $a - 1 ); };
-            my $text_padded = $text . ( "\0" x ( $align->( length($text), $fa ) - length($text) ) );
-            my $data_padded = $data . ( "\0" x ( $align->( length($data), $fa ) - length($data) ) );
+
+            # 2. RVAs (Relative Virtual Addresses)
             my $text_rva    = $sa;
             my $data_rva    = $sa * 2;
             my $idata_rva   = $sa * 3;
-            my @funcs       = qw[ExitProcess GetStdHandle WriteFile];
-            my $iat_size    = ( @funcs + 1 ) * 8;
-            my $rva_iat     = $idata_rva;
-            my $rva_ilt     = $rva_iat + $iat_size;
-            my $rva_dir     = $rva_ilt + $iat_size;
-            my $rva_dll     = $rva_dir + 40;
-            my $rva_hn      = $rva_dll + 16;
+
+            # 3. Construct .idata (Import Table)
+            # We need to import functions from kernel32.dll for printing and memory allocation
+            my @funcs = qw[ExitProcess GetStdHandle WriteFile VirtualAlloc];
+            my $iat_size    = ( @funcs + 1 ) * 8; # 8 bytes per entry + null terminator
             my $iat_data    = '';
             my $hn_data     = '';
+
+            # Calculate where Hint/Name strings start in the file
+            # Layout: IAT (Table) + ILT (Lookup Table) + Directory + DLL Name + Hint/Names
+            my $rva_hn = $idata_rva + ( $iat_size * 2 ) + 40 + 16;
 
             for my $fn (@funcs) {
                 $iat_data .= pack( 'Q<', $rva_hn + length($hn_data) );
                 my $hn_entry = pack( 'S<', 0 ) . $fn . "\0";
-                $hn_entry .= "\0" if length($hn_entry) % 2 != 0;
+                $hn_entry .= "\0" if length($hn_entry) % 2 != 0; # Ensure word alignment
                 $hn_data  .= $hn_entry;
             }
-            $iat_data .= pack( 'Q<', 0 );
-            my $import_dir   = pack( 'L< L< L< L< L<', $rva_ilt, 0, 0, $rva_dll, $rva_iat ) . ( "\0" x 20 );
+            $iat_data .= pack( 'Q<', 0 ); # Null terminator for tables
+
+            # Import Directory Table (20 bytes per entry + 20 bytes null terminator)
+            my $import_dir = pack( 'L< L< L< L< L<',
+                $idata_rva + $iat_size, # ILT RVA
+                0, 0,
+                $idata_rva + ( $iat_size * 2 ) + 40, # DLL Name RVA
+                $idata_rva # IAT RVA
+            ) . ( "\0" x 20 );
+
             my $idata_raw    = $iat_data . $iat_data . $import_dir . pack( 'a16', 'kernel32.dll' ) . $hn_data;
+
+            # 4. Padded Segment Data
+            my $text_padded  = $text . ( "\0" x ( $align->( length($text), $fa ) - length($text) ) );
+            my $data_padded  = $data . ( "\0" x ( $align->( length($data), $fa ) - length($data) ) );
             my $idata_padded = $idata_raw . ( "\0" x ( $align->( length($idata_raw), $fa ) - length($idata_raw) ) );
+
+            # 5. PE Headers
             my $headers_bin  = pack( 'S< x58 L<', 0x5A4D, 0x80 ) . pack( 'a64', "This program cannot be run in DOS mode.\n\$" );
+
+            # COFF File Header
             my $file_hdr     = pack( 'S< S< L< L< L< S< S<', $machine, 3, time(), 0, 0, 240, 0x0022 );
+
+            # Optional Header
             my $opt_hdr      = pack(
                 'S< C C L< L< L< L< L< Q< L< L< S< S< S< S< S< S< L< L< L< L< S< S< Q< Q< Q< Q< L< L<',
-                0x20B, 14, 0, length($text_padded), length($data_padded) + length($idata_padded), 0, $text_rva, $text_rva, $image_base, $sa, $fa, 6,
-                0, 0, 0, 6, 0, 0, $align->( $idata_rva + length($idata_padded), $sa ), $fa, 0, 3, 0x8100, 0x100000, 0x1000, 0x100000, 0x1000, 0, 16
+                0x20B, 14, 0,
+                length($text_padded),
+                length($data_padded) + length($idata_padded),
+                0, $text_rva, $text_rva, $image_base, $sa, $fa,
+                6, 0, 0, 0, 6, 0, 0, # Versions
+                $align->( $idata_rva + length($idata_padded), $sa ), # SizeOfImage
+                $fa, # SizeOfHeaders (will patch later)
+                0, 3, 0x8100, # Subsystem (Console), DllCharacteristics
+                0x100000, 0x1000, 0x100000, 0x1000, 0, 16 # Stack/Heap reserve/commit
             );
-            my $data_dirs
-                = pack( 'L< L<', 0, 0 ) .
-                pack( 'L< L<', $rva_dir, 40 ) .
-                ( pack( 'L< L<', 0, 0 ) x 10 ) .
-                pack( 'L< L<', $rva_iat, $iat_size ) .
-                ( pack( 'L< L<', 0, 0 ) x 3 );
-            my $sec_text
-                = pack( 'a8 L< L< L< L< L< L< S< S< L<', '.text', length($text), $text_rva, length($text_padded), $fa, 0, 0, 0, 0, 0x60000020 );
-            my $sec_data = pack(
-                'a8 L< L< L< L< L< L< S< S< L<',
-                '.data', length($data), $data_rva, length($data_padded), $fa + length($text_padded),
-                0,       0,             0,         0,                    0xC0000040
+
+            # Data Directories
+            my $data_dirs = pack( 'L< L<', 0, 0 ) . # Export
+                            pack( 'L< L<', $idata_rva + ( $iat_size * 2 ), 40 ) . # Import
+                            ( pack( 'L< L<', 0, 0 ) x 10 ) . # Misc
+                            pack( 'L< L<', $idata_rva, $iat_size ) . # IAT
+                            ( pack( 'L< L<', 0, 0 ) x 3 );
+
+            # 6. Section Headers
+            my $sec_text = pack( 'a8 L< L< L< L< L< L< S< S< L<',
+                '.text', length($text), $text_rva, length($text_padded), $fa, 0, 0, 0, 0, 0x60000020
             );
-            my $sec_idata = pack(
-                'a8 L< L< L< L< L< L< S< S< L<',
-                '.idata', length($idata_raw), $idata_rva, length($idata_padded), $fa + length($text_padded) + length($data_padded),
-                0,        0,                  0,          0,                     0xC0000040
+            my $sec_data = pack( 'a8 L< L< L< L< L< L< S< S< L<',
+                '.data', length($data), $data_rva, length($data_padded), $fa + length($text_padded), 0, 0, 0, 0, 0xC0000040
             );
+            my $sec_idata = pack( 'a8 L< L< L< L< L< L< S< S< L<',
+                '.idata', length($idata_raw), $idata_rva, length($idata_padded), $fa + length($text_padded) + length($data_padded), 0, 0, 0, 0, 0xC0000040
+            );
+
+            # 7. Final Assembly and Patching
             my $full_header = $headers_bin . pack( 'L<', 0x00004550 ) . $file_hdr . $opt_hdr . $data_dirs . $sec_text . $sec_data . $sec_idata;
 
-            #~ $full_header .= ( "\0" x ( $align->( length($full_header), $fa ) - length($full_header) ) );
+            # Pad header to exactly FileAlignment ($fa)
             $full_header .= ( "\0" x ( $fa - length($full_header) ) );
-            substr( $full_header, 0x80 + 4 + 20 + 60, 4, pack( 'L<', length($full_header) ) );
-            open my $fh, '>', $filename or die $!;
+
+            # Patch SizeOfHeaders (Offset 0xD4 in the resulting file)
+            # This is critical for the Windows Loader
+            substr( $full_header, 0xD4, 4, pack( 'L<', length($full_header) ) );
+
+            # 8. Write to disk
+            open my $fh, '>', $filename or die "Could not open $filename for writing: $!";
             binmode $fh;
             print $fh $full_header, $text_padded, $data_padded, $idata_padded;
             close $fh;
+
             return $filename;
         }
     }

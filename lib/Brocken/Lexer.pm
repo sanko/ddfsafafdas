@@ -8,8 +8,7 @@ class Brocken::Lexer {
     field $pos  = 0;
     field $line = 1;
     field $col  = 1;
-    my %KEYWORDS = map { $_ => 1 } qw(my our class method return if else while for say print map Int String Any);
-
+    my %KEYWORDS = map { $_ => 1 } qw(my our state class method return if else while for say print map Int String Any);
     method lex() {
         my @tokens;
         my $length = length($source);
