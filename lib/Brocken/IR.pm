@@ -36,6 +36,9 @@ class Brocken::IR::Builder {
             }
             elsif ( $i->{target} ) { push @al, "target:" . $i->{target}; }
             elsif ( $i->{name} )   { push @al, "name:" . $i->{name}; }
+            elsif ( $i->{op} eq 'cond_br' ) {
+                push @al, "reg:" . $i->{reg} . " true:" . $i->{true_l} . " false:" . $i->{false_l};
+            }
             my $args = join( ', ', @al );
             say sprintf( "  %-3s %-15s %-5s [%s]", ( $dest ? $dest : "" ), $op, ( $i->{type} // "" ), $args );
         }

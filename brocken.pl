@@ -53,10 +53,21 @@ method generate_id() {
     return $counter;
 }
 
+method generate_id_alt(Int $inc) {
+    say $inc;
+    state Int $counter = 0;
+    $counter = $counter + $inc;
+    return $counter;
+}
+
 say "--- Testing Isolate-Local State ---";
 say generate_id(); # 1
 say generate_id(); # 2
+say generate_id_alt(1); # 1
 say generate_id(); # 3
+say generate_id_alt(10); # 11
+say generate_id_alt(5); # 16
+say generate_id_alt(5); # 21
 
 # 2. GC Region Allocator Test (Milestone 5)
 say "--- Testing Region Heap Allocation ---";

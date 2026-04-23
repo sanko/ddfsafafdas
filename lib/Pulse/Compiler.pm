@@ -49,6 +49,7 @@ package Pulse::Compiler {
             }
         }
     }
+
     class Brocken::Compiler::DataSegment {
         use Encode qw(encode);
         field $raw_data = '';

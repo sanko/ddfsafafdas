@@ -1,6 +1,5 @@
 package Pulse {
-        use v5.40;
-
+    use v5.40;
     use Pulse::Emit;
     use Pulse::Format;
     use Pulse::Compiler;
