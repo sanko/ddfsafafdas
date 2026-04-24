@@ -137,7 +137,7 @@ package Brocken::Compiler {
             my @stmts   = grep { !( $_ isa Brocken::AST::Method ) } @$nodes;
             for my $m (@methods) {
                 $pulse->reset_locals();
-                $builder->emit_label( "M_" . $m->name );
+                $builder->emit_label( 'M_' . $m->name );
                 $builder->emit( 'enter_func', 'void', [] );
                 $current_scope = Brocken::Scope->new( parent => $current_scope );
                 $routine_depth++;
@@ -156,6 +156,7 @@ package Brocken::Compiler {
             $builder->emit_label('L_MAIN_START');
             $builder->emit( 'enter_func',               'void', [] );
             $builder->emit( 'setup_page_fault_handler', 'void', [] );
+            $builder->emit( 'setup_console',            'void', [] );    # NEW: Codepage Setup
             my $iso_reg = $builder->emit( 'sys_alloc', 'ptr', [1024] );
             $builder->emit( 'set_isolate_ctx', 'void', [$iso_reg] );
             my $c1m       = $builder->emit( 'constant',  'i64', [1048576] );
@@ -195,7 +196,7 @@ package Brocken::Compiler {
                 return ( $builder->emit( 'constant', 'i64', [ $node->value ] ), 'Int' );
             }
             if ( $node isa Brocken::AST::Var ) {
-                my $sym = $current_scope->resolve( $node->name ) // die "Undeclared " . $node->name . "\n";
+                my $sym = $current_scope->resolve( $node->name ) // die 'Undeclared ' . $node->name . "\n";
                 if ( $sym->is_state ) {
                     my $sb  = $builder->emit( 'load_iso_disp', 'ptr',      [ $pulse->iso_offset('state_ptr') ] );
                     my $res = $builder->emit( 'load_mem_disp', $sym->type, [ $sb, 4096 + ( $sym->state_idx * 8 ) ] );
@@ -230,7 +231,7 @@ package Brocken::Compiler {
             }
             if ( $node isa Brocken::AST::Assignment ) {
                 my ( $v_reg, $v_typ ) = $self->lower( $node->value );
-                my $sym = $current_scope->resolve( $node->name ) // die "Undeclared " . $node->name . "\n";
+                my $sym = $current_scope->resolve( $node->name ) // die 'Undeclared ' . $node->name . "\n";
                 if ( $sym->is_state ) {
                     my $sb = $builder->emit( 'load_iso_disp', 'ptr', [ $pulse->iso_offset('state_ptr') ] );
                     $builder->emit( 'store_mem_disp', 'void', [ $sb, 4096 + ( $sym->state_idx * 8 ), $v_reg ] );
@@ -297,7 +298,7 @@ package Brocken::Compiler {
                     return ( undef, 'void' );
                 }
                 my @args = map { ( $self->lower($_) )[0] } @{ $node->args };
-                return ( $builder->emit( 'call_func', 'i64', [ "M_" . $node->name, @args ] ), 'Int' );
+                return ( $builder->emit( 'call_func', 'i64', [ 'M_' . $node->name, @args ] ), 'Int' );
             }
             if ( $node isa Brocken::AST::Return ) {
                 die "Semantic Error: return outside of subroutine or fiber\n" if $routine_depth == 0;
@@ -408,7 +409,7 @@ package Brocken::Compiler {
                 );
             }
             if ( $node isa Brocken::AST::Const ) { return $node; }
-            die "Optimizer Error: Unhandled AST node " . ref($node) . " in map closure during fusion.";
+            die 'Optimizer Error: Unhandled AST node ' . ref($node) . ' in map closure during fusion.';
         }
     }
 }

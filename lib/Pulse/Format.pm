@@ -7,7 +7,7 @@ package Pulse::Format {
     class Pulse::Format {
         method write_bin( $f, $t, $d, $a, $o ) {...}
         method rva_for    ( $section, $arch, $os ) { return 0; }
-        method import_rva ($name)                  { die "Imports not supported by this format"; }
+        method import_rva ($name)                  { die 'Imports not supported by this format'; }
     }
 
     class Pulse::Format::MachO : isa(Pulse::Format) {
@@ -30,21 +30,21 @@ package Pulse::Format {
             my $ncmds       = 12;
             my $sizeofcmds  = 760;
             my $header      = pack( 'L L L L L L L L', 0xFEEDFACF, $cpu_type, $cpu_subtype, 2, $ncmds, $sizeofcmds, 0x00200085, 0 );
-            my $lc_pagezero = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 72, "__PAGEZERO", 0, 0x100000000, 0, 0, 0, 0, 0, 0 );
+            my $lc_pagezero = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 72, '__PAGEZERO', 0, 0x100000000, 0, 0, 0, 0, 0, 0 );
             my $text_vmsize = 2 * $page_size;
-            my $lc_text     = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 152, "__TEXT", 0x100000000, $text_vmsize, 0, $text_vmsize, 5, 5, 1, 0 );
+            my $lc_text     = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 152, '__TEXT', 0x100000000, $text_vmsize, 0, $text_vmsize, 5, 5, 1, 0 );
             $lc_text .= pack(
                 'a16 a16 Q Q L L L L L L L L',
-                "__text", "__TEXT", 0x100000000 + $page_size,
+                '__text', '__TEXT', 0x100000000 + $page_size,
                 length($text_padded), $is_arm ? 14 : 12,
                 $page_size, 0, 0, 0, $is_arm ? 0x80000400 : 0x00000400,
                 0, 0, 0
             );
             my $data_vmaddr = 0x100000000 + 2 * $page_size;
-            my $lc_data = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 152, "__DATA", $data_vmaddr, $page_size, 2 * $page_size, $page_size, 3, 3, 1, 0 );
+            my $lc_data = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 152, '__DATA', $data_vmaddr, $page_size, 2 * $page_size, $page_size, 3, 3, 1, 0 );
             $lc_data .= pack(
                 'a16 a16 Q Q L L L L L L L L',
-                "__data", "__DATA", $data_vmaddr, length($data_padded),
+                '__data', '__DATA', $data_vmaddr, length($data_padded),
                 $is_arm ? 14 : 12,
                 2 * $page_size,
                 0, 0, 0, 0, 0, 0, 0
@@ -52,12 +52,12 @@ package Pulse::Format {
             my $link_vmaddr  = 0x100000000 + 3 * $page_size;
             my $link_fileoff = 3 * $page_size;
             my $lc_linkedit
-                = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 72, "__LINKEDIT", $link_vmaddr, $page_size, $link_fileoff, $page_size, 1, 1, 0, 0 );
+                = pack( 'L L a16 Q Q Q Q L L L L', 0x19, 72, '__LINKEDIT', $link_vmaddr, $page_size, $link_fileoff, $page_size, 1, 1, 0, 0 );
             my $lc_main      = pack( 'L L Q Q',         0x80000028, 24, $page_size, 0 );
             my $lc_build     = pack( 'L L L L L L',     0x32,       24, 1, 0x000B0000, 0x000B0000, 0 );
-            my $lc_uuid      = pack( 'L L a16',         0x1B,       24, pack( "H*", "C0FFEE" . "0" x 26 ) );
-            my $lc_dyld      = pack( 'L L L a20',       0x0E,       32, 12,            "/usr/lib/dyld" );
-            my $lc_dylib     = pack( 'L L L L L L a32', 0x0C,       56, 24,            2, 0x01000000,    0x01000000, "/usr/lib/libSystem.B.dylib" );
+            my $lc_uuid      = pack( 'L L a16',         0x1B,       24, pack( 'H*', 'C0FFEE' . '0' x 26 ) );
+            my $lc_dyld      = pack( 'L L L a20',       0x0E,       32, 12,            '/usr/lib/dyld' );
+            my $lc_dylib     = pack( 'L L L L L L a32', 0x0C,       56, 24,            2, 0x01000000,    0x01000000, '/usr/lib/libSystem.B.dylib' );
             my $lc_symtab    = pack( 'L L L L L L',     0x02,       24, $link_fileoff, 0, $link_fileoff, 0 );
             my $lc_dysymtab  = pack( 'L L' . 'L' x 18,  0x0B,       80, 0,             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
             my $lc_dyld_info = pack( 'L L L L L L L L L L L L',
@@ -129,7 +129,7 @@ package Pulse::Format {
         }
 
         method import_rva ($name) {
-            die "Unknown PE import: $name" unless exists $IMPORTS{$name};
+            die 'Unknown PE import: ' . $name unless exists $IMPORTS{$name};
             return $self->rva_for( '.idata', 'x64', 'win64' ) + $IMPORTS{$name};
         }
 

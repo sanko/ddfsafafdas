@@ -60,7 +60,7 @@ method generate_id_alt(Int $inc) {
     return $counter;
 }
 
-say "--- Testing Isolate-Local State ---";
+say "Testing Isolate-Local State";
 say generate_id(); # 1
 say generate_id(); # 2
 say generate_id_alt(1); # 1
@@ -70,7 +70,7 @@ say generate_id_alt(5); # 16
 say generate_id_alt(5); # 21
 
 # 2. GC Region Allocator Test (Milestone 5)
-say "--- Testing Region Heap Allocation ---";
+say "Testing Region Heap Allocation";
 my Int $i = 0;
 while ($i < 10000) {
     # Each array uses 48 bytes. 10,000 * 48 = 480KB.
@@ -98,12 +98,12 @@ method generate_id() {
     return $counter;
 }
 
-say "--- Testing Isolate-Local State ---";
+say "Testing Isolate-Local State";
 say generate_id(); # 1
 say generate_id(); # 2
 
 # 2. GC Region Allocator Test
-say "--- Testing Region Heap Allocation ---";
+say "Testing Region Heap Allocation";
 my Int $i = 0;
 while ($i < 10000) {
     my Any $tmp =[1, 2, 3];
@@ -112,7 +112,7 @@ while ($i < 10000) {
 say "Survived 10,000 dynamic heap allocations!";
 
 # 3. Fiber and Dynamic Stack Page Faults
-say "--- Testing Fibers & Virtual Stacks ---";
+say "Testing Fibers & Virtual Stacks";
 my Any $fib = fiber {
     say "Inside fiber!";
     yield 42;
@@ -149,7 +149,6 @@ $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
 $lowering->builder->dump_ir("OPTIMIZED IR");
 my $exe = $p->format->write_bin( 'brocken_out' . ( $p->os eq 'win64' ? '.exe' : '' ), $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
-
-#~ say "Executing Native Binary...";
-#~ system( $^O eq 'MSWin32' ? $exe : "./$exe" );
-#~ say "Exit code: " . ( $? >> 8 );
+say "Executing Native Binary...";
+system( $^O eq 'MSWin32' ? $exe : "./$exe" );
+say "Exit code: " . ( $? >> 8 );

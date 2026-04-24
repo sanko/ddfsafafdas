@@ -8,7 +8,15 @@ class Brocken::Lexer {
     field $pos  = 0;
     field $line = 1;
     field $col  = 1;
-    my %KEYWORDS = map { $_ => 1 } qw(my our state class method return exit yield fiber if else while for say print map Int String Any);
+    my %KEYWORDS = map { $_ => 1 } qw[
+        my our state
+        class method field
+        return exit
+        fiber yield
+        if else
+        while for map
+        say print
+        Int String Any];
 
     method lex() {
         my @tokens;

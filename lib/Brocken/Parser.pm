@@ -14,7 +14,7 @@ class Brocken::Parser {
     method expect($expected) {
         my $tok = $self->current();
         if ( $tok->{type} eq $expected || $tok->{value} eq $expected ) { $self->advance(); return $tok; }
-        die sprintf( "Parse Error L:%d: Expected '%s', got '%s'\n", $tok->{line}, $expected, $tok->{value} );
+        die sprintf "Parse Error L:%d: Expected '%s', got '%s'\n", $tok->{line}, $expected, $tok->{value};
     }
 
     method parse_expression( $precedence = 0 ) {

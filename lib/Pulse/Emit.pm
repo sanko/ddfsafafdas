@@ -43,7 +43,7 @@ package Pulse::Emit {
         field $code : reader = '';
         field %labels;
         field @fixups;
-        method reg($r)           { $REG{ lc $r } // die "Unknown ARM64 register: $r" }
+        method reg($r)           { $REG{ lc $r } // die 'Unknown ARM64 register: ' . $r }
         method append_code($bin) { $code .= $bin }
         method push_reg($reg)    { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF81F0FE0 | $r ); }
         method pop_reg($reg)     { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF84107E0 | $r ); }
@@ -251,12 +251,12 @@ package Pulse::Emit {
 
         method cmp_reg_imm( $r, $imm ) {
             my $ri = $self->reg($r);
-            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( "CCl<", 0x81, 0xF8 | ( $ri & 7 ), $imm );
+            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xF8 | ( $ri & 7 ), $imm );
         }
 
         method cmp_reg_imm_32( $r, $imm ) {
             my $ri = $self->reg($r);
-            $code .= $self->_rex( 0, 0, 0, $ri ) . pack( "CCl<", 0x81, 0xF8 | ( $ri & 7 ), $imm );
+            $code .= $self->_rex( 0, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xF8 | ( $ri & 7 ), $imm );
         }
 
         method setcc( $cc, $r ) {
@@ -317,7 +317,7 @@ package Pulse::Emit {
             my $next = $txtrva + length($code) + 6;
             $code .= pack( 'CC l<', 0xFF, 0x15, $trva - $next );
         }
-        method push_imm($imm) { $code .= pack( "Cl<", 0x68, $imm ); }
+        method push_imm($imm) { $code .= pack( 'Cl<', 0x68, $imm ); }
         method syscall        { $code .= pack 'CC', 0x0F, 0x05 }
 
         method call_label($l) {

@@ -7,8 +7,8 @@ class Brocken::IR::Builder {
     field @instructions : reader;
     field $reg_count   = 0;
     field $label_count = 0;
-    method new_reg()               { return "%" . ++$reg_count; }
-    method new_label()             { return "L" . ++$label_count; }
+    method new_reg()               { return '%' . ++$reg_count; }
+    method new_label()             { return 'L' . ++$label_count; }
     method set_instructions(@inst) { @instructions = @inst }
 
     method emit( $op, $type, $args, $dest = undef ) {
@@ -32,19 +32,19 @@ class Brocken::IR::Builder {
             my @al;
             if ( $i->{args} ) {
                 @al = map {
-                    if    ( !defined($_) )               {"undef"}
+                    if    ( !defined($_) )               {'undef'}
                     elsif ( ref($_) && $_->can('dump') ) { $_->dump }
-                    elsif ( ref($_) )                    { "OBJ(" . ref($_) . ")" }
+                    elsif ( ref($_) )                    { 'OBJ(' . ref($_) . ')' }
                     else                                 {$_}
                 } @{ $i->{args} };
             }
-            elsif ( $i->{target} ) { push @al, "target:" . $i->{target}; }
-            elsif ( $i->{name} )   { push @al, "name:" . $i->{name}; }
+            elsif ( $i->{target} ) { push @al, 'target:' . $i->{target}; }
+            elsif ( $i->{name} )   { push @al, 'name:' . $i->{name}; }
             elsif ( $i->{op} eq 'cond_br' ) {
-                push @al, "reg:" . $i->{reg} . " true:" . $i->{true_l} . " false:" . $i->{false_l};
+                push @al, 'reg:' . $i->{reg} . ' true:' . $i->{true_l} . ' false:' . $i->{false_l};
             }
             my $args = join( ', ', @al );
-            say sprintf( "  %-3s %-15s %-5s [%s]", ( $dest ? $dest : "" ), $op, ( $i->{type} // "" ), $args );
+            say sprintf( '  %-3s %-15s %-5s [%s]', ( $dest ? $dest : '' ), $op, ( $i->{type} // '' ), $args );
         }
     }
 };
