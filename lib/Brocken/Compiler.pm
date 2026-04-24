@@ -14,6 +14,7 @@ package Brocken::Compiler {
         field $routine_depth = 0;
 
         method inject_runtime() {
+            $pulse->reset_locals();
             $builder->emit_label('M_gc_alloc');
             $builder->emit( 'enter_func', 'void', [] );
             my $size      = $builder->emit( 'get_arg',       'i64', [0] );
@@ -33,8 +34,7 @@ package Brocken::Compiler {
             $builder->emit( 'store_iso_disp', 'void', [ $pulse->iso_offset('heap_ptr'),   $builder->emit( 'add', 'ptr', [ $new_region, $size ] ) ] );
             $builder->emit( 'store_iso_disp', 'void', [ $pulse->iso_offset('heap_limit'), $new_limit ] );
             $builder->emit( 'leave_func',     'void', [$new_region] );
-
-            # Robust Integer Printer
+            $pulse->reset_locals();
             $builder->emit_label('M_print_int');
             $builder->emit( 'enter_func', 'void', [] );
             my $n       = $builder->emit( 'get_arg', 'i64', [0] );
@@ -64,43 +64,70 @@ package Brocken::Compiler {
             $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $idx, 0 ] ), $l3, $l4 );
             $builder->emit_label($l4);
             $builder->emit( 'leave_func', 'void', [0] );
-
-            # fiber_transfer logic
+            $pulse->reset_locals();
             $builder->emit_label('M_fiber_switch');
             $builder->emit( 'enter_func', 'void', [] );
             my $trans_res
                 = $builder->emit( 'fiber_transfer', 'Any', [ $builder->emit( 'get_arg', 'ptr', [0] ), $builder->emit( 'get_arg', 'ptr', [1] ) ] );
             $builder->emit( 'leave_func', 'void', [$trans_res] );
-
-            # M_fiber_new: Correct Mocking for Symmetric Resume
+            $pulse->reset_locals();
             $builder->emit_label('M_fiber_new');
             $builder->emit( 'enter_func', 'void', [] );
+
+            # 1. Start with the two essential handles
             my $func_ptr = $builder->emit( 'get_arg',   'i64', [0] );
             my $fcb      = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 64 ] );
-            my $shadow   = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 1048576 ] );    # 1MB Shadow
-            my $mstack   = $builder->emit( 'sys_alloc', 'ptr', [1048576] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb, $pulse->fcb_offset('stack_base'),  $mstack ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb, $pulse->fcb_offset('shadow_base'), $shadow ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb, $pulse->fcb_offset('shadow_ptr'),  $shadow ] );
-            my $top     = $builder->emit( 'add', 'ptr', [ $mstack, 1048576 ] );
-            my $iso_val = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+            my $fcb_slot = $pulse->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $fcb_slot, $fcb ] );
 
-            # Perfect 16-byte alignment mocking:
-            # Layout (Total 280 bytes = 17.5 * 16):
-            # [top - 8]   : Alignment padding
-            # [top - 16]  : Fiber Body Entry RIP
-            # [top - 80]  : leave_func regs (64 bytes, r14 at +8)
-            # [top - 216] : leave_func shadow (136 bytes)
-            # [top - 280] : fiber_transfer regs (64 bytes, r14 at +8) <--- Initial SP
+            # 2. Allocate stack and calculate 'top'
+            my $mstack  = $builder->emit( 'sys_alloc',  'ptr', [1048576] );
+            my $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $pulse->fcb_offset('stack_base'), $mstack ] );
+            my $top = $builder->emit( 'add', 'ptr', [ $mstack, 1048576 ] );
+
+            # %mstack is now dead.
+            # 3. Calculate RIP and store the function pointer.
             my $rip_loc = $builder->emit( 'sub', 'ptr', [ $top, 16 ] );
             $builder->emit( 'store_mem_disp', 'void', [ $rip_loc, 0, $func_ptr ] );
-            my $l_regs = $builder->emit( 'sub', 'ptr', [ $rip_loc, 64 ] );
+
+            # %func_ptr is now dead.
+            # 4. Handle Sentinel
+            my $zero = $builder->emit( 'constant', 'i64', [0] );
+            $builder->emit( 'store_mem_disp', 'void', [ $top, -8, $zero ] );
+
+            # %top is now dead.
+            # 5. Handle Shadow Space
+            my $shadow = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 1048576 ] );
+            $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $pulse->fcb_offset('shadow_base'), $shadow ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $pulse->fcb_offset('shadow_ptr'),  $shadow ] );
+
+            # %shadow is now dead.
+            # 6. Final Context Setup (WITH ZEROING LOOPS!)
+            my $iso_val  = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+            my $reg_sz   = $pulse->frame_reg_size();
+            my $local_sz = $pulse->frame_local_size();
+
+            # Setup leave_func area
+            my $l_regs = $builder->emit( 'sub', 'ptr', [ $rip_loc, $reg_sz ] );
+            for ( my $o = 0; $o < 64; $o += 8 ) {
+                $builder->emit( 'store_mem_disp', 'void', [ $l_regs, $o, $zero ] );
+            }
             $builder->emit( 'store_mem_disp', 'void', [ $l_regs, 8, $iso_val ] );
-            my $l_space = $builder->emit( 'sub', 'ptr', [ $l_regs,  136 ] );
-            my $t_regs  = $builder->emit( 'sub', 'ptr', [ $l_space, 64 ] );
+
+            # Setup transfer area
+            my $skip   = $builder->emit( 'add', 'i64', [ $builder->emit( 'constant', 'i64', [$local_sz] ), $reg_sz ] );
+            my $t_regs = $builder->emit( 'sub', 'ptr', [ $l_regs, $skip ] );
+            for ( my $o = 0; $o < 64; $o += 8 ) {
+                $builder->emit( 'store_mem_disp', 'void', [ $t_regs, $o, $zero ] );
+            }
             $builder->emit( 'store_mem_disp', 'void', [ $t_regs, 8, $iso_val ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb,    $pulse->fcb_offset('sp'), $t_regs ] );
-            $builder->emit( 'leave_func',     'void', [$fcb] );
+
+            # Final SP store
+            $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $pulse->fcb_offset('sp'), $t_regs ] );
+            $builder->emit( 'leave_func',     'void', [$fcb_reg] );
         }
 
         method lower_program($nodes) {
@@ -109,19 +136,23 @@ package Brocken::Compiler {
             my @methods = grep { $_ isa Brocken::AST::Method } @$nodes;
             my @stmts   = grep { !( $_ isa Brocken::AST::Method ) } @$nodes;
             for my $m (@methods) {
+                $pulse->reset_locals();
                 $builder->emit_label( "M_" . $m->name );
                 $builder->emit( 'enter_func', 'void', [] );
                 $current_scope = Brocken::Scope->new( parent => $current_scope );
                 $routine_depth++;
                 my $arg_idx = 0;
                 for my $p ( @{ $m->params } ) {
-                    my $reg = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
-                    $current_scope->define( $p->{name}, $p->{type} )->ssa_reg($reg);
+                    my $reg  = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
+                    my $slot = $pulse->alloc_local_slot();
+                    $current_scope->define( $p->{name}, $p->{type}, 0, undef, $slot );
+                    $builder->emit( 'local_store', 'void', [ $slot, $reg ] );
                 }
                 $self->lower_block( $m->body->statements );
                 $routine_depth--;
                 $current_scope = $current_scope->parent;
             }
+            $pulse->reset_locals();
             $builder->emit_label('L_MAIN_START');
             $builder->emit( 'enter_func',               'void', [] );
             $builder->emit( 'setup_page_fault_handler', 'void', [] );
@@ -170,11 +201,12 @@ package Brocken::Compiler {
                     my $res = $builder->emit( 'load_mem_disp', $sym->type, [ $sb, 4096 + ( $sym->state_idx * 8 ) ] );
                     return ( $res, $sym->type );
                 }
-                return ( $sym->ssa_reg, $sym->type );
+                my $reg = $builder->emit( 'local_load', $sym->type, [ $sym->stack_offset ] );
+                return ( $reg, $sym->type );
             }
             if ( $node isa Brocken::AST::StateDecl ) {
                 my $idx    = $state_count++;
-                my $sym    = $current_scope->define( $node->name, $node->type, 1, $idx );
+                my $sym    = $current_scope->define( $node->name, $node->type, 1, $idx, undef );
                 my $l_init = $builder->new_label();
                 my $l_done = $builder->new_label();
                 my $sb     = $builder->emit( 'load_iso_disp', 'ptr', [ $pulse->iso_offset('state_ptr') ] );
@@ -186,16 +218,15 @@ package Brocken::Compiler {
                 $builder->emit_jump($l_done);
                 $builder->emit_label($l_done);
                 my $res = $builder->emit( 'load_mem_disp', $node->type, [ $sb, 4096 + ( $idx * 8 ) ] );
-                $sym->ssa_reg($res);
                 return ( $res, $node->type );
             }
             if ( $node isa Brocken::AST::VarDecl ) {
                 my ( $v_reg, $v_typ ) = $self->lower( $node->value );
                 my $decl_type = $node->type eq 'Any' ? $v_typ : $node->type;
-                my $sym       = $current_scope->define( $node->name, $decl_type );
-                my $var_reg   = $builder->emit( 'mov', 'i64', [$v_reg] );
-                $sym->ssa_reg($var_reg);
-                return ( $var_reg, $decl_type );
+                my $slot      = $pulse->alloc_local_slot();
+                my $sym       = $current_scope->define( $node->name, $decl_type, 0, undef, $slot );
+                $builder->emit( 'local_store', 'void', [ $slot, $v_reg ] );
+                return ( undef, 'void' );
             }
             if ( $node isa Brocken::AST::Assignment ) {
                 my ( $v_reg, $v_typ ) = $self->lower( $node->value );
@@ -205,8 +236,8 @@ package Brocken::Compiler {
                     $builder->emit( 'store_mem_disp', 'void', [ $sb, 4096 + ( $sym->state_idx * 8 ), $v_reg ] );
                     return ( $v_reg, $sym->type );
                 }
-                $builder->emit( 'mov', 'i64', [$v_reg], $sym->ssa_reg );
-                return ( $sym->ssa_reg, $sym->type );
+                $builder->emit( 'local_store', 'void', [ $sym->stack_offset, $v_reg ] );
+                return ( $v_reg, $sym->type );
             }
             if ( $node isa Brocken::AST::BinOp ) {
                 my ( $l_reg, $l_typ ) = $self->lower( $node->left );
@@ -221,9 +252,13 @@ package Brocken::Compiler {
                 return ( $res_reg, 'Array' );
             }
             if ( $node isa Brocken::AST::FiberBlock ) {
-                my $fib_label            = $builder->new_label();
-                my @current_instructions = $builder->instructions;
+                my $fib_label  = $builder->new_label();
+                my $skip_label = $builder->new_label();
+                $builder->emit_jump($skip_label);
+                my @main_instructions = $builder->instructions;
                 $builder->set_instructions();
+                my $saved_local_ptr = $pulse->local_ptr;
+                $pulse->reset_locals();
                 $builder->emit_label($fib_label);
                 $builder->emit( 'enter_func', 'void', [] );
                 $current_scope = Brocken::Scope->new( parent => $current_scope );
@@ -234,10 +269,11 @@ package Brocken::Compiler {
                 my $curr   = $builder->emit( 'load_iso_disp', 'ptr', [ $pulse->iso_offset('current_fcb') ] );
                 my $caller = $builder->emit( 'load_mem_disp', 'ptr', [ $curr, $pulse->fcb_offset('caller') ] );
                 $builder->emit( 'fiber_transfer', 'Any', [ $caller, $res // 0 ] );
-                $builder->emit( 'leave_func', 'void', [0] );
-                my @new_inst = $builder->instructions;
-                push @current_instructions, @new_inst;
-                $builder->set_instructions(@current_instructions);
+                $builder->emit( 'exit_program', 'void', [0] );
+                my @fiber_instructions = $builder->instructions;
+                $builder->set_instructions( @main_instructions, @fiber_instructions );
+                $builder->emit_label($skip_label);
+                $pulse->set_local_ptr($saved_local_ptr);
                 return ( $builder->emit( 'call_func', 'ptr', [ 'M_fiber_new', $fib_label ] ), 'Fiber' );
             }
             if ( $node isa Brocken::AST::Yield ) {

@@ -12,7 +12,11 @@ class Brocken::IR::Builder {
     method set_instructions(@inst) { @instructions = @inst }
 
     method emit( $op, $type, $args, $dest = undef ) {
-        $dest //= $self->new_reg();
+
+        # Only assign a new virtual register if type is not void and no dest provided
+        if ( !defined($dest) && $type ne 'void' ) {
+            $dest = $self->new_reg();
+        }
         push @instructions, { op => $op, type => $type, dest => $dest, args => $args };
         return $dest;
     }

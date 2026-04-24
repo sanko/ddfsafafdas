@@ -9,6 +9,8 @@ package Pulse::Compiler {
         field $os     : reader : param = undef;
         field $as     : reader;
         field $format : reader;
+        field $local_ptr = 0;
+
         ADJUST {
             my $d_os = 'linux';
             $d_os = 'win64' if $^O eq 'MSWin32';
@@ -23,10 +25,28 @@ package Pulse::Compiler {
             elsif ( $os eq 'macos' ) { $format = Pulse::Format::MachO->new() }
             else                     { $format = Pulse::Format::ELF->new() }
         }
+
         method text_rva ()        { $format->rva_for( '.text',  $arch, $os ) }
         method data_rva ()        { $format->rva_for( '.data',  $arch, $os ) }
         method idata_rva ()       { $format->rva_for( '.idata', $arch, $os ) }
         method import_rva ($name) { $format->import_rva($name) }
+
+        # --- Stack Tracking Methods ---
+        method local_ptr ()        { return $local_ptr; }
+        method set_local_ptr ($v)  { $local_ptr = $v; }
+        method reset_locals ()     { $local_ptr = 0; }
+        method alloc_local_slot () {
+            $local_ptr += 8;
+            die "Stack Overflow: Local variable space exceeded" if $local_ptr > 128;
+            return $local_ptr;
+        }
+
+        # Size of the 8 saved registers (rbp, rsi, rdi, rbx, r12, r13, r14, r15)
+        method frame_reg_size () {64}
+
+        # Local space: 168 ensures (64 + 168 + 8) % 16 == 0 (Perfect OS Alignment)
+        # It also leaves 40 bytes free at the bottom for Windows Shadow Space overlap!
+        method frame_local_size () {168}
 
         method iso_offset ($name) {
             state $ISO = { heap_ptr => 0, heap_limit => 8, state_ptr => 16, current_fcb => 24, };

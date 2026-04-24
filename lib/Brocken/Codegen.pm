@@ -11,7 +11,6 @@ package Brocken::Codegen {
             if ( $arch eq 'arm64' ) { return "x$idx"; }
             else {
                 if ( $os eq 'win64' ) {
-
                     # Windows x64: RCX, RDX, R8, R9
                     return (qw(rcx rdx r8 r9))[$idx] // die "Too many args for Win64 ABI at index $idx";
                 }
@@ -59,6 +58,18 @@ package Brocken::Codegen {
                     my $s = $inst->{args}[0];
                     if ( $s =~ /^%/ ) { $as->mov_reg( $d, $reg_map{$s} ) if $d ne $reg_map{$s}; }
                     else              { $as->mov_imm( $d, $s ); }
+                }
+                elsif ( $op eq 'local_store' ) {
+                    my $val_reg = $val->( $inst->{args}[1] );
+                    if ( $inst->{args}[1] !~ /^%/ ) {
+                        $as->mov_imm( 'r11', $val_reg );
+                        $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' );
+                    } else {
+                        $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], $val_reg );
+                    }
+                }
+                elsif ( $op eq 'local_load' ) {
+                    $as->load_reg_mem( $reg_map{ $inst->{dest} }, 'rbp', -$inst->{args}[0] );
                 }
                 elsif ( $op =~ /^(add|sub|mul)$/ ) {
                     my $d  = $reg_map{ $inst->{dest} };
@@ -192,9 +203,11 @@ package Brocken::Codegen {
                     my $dest   = $reg_map{ $inst->{dest} };
                     my $iso    = ( $arch eq 'x64' ? 'r14' : 'x27' );
 
-                    # 1. Store transfer value in RAX (to be picked up by the target fiber)
+                    # 1. Place transfer value in RAX
                     if ( $inst->{args}[1] =~ /^%/ ) { $as->mov_reg( 'rax', $v ) if $v ne 'rax'; }
                     else                            { $as->mov_imm( 'rax', $v ); }
+
+                    # 2. Save current context
                     for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
 
                     # 3. Symmetric Stack Swap
@@ -202,10 +215,12 @@ package Brocken::Codegen {
                     $as->store_mem_disp_reg( 'r11',   $pulse->fcb_offset('sp'),          'rsp' );
                     $as->store_mem_disp_reg( $target, $pulse->fcb_offset('caller'),      'r11' );
                     $as->store_mem_disp_reg( $iso,    $pulse->iso_offset('current_fcb'), $target );
+
+                    # 4. Restore target context
                     $as->load_reg_mem( 'rsp', $target, $pulse->fcb_offset('sp') );
                     for my $r ( reverse qw(rbp rsi rdi rbx r12 r13 r14 r15) ) { $as->pop_reg($r); }
 
-                    # 5. Move result from RAX to the virtual register
+                    # 5. Move result to virtual register (No 0xC3/ret here! Falls through to leave_func/body)
                     if ( defined($dest) ) {
                         $as->mov_reg( $dest, 'rax' ) if $dest ne 'rax';
                     }
@@ -339,7 +354,6 @@ package Brocken::Codegen {
                     my $src_reg = ( $inst->{args}[2] =~ /^%/ ) ? $src : 'r11';
                     $as->mov_imm( 'r11', $src ) if $inst->{args}[2] !~ /^%/;
                     if ( $idx =~ /^%/ ) {
-
                         # Manual address calculation for dynamic index
                         $as->push_reg('rax');    # Use rax as temp to avoid r11 conflict
                         $as->mov_reg( 'rax', $base );
@@ -378,8 +392,9 @@ package Brocken::Codegen {
                     }
                 }
                 elsif ( $op eq 'enter_func' ) {
+                    # Push 8 registers: rbp, rsi, rdi, rbx, r12, r13, r14, r15
                     $as->append_code( pack( 'C*', 0x55, 0x56, 0x57, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE5 ) );
-                    $as->sub_imm( 'rsp', 136 ) if $arch eq 'x64';
+                    $as->sub_imm( 'rsp', $pulse->frame_local_size ) if $arch eq 'x64';
                 }
                 elsif ( $op eq 'leave_func' ) {
                     my $rv = $val->( $inst->{args}[0] );
@@ -387,7 +402,8 @@ package Brocken::Codegen {
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rax', $rv ) if $rv ne 'rax'; }
                         else                            { $as->mov_imm( 'rax', $rv ); }
                     }
-                    $as->add_imm( 'rsp', 136 ) if $arch eq 'x64';
+                    $as->add_imm( 'rsp', $pulse->frame_local_size ) if $arch eq 'x64';
+                    # Pop 8 registers (reverse order)
                     $as->append_code( pack( 'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0x5F, 0x5E, 0x5D, 0xC3 ) );
                 }
                 elsif ( $op eq 'call_func' ) {
@@ -454,10 +470,10 @@ package Brocken::Codegen {
                 @free = qw(x19 x20 x21 x22 x23 x24 x25 x26 x28);
             }
             elsif ( $pulse->os eq 'win64' ) {
-                @free = qw(rbx rsi rdi r12 r13 r15);
+                @free = qw(rbx rsi rdi r12 r13 r15); # rbp reserved
             }
             else {
-                @free = qw(rbx rbp r12 r13 r15);
+                @free = qw(rbx r12 r13 r15); # rbp reserved
             }
             my @intervals = sort { ( $a->{start} // 0 ) <=> ( $b->{start} // 0 ) } map { { vreg => $_, %{ $live{$_} } } } keys %live;
             my @active;
