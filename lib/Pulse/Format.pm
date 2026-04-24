@@ -6,9 +6,23 @@ package Pulse::Format {
     #
     class Pulse::Format {
         method write_bin( $f, $t, $d, $a, $o ) {...}
+
+        method rva_for ( $section, $arch, $os ) {
+            return 0;
+        }
+
+        method import_rva ($name) {
+            die "Imports not supported by this format";
+        }
     }
 
     class Pulse::Format::MachO : isa(Pulse::Format) {
+        method rva_for ( $section, $arch, $os ) {
+            my $page_size = ( $arch eq 'arm64' ? 0x4000 : 0x1000 );
+            return $page_size if $section eq '.text';
+            return 2 * $page_size if $section eq '.data';
+            return 0;
+        }
 
         method write_bin ( $filename, $text, $data, $arch, $os = 'macos' ) {
             my $is_arm      = ( $arch eq 'arm64' );
@@ -67,18 +81,31 @@ package Pulse::Format {
     }
 
     class Pulse::Format::ELF : isa(Pulse::Format) {
+        method rva_for ( $section, $arch, $os ) {
+            return 0x10000 if $section eq '.text';
+            return 0x20000 if $section eq '.data';
+            return 0;
+        }
 
         method write_bin ( $filename, $text, $data, $arch, $os = 'linux' ) {
             my $base        = 0x400000;
-            my $text_off    = 0x1000;
-            my $align_f     = sub { my ( $v, $a ) = @_; return ( $v + $a - 1 ) & ~( $a - 1 ); };
-            my $text_padded = $text . ( "\0" x ( 0x1000 - ( length($text) % 0x1000 ) ) );
-            if ( length($text_padded) > 0x1000 ) {
-                die "Error: Milestone 5 code exceeds 4KB limit. Adjust text_off or ELF logic.";
-            }
-            my $data_off    = $text_off + length($text_padded);                                             # Will be 0x2000
-            my $data_padded = $data . ( "\0" x ( $align_f->( length($data), 0x1000 ) - length($data) ) );
-            my $machine     = ( $arch eq 'arm64' ) ? 183 : 62;
+    my $text_off    = 0x10000; # 64KB offset for code
+
+
+    my $align_f     = sub { my ( $v, $a ) = @_; return ( $v + $a - 1 ) & ~( $a - 1 ); };
+
+    my $text_padded = $text . ( "\0" x ( 0x10000 - ( length($text) % 0x10000 ) ) );
+
+
+            #~ if ( length($text_padded) > 0x1000 ) {
+                #~ die "Error: Milestone 5 code exceeds 4KB limit. Adjust text_off or ELF logic.";
+            #~ }
+
+    my $data_off    = $text_off + length($text_padded);
+    my $data_padded = $data . ( "\0" x ( $align_f->( length($data), 0x1000 ) - length($data) ) );
+
+
+             my $machine     = ( $arch eq 'arm64' ) ? 183 : 62;
             my $elf_hdr     = pack(
                 'A4 C C C C C x7 S S L Q Q Q L S S S S S S',
                 "\x7fELF", 2, 1, 1,  0,  0, 2, $machine, 1, $base + $text_off,
@@ -100,6 +127,26 @@ package Pulse::Format {
     }
 
     class Pulse::Format::PE : isa(Pulse::Format) {
+        our %IMPORTS = (
+            ExitProcess                  => 0,
+            GetStdHandle                 => 8,
+            WriteFile                    => 16,
+            VirtualAlloc                 => 24,
+            SetConsoleOutputCP           => 32,
+            AddVectoredExceptionHandler => 40,
+        );
+
+        method rva_for ( $section, $arch, $os ) {
+            return 0x1000 if $section eq '.text';
+            return 0x2000 if $section eq '.data';
+            return 0x3000 if $section eq '.idata';
+            return 0;
+        }
+
+        method import_rva ($name) {
+            die "Unknown PE import: $name" unless exists $IMPORTS{$name};
+            return $self->rva_for( '.idata', 'x64', 'win64' ) + $IMPORTS{$name};
+        }
 
         method write_bin ( $filename, $text, $data, $arch, $os = 'win64' ) {
 
@@ -113,13 +160,13 @@ package Pulse::Format {
             my $align      = sub { my ( $v, $a ) = @_; return ( $v + $a - 1 ) & ~( $a - 1 ); };
 
             # RVAs (Relative Virtual Addresses)
-            my $text_rva  = $sa;
-            my $data_rva  = $sa * 2;
-            my $idata_rva = $sa * 3;
+            my $text_rva  = $self->rva_for('.text', $arch, $os);
+            my $data_rva  = $self->rva_for('.data', $arch, $os);
+            my $idata_rva = $self->rva_for('.idata', $arch, $os);
 
             # Construct .idata (Import Table)
             # We need to import functions from kernel32.dll for printing and memory allocation
-            my @funcs    = qw[ExitProcess GetStdHandle WriteFile VirtualAlloc SetConsoleOutputCP];
+            my @funcs    = qw[ExitProcess GetStdHandle WriteFile VirtualAlloc SetConsoleOutputCP AddVectoredExceptionHandler];
             my $iat_size = ( @funcs + 1 ) * 8;                                                       # 8 bytes per entry + null terminator
             my $iat_data = '';
             my $hn_data  = '';

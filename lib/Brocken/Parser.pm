@@ -16,7 +16,6 @@ class Brocken::Parser {
         if ( $tok->{type} eq $expected || $tok->{value} eq $expected ) { $self->advance(); return $tok; }
         die sprintf( "Parse Error L:%d: Expected '%s', got '%s'\n", $tok->{line}, $expected, $tok->{value} );
     }
-    method get_precedence() { my $tok = $self->current(); return 0 unless $tok->{type} eq 'OP'; return $PRECEDENCE{ $tok->{value} } // 0; }
 
     method parse_expression( $precedence = 0 ) {
         my $tok = $self->current();
@@ -55,23 +54,22 @@ class Brocken::Parser {
             $self->expect('}');
             my $source = $self->parse_expression(25);
             $left = Brocken::AST::Map->new( expr => $expr, source => $source );
-        }
+        }elsif ( $tok->{value} eq 'fiber' ) {
+                $self->advance();
+                my $block = $self->parse_block();
+                $left = Brocken::AST::FiberBlock->new( body => $block );
+            }
+            elsif ( $tok->{value} eq 'yield' ) {
+                $self->advance();
+                my $expr = $self->parse_expression(0);
+                $left = Brocken::AST::Yield->new( expr => $expr );
+            }
         else { die "Unexpected token in expr: $tok->{value} at L:$tok->{line}\n"; }
         while ( $precedence < ( $PRECEDENCE{ $self->current->{value} } // 0 ) ) {
             my $op = $self->current->{value};
             $self->advance();
-            if ( $op eq '[' ) {
-                my $idx = $self->parse_expression();
-                $self->expect(']');
-                $left = Brocken::AST::IndexExpr->new( source => $left, index => $idx );
-            }
-            else {
-                $left = Brocken::AST::BinOp->new(
-                    op    => $op,
-                    left  => $left,
-                    right => $self->parse_expression( $PRECEDENCE{$op} - ( $op eq '=' ? 1 : 0 ) )
-                );
-            }
+            $left
+                = Brocken::AST::BinOp->new( op => $op, left => $left, right => $self->parse_expression( $PRECEDENCE{$op} - ( $op eq '=' ? 1 : 0 ) ) );
         }
         return $left;
     }
@@ -79,7 +77,8 @@ class Brocken::Parser {
     method parse_statement() {
         my $tok = $self->current();
         if ( $tok->{value} eq '{' ) { return $self->parse_block(); }
-        if ( $tok->{value} eq 'my' ) {
+        if ( $tok->{value} eq 'my' || $tok->{value} eq 'state' ) {
+            my $is_state = ( $tok->{value} eq 'state' );
             $self->advance();
             my $type = 'Any';
             if ( $self->current()->{type} eq 'KEYWORD' ) { $type = $self->current()->{value}; $self->advance(); }
@@ -87,17 +86,8 @@ class Brocken::Parser {
             $self->expect('=');
             my $expr = $self->parse_expression();
             $self->expect(';');
+            if ($is_state) { return Brocken::AST::StateDecl->new( name => $var_tok->{value}, type => $type, value => $expr ); }
             return Brocken::AST::VarDecl->new( name => $var_tok->{value}, type => $type, value => $expr );
-        }
-        if ( $tok->{value} eq 'state' ) {
-            $self->advance();
-            my $type = 'Any';
-            if ( $self->current()->{type} eq 'KEYWORD' ) { $type = $self->current()->{value}; $self->advance(); }
-            my $var_tok = $self->expect('VAR');
-            $self->expect('=');
-            my $expr = $self->parse_expression();
-            $self->expect(';');
-            return Brocken::AST::StateDecl->new( name => $var_tok->{value}, type => $type, value => $expr );
         }
         if ( $tok->{type} eq 'VAR' && $self->peek()->{value} eq '=' ) {
             my $var_name = $tok->{value};
@@ -113,6 +103,13 @@ class Brocken::Parser {
             $self->expect(';');
             return Brocken::AST::Return->new( expr => $expr );
         }
+        if ( $tok->{value} eq 'exit' ) {
+            $self->advance();
+            my $expr = $self->parse_expression();
+            $self->expect(';');
+            return Brocken::AST::Exit->new( expr => $expr );
+        }
+
         if ( $tok->{value} =~ /^(print|say)$/ ) {
             my $name = $tok->{value};
             $self->advance();

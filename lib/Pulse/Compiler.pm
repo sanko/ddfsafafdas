@@ -24,6 +24,35 @@ package Pulse::Compiler {
             else                     { $format = Pulse::Format::ELF->new() }
         }
 
+        method text_rva ()  { $format->rva_for( '.text',  $arch, $os ) }
+        method data_rva ()  { $format->rva_for( '.data',  $arch, $os ) }
+        method idata_rva () { $format->rva_for( '.idata', $arch, $os ) }
+
+        method import_rva ($name) { $format->import_rva($name) }
+
+        method iso_offset ($name) {
+            state $ISO = {
+                heap_ptr    => 0,
+                heap_limit  => 8,
+                state_ptr   => 16,
+                current_fcb => 24,
+            };
+            die "Unknown Isolate offset: $name" unless exists $ISO->{$name};
+            return $ISO->{$name};
+        }
+
+        method fcb_offset ($name) {
+            state $FCB = {
+                sp          => 0,
+                stack_base  => 8,
+                shadow_base => 16,
+                shadow_ptr  => 24,
+                caller      => 32,
+            };
+            die "Unknown FCB offset: $name" unless exists $FCB->{$name};
+            return $FCB->{$name};
+        }
+
         method cc ($name) {
             return { eq => 0, ne => 1, lt => 0xB, gt => 0xC, z => 0, nz => 1 }->{$name} if $arch eq 'arm64';
             return { eq => 4, ne => 5, lt => 0xC, gt => 0xF, z => 4, nz => 5 }->{$name};
@@ -44,8 +73,8 @@ package Pulse::Compiler {
                 }
             }
             else {
-                if   ( $arch eq 'arm64' ) { $as->mov_reg( 'x0',  $r_name ) if $r_name ne 'x0';  $as->call_rva( 0x3000, 0x1000 ); }
-                else                      { $as->mov_reg( 'rcx', $r_name ) if $r_name ne 'rcx'; $as->call_rva( 0x3000, 0x1000 ); }
+                if   ( $arch eq 'arm64' ) { $as->mov_reg( 'x0',  $r_name ) if $r_name ne 'x0';  $as->call_rva( $self->import_rva('ExitProcess'), $self->text_rva ); }
+                else                      { $as->mov_reg( 'rcx', $r_name ) if $r_name ne 'rcx'; $as->call_rva( $self->import_rva('ExitProcess'), $self->text_rva ); }
             }
         }
     }

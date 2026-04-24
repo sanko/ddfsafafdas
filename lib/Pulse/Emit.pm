@@ -269,6 +269,11 @@ package Pulse::Emit {
             $code .= $self->_rex( 1, 0, 0, $ri ) . pack( "CCl<", 0x81, 0xF8 | ( $ri & 7 ), $imm );
         }
 
+        method cmp_reg_imm_32( $r, $imm ) {
+            my $ri = $self->reg($r);
+            $code .= $self->_rex( 0, 0, 0, $ri ) . pack( "CCl<", 0x81, 0xF8 | ( $ri & 7 ), $imm );
+        }
+
         method setcc( $cc, $r ) {
             my $ri = $self->reg($r);
             $code .= pack( 'C', 0x40 | ( $ri >= 8 ? 1 : 0 ) ) . pack( 'CCC', 0x0F, $cc, 0xC0 | ( $ri & 7 ) );
@@ -306,10 +311,20 @@ package Pulse::Emit {
             $code .= $self->_rex( 1, $ri, 0, $li ) . pack( 'CC', 0x39, 0xC0 | ( ( $ri & 7 ) << 3 ) | ( $li & 7 ) );
         }
 
-        method lea_rva( $reg, $trva, $txtrva ) {
+
+
+        method lea_rva( $reg, $target, $txtrva ) {
             my $ri   = $self->reg($reg);
-            my $next = $txtrva + length($code) + 7;
-            $code .= $self->_rex( 1, $ri, 0, 0 ) . pack( 'CC l<', 0x8D, 0x05 | ( ( $ri & 7 ) << 3 ), $trva - $next );
+            if ($target =~ /^[A-Z_]/i) {
+                # It's a Label! Register a 32-bit relative fixup
+                $code .= $self->_rex( 1, $ri, 0, 0 ) . pack( 'CC', 0x8D, 0x05 | ( ( $ri & 7 ) << 3 ) );
+                push @fixups, { offset => length($code), target => $target };
+                $code .= pack( 'L<', 0 ); # Placeholder
+            } else {
+                # It's an absolute offset number
+                my $next = $txtrva + length($code) + 7;
+                $code .= $self->_rex( 1, $ri, 0, 0 ) . pack( 'CC l<', 0x8D, 0x05 | ( ( $ri & 7 ) << 3 ), $target - $next );
+            }
         }
 
         method call_rva( $trva, $txtrva ) {

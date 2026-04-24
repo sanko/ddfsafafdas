@@ -39,7 +39,13 @@ package Brocken::Codegen {
                     $as->mov_imm( $reg_map{ $inst->{dest} }, $inst->{args}[0] );
                 }
                 elsif ( $op eq 'load_data_addr' ) {
-                    $as->lea_rva( $reg_map{ $inst->{dest} }, 0x2000 + $inst->{args}[0], 0x1000 );
+                    my $target = $inst->{args}[0];
+                    if ( $target =~ /^[A-Z_]/i ) {
+                        $as->lea_rva( $reg_map{ $inst->{dest} }, $target, $pulse->text_rva );
+                    }
+                    else {
+                        $as->lea_rva( $reg_map{ $inst->{dest} }, $pulse->data_rva + $target, $pulse->text_rva );
+                    }
                 }
                 elsif ( $op eq 'mov' ) {
                     my $d = $reg_map{ $inst->{dest} };
@@ -68,14 +74,11 @@ package Brocken::Codegen {
                     my $lv = $val->( $inst->{args}[0] );
                     my $rv = $val->( $inst->{args}[1] );
                     $as->mov_reg( 'rax', $lv );
-                    $as->append_code( pack( 'CC', 0x48, 0x99 ) );    # CQO: Prepare RDX:RAX
+                    $as->append_code( pack( 'CC', 0x48, 0x99 ) );
                     if ( $inst->{args}[1] =~ /^%/ ) {
-
-                        # If the divisor is in a register, use it
                         $as->idiv_reg($rv);
                     }
                     else {
-                        # Use r11 as scratch (safe now because r11 is not in the allocator pool)
                         $as->mov_imm( 'r11', $rv );
                         $as->idiv_reg('r11');
                     }
@@ -104,19 +107,22 @@ package Brocken::Codegen {
                     my $char    = $val->( $inst->{args}[0] );
                     my $src_reg = ( $inst->{args}[0] =~ /^%/ ) ? $char : 'r11';
                     $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
+
+                    # Store char into pre-allocated stack space at rsp+64
                     $as->store_mem_disp_byte( 'rsp', 64, $src_reg );
                     if ( $pulse->os eq 'win64' ) {
-                        $as->sub_imm( 'rsp', 48 );
+
+                        # Shadow space is effectively [rsp...rsp+31].
+                        # The 5th argument (LPOVERLAPPED) must be at [rsp+32].
                         $as->mov_imm( 'rcx', -11 );
-                        $as->call_rva( 0x3008, 0x1000 );
+                        $as->call_rva( $pulse->import_rva('GetStdHandle'), $pulse->text_rva );
                         $as->mov_reg( 'rcx', 'rax' );
-                        $as->lea_reg_disp( 'rdx', 'rsp', 112 );
+                        $as->lea_reg_disp( 'rdx', 'rsp', 64 );
                         $as->mov_imm( 'r8', 1 );
                         $as->lea_reg_disp( 'r9', 'rsp', 88 );
-                        $as->mov_imm( 'rax', 0 );
-                        $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
-                        $as->call_rva( 0x3010, 0x1000 );
-                        $as->add_imm( 'rsp', 48 );
+                        $as->mov_imm( 'r10', 0 );
+                        $as->store_mem_disp_reg( 'rsp', 32, 'r10' );    # 5th arg
+                        $as->call_rva( $pulse->import_rva('WriteFile'), $pulse->text_rva );
                     }
                     else {
                         $as->mov_imm( 'rax', ( $pulse->os eq 'macos' ? 0x2000004 : 1 ) );
@@ -129,72 +135,38 @@ package Brocken::Codegen {
                 elsif ( $op eq 'builtin_print' ) {
                     my $p = $reg_map{ $inst->{args}[0] };
                     if ( $pulse->os eq 'win64' ) {
-                        $as->sub_imm( 'rsp', 48 );
                         $as->mov_imm( 'rcx', -11 );
-                        $as->call_rva( 0x3008, 0x1000 );
+                        $as->call_rva( $pulse->import_rva('GetStdHandle'), $pulse->text_rva );
                         $as->mov_reg( 'rcx', 'rax' );
                         $as->mov_reg( 'rdx', $p );
                         $as->add_imm( 'rdx', 24 );
                         $as->load_reg_mem( 'r8', $p );
-                        $as->lea_reg_disp( 'r9', 'rsp', 88 );    # 40 + 48
+                        $as->lea_reg_disp( 'r9', 'rsp', 88 );
                         $as->mov_imm( 'rax', 0 );
                         $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
-                        $as->call_rva( 0x3010, 0x1000 );
-                        $as->add_imm( 'rsp', 48 );               # matched sub
+                        $as->call_rva( $pulse->import_rva('WriteFile'), $pulse->text_rva );
                     }
                     else {
-                        # Linux: Be careful not to use rsi/rdi for the load
                         $as->mov_reg( 'r11', $p );
-                        $as->mov_imm( 'rax', 1 );                # sys_write
-                        $as->mov_imm( 'rdi', 1 );                # stdout
-                        $as->load_reg_mem( 'rdx', 'r11' );       # length from [r11]
-                        $as->mov_reg( 'rsi', 'r11' );            # data start...
-                        $as->add_imm( 'rsi', 24 );               # ...at r11 + 24
+                        $as->mov_imm( 'rax', 1 );
+                        $as->mov_imm( 'rdi', 1 );
+                        $as->load_reg_mem( 'rdx', 'r11' );
+                        $as->mov_reg( 'rsi', 'r11' );
+                        $as->add_imm( 'rsi', 24 );
                         $as->syscall();
-                    }
-                }
-                elsif ( $op eq 'setup_console' ) {
-                    if ( $pulse->os eq 'win64' ) {
-                        if ( $arch eq 'arm64' ) {
-                            $as->mov_imm( 'x0', 65001 );
-                            $as->call_rva( 0x3020, 0x1000 );
-                        }
-                        else {
-                            $as->sub_imm( 'rsp', 48 );
-                            $as->mov_imm( 'rcx', 65001 );
-                            $as->call_rva( 0x3020, 0x1000 );
-                            $as->add_imm( 'rsp', 48 );
-                        }
                     }
                 }
                 elsif ( $op eq 'exit_program' ) {
                     my $code_val = $val->( $inst->{args}[0] );
-                    my $is_reg   = ( $inst->{args}[0] =~ /^%/ );
-                    if ( $arch eq 'x64' ) {
-                        if ( $pulse->os eq 'win64' ) {
-                            $as->sub_imm( 'rsp', 48 );
-                            if ($is_reg) { $as->mov_reg( 'rcx', $code_val ) if $code_val ne 'rcx'; }
-                            else         { $as->mov_imm( 'rcx', $code_val // 0 ); }
-                            $as->call_rva( 0x3000, 0x1000 );
-                            $as->add_imm( 'rsp', 48 );
-                        }
-                        else {
-                            if ($is_reg) { $as->mov_reg( 'rdi', $code_val ) if $code_val ne 'rdi'; }
-                            else         { $as->mov_imm( 'rdi', $code_val // 0 ); }
-                            $pulse->exit_reg('rdi');
-                        }
+                    my $dest     = ( $arch eq 'x64' ? 'rdi' : 'x0' );
+                    if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( $dest, $code_val ) if $dest ne $code_val; }
+                    else                            { $as->mov_imm( $dest, $code_val // 0 ); }
+                    if ( $pulse->os eq 'win64' ) {
+                        $as->mov_reg( 'rcx', $dest );
+                        $as->call_rva( $pulse->import_rva('ExitProcess'), $pulse->text_rva );
                     }
-                    elsif ( $arch eq 'arm64' ) {
-                        if ( $pulse->os eq 'win64' ) {
-                            if ($is_reg) { $as->mov_reg( 'x0', $code_val ) if $code_val ne 'x0'; }
-                            else         { $as->mov_imm( 'x0', $code_val // 0 ); }
-                            $as->call_rva( 0x3000, 0x1000 );
-                        }
-                        else {
-                            if ($is_reg) { $as->mov_reg( 'x0', $code_val ) if $code_val ne 'x0'; }
-                            else         { $as->mov_imm( 'x0', $code_val // 0 ); }
-                            $pulse->exit_reg('x0');
-                        }
+                    else {
+                        $pulse->exit_reg($dest);
                     }
                 }
                 elsif ( $op eq 'map_op' ) {
@@ -202,35 +174,168 @@ package Brocken::Codegen {
                     my $s = $val->( $inst->{args}[0] );
                     $as->mov_reg( $d, $s ) if $d ne $s;
                 }
-                elsif ( $op eq 'shadow_push' ) { }
+                elsif ( $op eq 'shadow_push' ) {
+                    my $v   = $val->( $inst->{args}[0] );
+                    my $iso = ( $arch eq 'x64' ? 'r14' : 'x27' );
+                    $as->load_reg_mem( 'r11', $iso,  $pulse->iso_offset('current_fcb') );    # r11 = Current FCB
+                    $as->load_reg_mem( 'r10', 'r11', $pulse->fcb_offset('shadow_ptr') );     # r10 = shadow_ptr
+                    if ( $inst->{args}[0] =~ /^%/ ) { $as->store_mem_disp_reg( 'r10', 0, $v ); }
+                    else                            { $as->mov_imm( 'r9', $v ); $as->store_mem_disp_reg( 'r10', 0, 'r9' ); }
+                    $as->add_imm( 'r10', 8 );
+                    $as->store_mem_disp_reg( 'r11', $pulse->fcb_offset('shadow_ptr'), 'r10' );    # Save updated shadow_ptr
+                }
+                elsif ( $op eq 'fiber_transfer' ) {
+                    my $target = $val->($inst->{args}[0]);
+    my $v      = $val->($inst->{args}[1]);
+    my $dest   = $reg_map{$inst->{dest}};
+    my $iso    = ($arch eq 'x64' ? 'r14' : 'x27');
+
+    # 1. Store transfer value in RAX (to be picked up by the target fiber)
+    if ($inst->{args}[1] =~ /^%/) { $as->mov_reg('rax', $v) if $v ne 'rax'; }
+    else                          { $as->mov_imm('rax', $v); }
+
+        for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
+
+
+    # 3. Symmetric Stack Swap
+    $as->load_reg_mem('r11', $iso, $pulse->iso_offset('current_fcb'));         # r11 = Current FCB
+    $as->store_mem_disp_reg('r11', $pulse->fcb_offset('sp'), 'rsp');           # Current FCB->rsp = rsp
+    $as->store_mem_disp_reg($target, $pulse->fcb_offset('caller'), 'r11');     # Target FCB->caller = Current
+    $as->store_mem_disp_reg($iso, $pulse->iso_offset('current_fcb'), $target); # Active FCB = Target
+    $as->load_reg_mem('rsp', $target, $pulse->fcb_offset('sp'));               # rsp = Target FCB->rsp
+
+    # Restore target fiber's state
+    # Note: We pop in REVERSE order
+
+    for my $r (reverse qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->pop_reg($r); }
+
+
+    # 5. Move result from RAX to the virtual register
+    if (defined($dest)) {
+        $as->mov_reg($dest, 'rax') if $dest ne 'rax';
+    }
+                }
                 elsif ( $op eq 'sys_alloc' ) {
                     my $d  = $reg_map{ $inst->{dest} };
                     my $sz = $val->( $inst->{args}[0] );
                     if ( $pulse->os eq 'win64' ) {
-                        $as->sub_imm( 'rsp', 48 );
+
+                        # Windows VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect)
                         $as->mov_imm( 'rcx', 0 );
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rdx', $sz ); }
                         else                            { $as->mov_imm( 'rdx', $sz ); }
-                        $as->mov_imm( 'r8', 0x3000 );
-                        $as->mov_imm( 'r9', 0x04 );
-                        $as->call_rva( 0x3018, 0x1000 );
+                        $as->mov_imm( 'r8', 0x3000 );    # MEM_COMMIT | MEM_RESERVE
+                        $as->mov_imm( 'r9', 0x04 );      # PAGE_READWRITE
+
+                        # Standard calls must respect shadow space. Since enter_func provides 136 bytes,
+                        # simply calling is safe as long as we don't use more than 4 args or
+                        # we manually place the 5th+ args at [rsp+32].
+                        $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );
                         $as->mov_reg( $d, 'rax' );
-                        $as->add_imm( 'rsp', 48 );
                     }
                     else {
-                        $as->mov_imm( 'rax', 9 );    # sys_mmap
-
-                        # FIX: Load size into rsi FIRST. If $sz was in rdi,
-                        # moving 0 into rdi first would destroy the size.
+                        $as->mov_imm( 'rax', 9 );
+                        $as->mov_imm( 'rdi', 0 );
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rsi', $sz ); }
                         else                            { $as->mov_imm( 'rsi', $sz ); }
-                        $as->mov_imm( 'rdi', 0 );       # addr (NULL)
-                        $as->mov_imm( 'rdx', 3 );       # PROT_READ | PROT_WRITE
-                        $as->mov_imm( 'r10', 0x22 );    # MAP_PRIVATE | MAP_ANONYMOUS
-                        $as->mov_imm( 'r8',  -1 );      # fd
-                        $as->mov_imm( 'r9',  0 );       # offset
+                        $as->mov_imm( 'rdx', 3 );
+                        $as->mov_imm( 'r10', 0x22 );
+                        $as->mov_imm( 'r8',  -1 );
+                        $as->mov_imm( 'r9',  0 );
                         $as->syscall();
                         $as->mov_reg( $d, 'rax' );
+                    }
+                }
+                elsif ( $op eq 'sys_alloc_reserve' ) {
+                    my $d  = $reg_map{ $inst->{dest} };
+                    my $sz = $val->( $inst->{args}[0] );
+                    if ( $pulse->os eq 'win64' ) {
+                        $as->mov_imm( 'rcx', 0 );
+                        if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rdx', $sz ); }
+                        else                            { $as->mov_imm( 'rdx', $sz ); }
+                        $as->mov_imm( 'r8', 0x2000 );    # MEM_RESERVE
+                        $as->mov_imm( 'r9', 0x04 );      # PAGE_READWRITE
+                        $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );
+                        $as->mov_reg( $d, 'rax' );
+                    }
+                    else {
+                        $as->mov_imm( 'rax', 9 );
+                        $as->mov_imm( 'rdi', 0 );
+                        if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rsi', $sz ); }
+                        else                            { $as->mov_imm( 'rsi', $sz ); }
+                        $as->mov_imm( 'rdx', 0 );        # PROT_NONE
+                        $as->mov_imm( 'r10', 0x22 );
+                        $as->mov_imm( 'r8',  -1 );
+                        $as->mov_imm( 'r9',  0 );
+                        $as->syscall();
+                        $as->mov_reg( $d, 'rax' );
+                    }
+                }
+                elsif ( $op eq 'setup_page_fault_handler' ) {
+                    if ( $pulse->os eq 'win64' ) {
+                        $as->mov_imm( 'rcx', 1 );
+
+                        # Use lea_rva which inherently registers a fixup
+                        $as->lea_rva( 'rdx', 'M_veh_handler', $pulse->text_rva );
+                        $as->call_rva( $pulse->import_rva('AddVectoredExceptionHandler'), $pulse->text_rva );    # AddVectoredExceptionHandler
+                    }
+                    else {
+                        # Linux sigaction structure requires exact memory layout.
+                        # We use the pre-allocated stack space for this.
+                        $as->lea_rva( 'r11', 'M_segv_handler', $pulse->text_rva );
+                        $as->store_mem_disp_reg( 'rsp', 32, 'r11' );
+                        $as->mov_imm( 'r11', 4 );
+                        $as->store_mem_disp_reg( 'rsp', 40, 'r11' );    # SA_SIGINFO
+                        $as->mov_imm( 'r11', 0 );
+                        $as->store_mem_disp_reg( 'rsp', 48, 'r11' );
+                        $as->mov_imm( 'rax', 13 );                      # rt_sigaction
+                        $as->mov_imm( 'rdi', 11 );                      # SIGSEGV
+                        $as->lea_reg_disp( 'rsi', 'rsp', 32 );
+                        $as->mov_imm( 'rdx', 0 );
+                        $as->mov_imm( 'r10', 8 );
+                        $as->syscall();
+                    }
+                }
+                elsif ( $op eq 'emit_native_handlers' ) {
+                    if ( $pulse->os eq 'win64' ) {
+
+                        # WIN64 VEH HANDLER
+                        $as->mark_label('M_veh_handler');
+                        $as->load_reg_mem( 'rax', 'rcx', 0 ); # rax = ExceptionRecord
+                        # Load ExceptionCode (32-bit) from [rax]
+                        $as->append_code( pack( 'CCC', 0x44, 0x8B, 0x18 ) ); # mov r11d, [rax]
+                        $as->cmp_reg_imm_32( 'r11', 0xC0000005 );
+                        $as->jcc( 5, 'veh_not_handled' );                       # JNE
+                        $as->load_reg_mem( 'r8', 'rax', 40 );                   # ExceptionInformation[1] (Faulting Address)
+                        $as->mov_imm( 'r11', -4096 );
+                        $as->append_code( pack( 'CCC', 0x4D, 0x21, 0xD8 ) );    # AND r8, r11 (Align to page)
+                        $as->sub_imm( 'rsp', 40 );
+                        $as->mov_reg( 'rcx', 'r8' );
+                        $as->mov_imm( 'rdx', 4096 );
+                        $as->mov_imm( 'r8',  0x1000 );                          # MEM_COMMIT
+                        $as->mov_imm( 'r9',  4 );                               # PAGE_READWRITE
+                        $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );                        # VirtualAlloc
+                        $as->add_imm( 'rsp', 40 );
+                        $as->cmp_reg_imm( 'rax', 0 );
+                        $as->jcc( 4, 'veh_not_handled' );                       # JE
+                        $as->mov_imm( 'rax', -1 );                              # EXCEPTION_CONTINUE_EXECUTION
+                        $as->append_code( pack( 'C', 0xC3 ) );                  # RET
+                        $as->mark_label('veh_not_handled');
+                        $as->mov_imm( 'rax', 0 );                               # EXCEPTION_CONTINUE_SEARCH
+                        $as->append_code( pack( 'C', 0xC3 ) );
+                    }
+                    else {
+                        # LINUX SEGV HANDLER
+                        $as->mark_label('M_segv_handler');
+                        $as->load_reg_mem( 'rdi', 'rsi', 16 );                  # Extract fault address from siginfo_t
+                        $as->mov_imm( 'r11', -4096 );
+                        $as->append_code( pack( 'CCC', 0x48, 0x21, 0xDF ) );    # AND rdi, r11
+                        $as->mov_imm( 'rsi', 4096 );
+                        $as->mov_imm( 'rdx', 3 );                               # PROT_READ|WRITE
+                        $as->mov_imm( 'rax', 10 );                              # mprotect
+                        $as->syscall();
+                        $as->mov_imm( 'rax', 15 );                              # rt_sigreturn
+                        $as->syscall();
                     }
                 }
                 elsif ( $op eq 'load_mem_byte' ) {
@@ -244,27 +349,47 @@ package Brocken::Codegen {
                     $as->mov_imm( 'r11', $src ) if $inst->{args}[2] !~ /^%/;
                     $as->store_mem_disp_byte( $base, $disp, $src_reg );
                 }
-                elsif ( $op eq 'store_mem_idx_byte' ) {
-                    my $base    = $reg_map{ $inst->{args}[0] };
-                    my $idx     = $reg_map{ $inst->{args}[1] };
-                    my $src     = $val->( $inst->{args}[2] );
-                    my $src_reg = ( $inst->{args}[2] =~ /^%/ ) ? $src : 'r11';
-                    $as->mov_imm( 'r11', $src ) if $inst->{args}[2] !~ /^%/;
-                    $as->_emit_sib( 0x88, $src_reg, $base, $idx, 0 );
-                }
-                elsif ( $op eq 'load_mem_idx_byte' ) {
-                    my $dest = $reg_map{ $inst->{dest} };
-                    my $base = $reg_map{ $inst->{args}[0] };
-                    my $idx  = $reg_map{ $inst->{args}[1] };
-                    $as->_emit_sib( 0xB6, $dest, $base, $idx, 1, pack( 'C', 0x0F ) );
-                }
                 elsif ( $op eq 'load_mem_disp' ) {
                     $as->load_reg_mem( $reg_map{ $inst->{dest} }, $reg_map{ $inst->{args}[0] }, $inst->{args}[1] );
                 }
                 elsif ( $op eq 'store_mem_disp' ) {
                     $as->store_mem_disp_reg( $reg_map{ $inst->{args}[0] }, $inst->{args}[1], $val->( $inst->{args}[2] ) );
                 }
-                elsif ( $op eq 'get_arg' ) { $as->mov_reg( $reg_map{ $inst->{dest} }, $self->_abi_arg_reg( $inst->{args}[0], $pulse->os ) ); }
+                elsif ( $op eq 'load_iso_disp' ) {
+                    $as->load_reg_mem( $reg_map{ $inst->{dest} }, ( $arch eq 'x64' ? 'r14' : 'x27' ), $inst->{args}[0] );
+                }
+                elsif ( $op eq 'store_iso_disp' ) {
+                    $as->store_mem_disp_reg( ( $arch eq 'x64' ? 'r14' : 'x27' ), $inst->{args}[0], $val->( $inst->{args}[1] ) );
+                }
+                elsif ( $op eq 'get_arg' ) {
+                    $as->mov_reg( $reg_map{ $inst->{dest} }, $self->_abi_arg_reg( $inst->{args}[0], $pulse->os ) );
+                }
+                elsif ( $op eq 'set_isolate_ctx' ) {
+                    $as->mov_reg( ( $arch eq 'x64' ? 'r14' : 'x27' ), $reg_map{ $inst->{args}[0] } );
+                }
+                elsif ( $op eq 'get_isolate_ctx' ) {
+                    $as->mov_reg( $reg_map{ $inst->{dest} }, ( $arch eq 'x64' ? 'r14' : 'x27' ) );
+                }
+                elsif ( $op eq 'enter_func' ) {
+
+                  # Pushes 8 regs: rbp, rsi, rdi, rbx, r12, r13, r14, r15 (64 bytes)
+    # 64 (pushes) + 8 (rip) = 72. 72 + 136 = 208 (208 / 16 = 13, aligned!)
+    $as->append_code( pack( 'C*',
+        0x55, 0x56, 0x57, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, # Pushes
+        0x48, 0x89, 0xE5 # mov rbp, rsp
+    ));
+    $as->sub_imm( 'rsp', 136 ) if $arch eq 'x64';
+}
+elsif ( $op eq 'leave_func' ) {
+    my $rv = $val->( $inst->{args}[0] );
+    if ( defined $rv ) {
+        if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rax', $rv ) if $rv ne 'rax'; }
+        else                            { $as->mov_imm( 'rax', $rv ); }
+    }
+    $as->add_imm( 'rsp', 136 ) if $arch eq 'x64';
+    # Pop in exact reverse order
+    $as->append_code( pack( 'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0x5F, 0x5E, 0x5D, 0xC3 ) );
+}
                 elsif ( $op eq 'call_func' ) {
                     my $target = $inst->{args}[0];
                     my $dest   = $reg_map{ $inst->{dest} } if defined $inst->{dest};
@@ -272,57 +397,20 @@ package Brocken::Codegen {
                     for my $i ( 0 .. $#args ) {
                         my $arg     = $args[$i];
                         my $dst_abi = $self->_abi_arg_reg( $i, $pulse->os );
-                        if ( $arg =~ /^%/ ) { $as->mov_reg( $dst_abi, $reg_map{$arg} ); }
-                        else                { $as->mov_imm( $dst_abi, $arg ); }
+                        if ( $arg =~ /^%/ ) {
+                            $as->mov_reg( $dst_abi, $reg_map{$arg} );
+                        }
+                        elsif ( $arg =~ /^[A-Z_]/i ) {
+
+                            # It's a Label! Use LEA to get its memory address
+                            $as->lea_rva( $dst_abi, $arg, $pulse->text_rva );
+                        }
+                        else {
+                            $as->mov_imm( $dst_abi, $arg );
+                        }
                     }
                     $as->call_label($target);
                     if ( defined $dest ) { $as->mov_reg( $dest, 'rax' ); }
-                }
-                elsif ( $op eq 'enter_func' ) {
-                    if ( $arch eq 'x64' ) {
-
-                        # 1. push rbp; mov rbp, rsp
-                        # 2. push rbx, rsi, rdi, r12, r13, r14, r15 (7 registers)
-                        # Total pushed: 8 regs = 64 bytes.
-                        # Call pushes return addr (8 bytes). Total offset = 72.
-                        # sub rsp, 88 to reach 160 (aligned to 16).
-                        $as->append_code(
-                            pack(
-                                'C*', 0x55, 0x48, 0x89, 0xE5,    # push rbp, mov rbp, rsp
-                                0x53, 0x56, 0x57,                # push rbx, rsi, rdi
-                                0x41, 0x54, 0x41, 0x55,          # push r12, r13
-                                0x41, 0x56, 0x41, 0x57           # push r14, r15
-                            )
-                        );
-                        $as->sub_imm( 'rsp', 88 );
-                    }
-                }
-                elsif ( $op eq 'leave_func' ) {
-                    my $rv = $val->( $inst->{args}[0] );
-                    if ( defined $rv ) {
-                        if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rax', $rv ); }
-                        else                            { $as->mov_imm( 'rax', $rv ); }
-                    }
-                    if ( $arch eq 'x64' ) {
-                        $as->add_imm( 'rsp', 88 );
-
-                        # Pop in reverse: r15, r14, r13, r12, rdi, rsi, rbx, rbp
-                        $as->append_code(
-                            pack(
-                                'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C,    # r15-r12
-                                0x5F, 0x5E, 0x5B, 0x5D, 0xC3                             # rdi, rsi, rbx, rbp, ret
-                            )
-                        );
-                    }
-                }
-                elsif ( $op eq 'set_isolate_ctx' ) {
-                    $as->mov_reg( ( $arch eq 'x64' ? 'r14' : 'x27' ), $reg_map{ $inst->{args}[0] } );
-                }
-                elsif ( $op eq 'load_iso_disp' ) {
-                    $as->load_reg_mem( $reg_map{ $inst->{dest} }, ( $arch eq 'x64' ? 'r14' : 'x27' ), $inst->{args}[0] );
-                }
-                elsif ( $op eq 'store_iso_disp' ) {
-                    $as->store_mem_disp_reg( ( $arch eq 'x64' ? 'r14' : 'x27' ), $inst->{args}[0], $val->( $inst->{args}[1] ) );
                 }
             }
         }
