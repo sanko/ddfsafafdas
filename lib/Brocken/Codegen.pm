@@ -10,8 +10,15 @@ package Brocken::Codegen {
         method _abi_arg_reg( $idx, $os ) {
             if ( $arch eq 'arm64' ) { return "x$idx"; }
             else {
-                if   ( $os eq 'win64' ) { return (qw(rcx rdx r8 r9))[$idx]; }
-                else                    { return (qw(rdi rsi rdx rcx r8 r9))[$idx]; }
+                if ( $os eq 'win64' ) {
+
+                    # Windows x64: RCX, RDX, R8, R9
+                    return (qw(rcx rdx r8 r9))[$idx] // die "Too many args for Win64 ABI at index $idx";
+                }
+                else {
+                    # System V (Linux/macOS): RDI, RSI, RDX, RCX, R8, R9
+                    return (qw(rdi rsi rdx rcx r8 r9))[$idx] // die "Too many args for SysV ABI at index $idx";
+                }
             }
         }
 
@@ -107,13 +114,8 @@ package Brocken::Codegen {
                     my $char    = $val->( $inst->{args}[0] );
                     my $src_reg = ( $inst->{args}[0] =~ /^%/ ) ? $char : 'r11';
                     $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
-
-                    # Store char into pre-allocated stack space at rsp+64
                     $as->store_mem_disp_byte( 'rsp', 64, $src_reg );
                     if ( $pulse->os eq 'win64' ) {
-
-                        # Shadow space is effectively [rsp...rsp+31].
-                        # The 5th argument (LPOVERLAPPED) must be at [rsp+32].
                         $as->mov_imm( 'rcx', -11 );
                         $as->call_rva( $pulse->import_rva('GetStdHandle'), $pulse->text_rva );
                         $as->mov_reg( 'rcx', 'rax' );
@@ -121,7 +123,7 @@ package Brocken::Codegen {
                         $as->mov_imm( 'r8', 1 );
                         $as->lea_reg_disp( 'r9', 'rsp', 88 );
                         $as->mov_imm( 'r10', 0 );
-                        $as->store_mem_disp_reg( 'rsp', 32, 'r10' );    # 5th arg
+                        $as->store_mem_disp_reg( 'rsp', 32, 'r10' );
                         $as->call_rva( $pulse->import_rva('WriteFile'), $pulse->text_rva );
                     }
                     else {
@@ -177,59 +179,46 @@ package Brocken::Codegen {
                 elsif ( $op eq 'shadow_push' ) {
                     my $v   = $val->( $inst->{args}[0] );
                     my $iso = ( $arch eq 'x64' ? 'r14' : 'x27' );
-                    $as->load_reg_mem( 'r11', $iso,  $pulse->iso_offset('current_fcb') );    # r11 = Current FCB
-                    $as->load_reg_mem( 'r10', 'r11', $pulse->fcb_offset('shadow_ptr') );     # r10 = shadow_ptr
+                    $as->load_reg_mem( 'r11', $iso,  $pulse->iso_offset('current_fcb') );
+                    $as->load_reg_mem( 'r10', 'r11', $pulse->fcb_offset('shadow_ptr') );
                     if ( $inst->{args}[0] =~ /^%/ ) { $as->store_mem_disp_reg( 'r10', 0, $v ); }
                     else                            { $as->mov_imm( 'r9', $v ); $as->store_mem_disp_reg( 'r10', 0, 'r9' ); }
                     $as->add_imm( 'r10', 8 );
-                    $as->store_mem_disp_reg( 'r11', $pulse->fcb_offset('shadow_ptr'), 'r10' );    # Save updated shadow_ptr
+                    $as->store_mem_disp_reg( 'r11', $pulse->fcb_offset('shadow_ptr'), 'r10' );
                 }
                 elsif ( $op eq 'fiber_transfer' ) {
-                    my $target = $val->($inst->{args}[0]);
-    my $v      = $val->($inst->{args}[1]);
-    my $dest   = $reg_map{$inst->{dest}};
-    my $iso    = ($arch eq 'x64' ? 'r14' : 'x27');
+                    my $target = $val->( $inst->{args}[0] );
+                    my $v      = $val->( $inst->{args}[1] );
+                    my $dest   = $reg_map{ $inst->{dest} };
+                    my $iso    = ( $arch eq 'x64' ? 'r14' : 'x27' );
 
-    # 1. Store transfer value in RAX (to be picked up by the target fiber)
-    if ($inst->{args}[1] =~ /^%/) { $as->mov_reg('rax', $v) if $v ne 'rax'; }
-    else                          { $as->mov_imm('rax', $v); }
+                    # 1. Store transfer value in RAX (to be picked up by the target fiber)
+                    if ( $inst->{args}[1] =~ /^%/ ) { $as->mov_reg( 'rax', $v ) if $v ne 'rax'; }
+                    else                            { $as->mov_imm( 'rax', $v ); }
+                    for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
 
-        for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
+                    # 3. Symmetric Stack Swap
+                    $as->load_reg_mem( 'r11', $iso, $pulse->iso_offset('current_fcb') );
+                    $as->store_mem_disp_reg( 'r11',   $pulse->fcb_offset('sp'),          'rsp' );
+                    $as->store_mem_disp_reg( $target, $pulse->fcb_offset('caller'),      'r11' );
+                    $as->store_mem_disp_reg( $iso,    $pulse->iso_offset('current_fcb'), $target );
+                    $as->load_reg_mem( 'rsp', $target, $pulse->fcb_offset('sp') );
+                    for my $r ( reverse qw(rbp rsi rdi rbx r12 r13 r14 r15) ) { $as->pop_reg($r); }
 
-
-    # 3. Symmetric Stack Swap
-    $as->load_reg_mem('r11', $iso, $pulse->iso_offset('current_fcb'));         # r11 = Current FCB
-    $as->store_mem_disp_reg('r11', $pulse->fcb_offset('sp'), 'rsp');           # Current FCB->rsp = rsp
-    $as->store_mem_disp_reg($target, $pulse->fcb_offset('caller'), 'r11');     # Target FCB->caller = Current
-    $as->store_mem_disp_reg($iso, $pulse->iso_offset('current_fcb'), $target); # Active FCB = Target
-    $as->load_reg_mem('rsp', $target, $pulse->fcb_offset('sp'));               # rsp = Target FCB->rsp
-
-    # Restore target fiber's state
-    # Note: We pop in REVERSE order
-
-    for my $r (reverse qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->pop_reg($r); }
-
-
-    # 5. Move result from RAX to the virtual register
-    if (defined($dest)) {
-        $as->mov_reg($dest, 'rax') if $dest ne 'rax';
-    }
+                    # 5. Move result from RAX to the virtual register
+                    if ( defined($dest) ) {
+                        $as->mov_reg( $dest, 'rax' ) if $dest ne 'rax';
+                    }
                 }
                 elsif ( $op eq 'sys_alloc' ) {
                     my $d  = $reg_map{ $inst->{dest} };
                     my $sz = $val->( $inst->{args}[0] );
                     if ( $pulse->os eq 'win64' ) {
-
-                        # Windows VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect)
                         $as->mov_imm( 'rcx', 0 );
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rdx', $sz ); }
                         else                            { $as->mov_imm( 'rdx', $sz ); }
-                        $as->mov_imm( 'r8', 0x3000 );    # MEM_COMMIT | MEM_RESERVE
-                        $as->mov_imm( 'r9', 0x04 );      # PAGE_READWRITE
-
-                        # Standard calls must respect shadow space. Since enter_func provides 136 bytes,
-                        # simply calling is safe as long as we don't use more than 4 args or
-                        # we manually place the 5th+ args at [rsp+32].
+                        $as->mov_imm( 'r8', 0x3000 );
+                        $as->mov_imm( 'r9', 0x04 );
                         $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );
                         $as->mov_reg( $d, 'rax' );
                     }
@@ -253,8 +242,8 @@ package Brocken::Codegen {
                         $as->mov_imm( 'rcx', 0 );
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rdx', $sz ); }
                         else                            { $as->mov_imm( 'rdx', $sz ); }
-                        $as->mov_imm( 'r8', 0x2000 );    # MEM_RESERVE
-                        $as->mov_imm( 'r9', 0x04 );      # PAGE_READWRITE
+                        $as->mov_imm( 'r8', 0x2000 );
+                        $as->mov_imm( 'r9', 0x04 );
                         $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );
                         $as->mov_reg( $d, 'rax' );
                     }
@@ -263,7 +252,7 @@ package Brocken::Codegen {
                         $as->mov_imm( 'rdi', 0 );
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rsi', $sz ); }
                         else                            { $as->mov_imm( 'rsi', $sz ); }
-                        $as->mov_imm( 'rdx', 0 );        # PROT_NONE
+                        $as->mov_imm( 'rdx', 0 );
                         $as->mov_imm( 'r10', 0x22 );
                         $as->mov_imm( 'r8',  -1 );
                         $as->mov_imm( 'r9',  0 );
@@ -274,22 +263,18 @@ package Brocken::Codegen {
                 elsif ( $op eq 'setup_page_fault_handler' ) {
                     if ( $pulse->os eq 'win64' ) {
                         $as->mov_imm( 'rcx', 1 );
-
-                        # Use lea_rva which inherently registers a fixup
                         $as->lea_rva( 'rdx', 'M_veh_handler', $pulse->text_rva );
-                        $as->call_rva( $pulse->import_rva('AddVectoredExceptionHandler'), $pulse->text_rva );    # AddVectoredExceptionHandler
+                        $as->call_rva( $pulse->import_rva('AddVectoredExceptionHandler'), $pulse->text_rva );
                     }
                     else {
-                        # Linux sigaction structure requires exact memory layout.
-                        # We use the pre-allocated stack space for this.
                         $as->lea_rva( 'r11', 'M_segv_handler', $pulse->text_rva );
                         $as->store_mem_disp_reg( 'rsp', 32, 'r11' );
                         $as->mov_imm( 'r11', 4 );
-                        $as->store_mem_disp_reg( 'rsp', 40, 'r11' );    # SA_SIGINFO
+                        $as->store_mem_disp_reg( 'rsp', 40, 'r11' );
                         $as->mov_imm( 'r11', 0 );
                         $as->store_mem_disp_reg( 'rsp', 48, 'r11' );
-                        $as->mov_imm( 'rax', 13 );                      # rt_sigaction
-                        $as->mov_imm( 'rdi', 11 );                      # SIGSEGV
+                        $as->mov_imm( 'rax', 13 );
+                        $as->mov_imm( 'rdi', 11 );
                         $as->lea_reg_disp( 'rsi', 'rsp', 32 );
                         $as->mov_imm( 'rdx', 0 );
                         $as->mov_imm( 'r10', 8 );
@@ -298,56 +283,73 @@ package Brocken::Codegen {
                 }
                 elsif ( $op eq 'emit_native_handlers' ) {
                     if ( $pulse->os eq 'win64' ) {
-
-                        # WIN64 VEH HANDLER
                         $as->mark_label('M_veh_handler');
-                        $as->load_reg_mem( 'rax', 'rcx', 0 ); # rax = ExceptionRecord
-                        # Load ExceptionCode (32-bit) from [rax]
-                        $as->append_code( pack( 'CCC', 0x44, 0x8B, 0x18 ) ); # mov r11d, [rax]
+                        $as->load_reg_mem( 'rax', 'rcx', 0 );
+                        $as->append_code( pack( 'CCC', 0x44, 0x8B, 0x18 ) );
                         $as->cmp_reg_imm_32( 'r11', 0xC0000005 );
-                        $as->jcc( 5, 'veh_not_handled' );                       # JNE
-                        $as->load_reg_mem( 'r8', 'rax', 40 );                   # ExceptionInformation[1] (Faulting Address)
+                        $as->jcc( 5, 'veh_not_handled' );
+                        $as->load_reg_mem( 'r8', 'rax', 40 );
                         $as->mov_imm( 'r11', -4096 );
-                        $as->append_code( pack( 'CCC', 0x4D, 0x21, 0xD8 ) );    # AND r8, r11 (Align to page)
+                        $as->append_code( pack( 'CCC', 0x4D, 0x21, 0xD8 ) );
                         $as->sub_imm( 'rsp', 40 );
                         $as->mov_reg( 'rcx', 'r8' );
                         $as->mov_imm( 'rdx', 4096 );
-                        $as->mov_imm( 'r8',  0x1000 );                          # MEM_COMMIT
-                        $as->mov_imm( 'r9',  4 );                               # PAGE_READWRITE
-                        $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );                        # VirtualAlloc
+                        $as->mov_imm( 'r8',  0x1000 );
+                        $as->mov_imm( 'r9',  4 );
+                        $as->call_rva( $pulse->import_rva('VirtualAlloc'), $pulse->text_rva );
                         $as->add_imm( 'rsp', 40 );
                         $as->cmp_reg_imm( 'rax', 0 );
-                        $as->jcc( 4, 'veh_not_handled' );                       # JE
-                        $as->mov_imm( 'rax', -1 );                              # EXCEPTION_CONTINUE_EXECUTION
-                        $as->append_code( pack( 'C', 0xC3 ) );                  # RET
+                        $as->jcc( 4, 'veh_not_handled' );
+                        $as->mov_imm( 'rax', -1 );
+                        $as->append_code( pack( 'C', 0xC3 ) );
                         $as->mark_label('veh_not_handled');
-                        $as->mov_imm( 'rax', 0 );                               # EXCEPTION_CONTINUE_SEARCH
+                        $as->mov_imm( 'rax', 0 );
                         $as->append_code( pack( 'C', 0xC3 ) );
                     }
                     else {
-                        # LINUX SEGV HANDLER
                         $as->mark_label('M_segv_handler');
-                        $as->load_reg_mem( 'rdi', 'rsi', 16 );                  # Extract fault address from siginfo_t
+                        $as->load_reg_mem( 'rdi', 'rsi', 16 );
                         $as->mov_imm( 'r11', -4096 );
-                        $as->append_code( pack( 'CCC', 0x48, 0x21, 0xDF ) );    # AND rdi, r11
+                        $as->append_code( pack( 'CCC', 0x48, 0x21, 0xDF ) );
                         $as->mov_imm( 'rsi', 4096 );
-                        $as->mov_imm( 'rdx', 3 );                               # PROT_READ|WRITE
-                        $as->mov_imm( 'rax', 10 );                              # mprotect
+                        $as->mov_imm( 'rdx', 3 );
+                        $as->mov_imm( 'rax', 10 );
                         $as->syscall();
-                        $as->mov_imm( 'rax', 15 );                              # rt_sigreturn
+                        $as->mov_imm( 'rax', 15 );
                         $as->syscall();
                     }
                 }
                 elsif ( $op eq 'load_mem_byte' ) {
-                    $as->load_reg_mem_byte( $reg_map{ $inst->{dest} }, $reg_map{ $inst->{args}[0] }, $inst->{args}[1] );
+                    my $d    = $reg_map{ $inst->{dest} };
+                    my $base = $reg_map{ $inst->{args}[0] };
+                    my $idx  = $inst->{args}[1];
+                    if ( $idx =~ /^%/ ) {
+                        $as->mov_reg( 'r11', $base );
+                        $as->add_reg( 'r11', $reg_map{$idx} );
+                        $as->load_reg_mem_byte( $d, 'r11', 0 );
+                    }
+                    else {
+                        $as->load_reg_mem_byte( $d, $base, $idx );
+                    }
                 }
                 elsif ( $op eq 'store_mem_byte' ) {
                     my $base    = $reg_map{ $inst->{args}[0] };
-                    my $disp    = $inst->{args}[1];
+                    my $idx     = $inst->{args}[1];
                     my $src     = $val->( $inst->{args}[2] );
                     my $src_reg = ( $inst->{args}[2] =~ /^%/ ) ? $src : 'r11';
                     $as->mov_imm( 'r11', $src ) if $inst->{args}[2] !~ /^%/;
-                    $as->store_mem_disp_byte( $base, $disp, $src_reg );
+                    if ( $idx =~ /^%/ ) {
+
+                        # Manual address calculation for dynamic index
+                        $as->push_reg('rax');    # Use rax as temp to avoid r11 conflict
+                        $as->mov_reg( 'rax', $base );
+                        $as->add_reg( 'rax', $reg_map{$idx} );
+                        $as->store_mem_disp_byte( 'rax', 0, $src_reg );
+                        $as->pop_reg('rax');
+                    }
+                    else {
+                        $as->store_mem_disp_byte( $base, $idx, $src_reg );
+                    }
                 }
                 elsif ( $op eq 'load_mem_disp' ) {
                     $as->load_reg_mem( $reg_map{ $inst->{dest} }, $reg_map{ $inst->{args}[0] }, $inst->{args}[1] );
@@ -370,26 +372,24 @@ package Brocken::Codegen {
                 elsif ( $op eq 'get_isolate_ctx' ) {
                     $as->mov_reg( $reg_map{ $inst->{dest} }, ( $arch eq 'x64' ? 'r14' : 'x27' ) );
                 }
+                elsif ( $op eq 'align_fiber_stack' ) {
+                    if ( $arch eq 'x64' ) {
+                        $as->sub_imm( 'rsp', 8 );
+                    }
+                }
                 elsif ( $op eq 'enter_func' ) {
-
-                  # Pushes 8 regs: rbp, rsi, rdi, rbx, r12, r13, r14, r15 (64 bytes)
-    # 64 (pushes) + 8 (rip) = 72. 72 + 136 = 208 (208 / 16 = 13, aligned!)
-    $as->append_code( pack( 'C*',
-        0x55, 0x56, 0x57, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, # Pushes
-        0x48, 0x89, 0xE5 # mov rbp, rsp
-    ));
-    $as->sub_imm( 'rsp', 136 ) if $arch eq 'x64';
-}
-elsif ( $op eq 'leave_func' ) {
-    my $rv = $val->( $inst->{args}[0] );
-    if ( defined $rv ) {
-        if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rax', $rv ) if $rv ne 'rax'; }
-        else                            { $as->mov_imm( 'rax', $rv ); }
-    }
-    $as->add_imm( 'rsp', 136 ) if $arch eq 'x64';
-    # Pop in exact reverse order
-    $as->append_code( pack( 'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0x5F, 0x5E, 0x5D, 0xC3 ) );
-}
+                    $as->append_code( pack( 'C*', 0x55, 0x56, 0x57, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE5 ) );
+                    $as->sub_imm( 'rsp', 136 ) if $arch eq 'x64';
+                }
+                elsif ( $op eq 'leave_func' ) {
+                    my $rv = $val->( $inst->{args}[0] );
+                    if ( defined $rv ) {
+                        if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rax', $rv ) if $rv ne 'rax'; }
+                        else                            { $as->mov_imm( 'rax', $rv ); }
+                    }
+                    $as->add_imm( 'rsp', 136 ) if $arch eq 'x64';
+                    $as->append_code( pack( 'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0x5F, 0x5E, 0x5D, 0xC3 ) );
+                }
                 elsif ( $op eq 'call_func' ) {
                     my $target = $inst->{args}[0];
                     my $dest   = $reg_map{ $inst->{dest} } if defined $inst->{dest};
@@ -401,8 +401,6 @@ elsif ( $op eq 'leave_func' ) {
                             $as->mov_reg( $dst_abi, $reg_map{$arg} );
                         }
                         elsif ( $arg =~ /^[A-Z_]/i ) {
-
-                            # It's a Label! Use LEA to get its memory address
                             $as->lea_rva( $dst_abi, $arg, $pulse->text_rva );
                         }
                         else {
@@ -436,10 +434,8 @@ elsif ( $op eq 'leave_func' ) {
                 my $target = $ins->{target} // $ins->{true_l} // $ins->{false_l};
                 if ( defined $target && exists $label_pos{$target} ) {
                     my $tpos = $label_pos{$target};
-                    if ( $tpos < $i ) {    # Backward jump
+                    if ( $tpos < $i ) {
                         for my $r ( keys %live ) {
-
-                            # CHANGE: Use <= tpos to catch variables defined AT the label
                             if ( $live{$r}{start} <= $tpos && $live{$r}{end} >= $tpos ) {
                                 $live{$r}{end} = $i if $i > $live{$r}{end};
                             }
@@ -453,10 +449,6 @@ elsif ( $op eq 'leave_func' ) {
         method _allocate_registers( $live_ref, $pulse ) {
             my %live = %$live_ref;
             my %rmap;
-
-            # Pool: rbx, rbp, r12, r13, r15. (Total 5 on SysV, 6 on Win64)
-            # r14 is reserved for Isolate Context.
-            # r10, r11 are reserved as generator scratch.
             my @free;
             if ( $arch eq 'arm64' ) {
                 @free = qw(x19 x20 x21 x22 x23 x24 x25 x26 x28);
@@ -476,8 +468,6 @@ elsif ( $op eq 'leave_func' ) {
                 } @active;
                 my $phys = shift @free;
                 if ( !defined $phys ) {
-
-                    # Debug: show which vregs are hogging registers
                     die "Out of registers! Needed for $iv->{vreg}. Active: " . join( ", ", map {"$_->{vreg} ($_->{phys})"} @active ) . "\n";
                 }
                 $rmap{ $iv->{vreg} } = $phys;

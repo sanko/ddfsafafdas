@@ -3,7 +3,6 @@ package Brocken {
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
-    #
     use Brocken::AST;
     use Brocken::Compiler;
     use Brocken::Codegen;
@@ -16,11 +15,7 @@ package Brocken {
         field $type      : param : reader;
         field $is_state  : param : reader = 0;
         field $state_idx : param : reader = undef;
-
-        # For unboxed types (Int, String)
         field $ssa_reg;
-
-        # For boxed types (Any)
         field $ssa_tag_reg;
         field $ssa_payload_reg;
         method ssa_reg( $val = undef ) { $ssa_reg = $val if defined $val; return $ssa_reg; }

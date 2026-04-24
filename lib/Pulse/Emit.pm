@@ -45,15 +45,12 @@ package Pulse::Emit {
         field @fixups;
         method reg($r)           { $REG{ lc $r } // die "Unknown ARM64 register: $r" }
         method append_code($bin) { $code .= $bin }
-        method push_reg($reg)    { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF81F0FE0 | $r ); }    # STR Xr, [SP, #-16]!
-        method pop_reg($reg)     { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF84107E0 | $r ); }    # LDR Xr, [SP], #16
+        method push_reg($reg)    { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF81F0FE0 | $r ); }
+        method pop_reg($reg)     { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF84107E0 | $r ); }
         method push_imm($imm)    { $self->mov_imm( 'x16', $imm ); $self->push_reg('x16'); }
 
-        # In Pulse::Emit::X64
         method mov_imm( $r, $imm ) {
             my $ri = $self->reg($r);
-
-            # REX.W (1) and REX.B (ri >= 8)
             $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'Cq<', 0xB8 + ( $ri & 7 ), $imm );
         }
         method mov_reg( $dest, $src ) { my $d = $self->reg($dest); my $s = $self->reg($src); $code .= pack( 'L<', 0xAA0003E0 | ( $s << 16 ) | $d ) }
@@ -85,20 +82,15 @@ package Pulse::Emit {
             $code .= pack( 'L<', 0xEA000000 | ( $rd << 16 ) | 31 | ( $ld << 5 ) );
         }
 
-        # ARM64 Pointer Ops
         method load_reg_mem( $dest, $src, $disp = 0 ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
-
-            # LDR d, [s, #imm]
             $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( $s << 5 ) | $d );
         }
 
         method load_reg_mem_byte( $dest, $src, $disp = 0 ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
-
-            # LDRB (unsigned byte)
             $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( $s << 5 ) | $d );
         }
 
@@ -146,9 +138,9 @@ package Pulse::Emit {
             my $off = $trva - ( $txtrva + length($code) );
             my $lo  = $off & 0x3;
             my $hi  = ( $off >> 2 ) & 0x7FFFF;
-            $code .= pack( 'L<', 0x10000000 | ( $lo << 29 ) | ( $hi << 5 ) | 16 );    # ADR x16
-            $code .= pack( 'L<', 0xF9400210 );                                        # LDR x16, [x16]
-            $code .= pack( 'L<', 0xD63F0200 );                                        # BLR x16
+            $code .= pack( 'L<', 0x10000000 | ( $lo << 29 ) | ( $hi << 5 ) | 16 );
+            $code .= pack( 'L<', 0xF9400210 );
+            $code .= pack( 'L<', 0xD63F0200 );
         }
     }
 
@@ -192,12 +184,7 @@ package Pulse::Emit {
             if ( $ri >= 8 ) { $rex |= 0x04; }
             if ( $xi >= 8 ) { $rex |= 0x02; }
             if ( $bi >= 8 ) { $rex |= 0x01; }
-
-            # CRITICAL: If using registers 4-7 in a byte op (w=0),
-            # REX is REQUIRED to distinguish SIL/DIL/BPL/SPL from AH/CH/DH/BH.
-            if ( !$w && ( ( $ri >= 4 && $ri <= 7 ) || ( $bi >= 4 && $bi <= 7 ) ) ) {
-                return pack( 'C', $rex );
-            }
+            if ( !$w && ( ( $ri >= 4 && $ri <= 7 ) || ( $bi >= 4 && $bi <= 7 ) ) ) { return pack( 'C', $rex ); }
             return ( $rex == 0x40 && !$w ) ? '' : pack( 'C', $rex );
         }
 
@@ -221,8 +208,6 @@ package Pulse::Emit {
             $code .= $self->_rex( $w, $ri, $ii, $bi );
             $code .= $prefix if $prefix;
             $code .= pack( 'C', $opcode );
-
-            # If base is RBP or R13, we must use mod 01 with a 0 displacement
             my $mod = 0;
             if ( ( $bi & 7 ) == 5 ) { $mod = 1; }
             $code .= pack( 'C', ( $mod << 6 ) | ( ( $ri & 7 ) << 3 ) | 4 );
@@ -311,18 +296,19 @@ package Pulse::Emit {
             $code .= $self->_rex( 1, $ri, 0, $li ) . pack( 'CC', 0x39, 0xC0 | ( ( $ri & 7 ) << 3 ) | ( $li & 7 ) );
         }
 
+        method lea_rva( $reg, $target, $txtrva = 0 ) {
+            my $ri       = $self->reg($reg);
+            my $base_rva = $txtrva // 0;
+            if ( $target =~ /^[A-Z_]/i ) {
 
-
-        method lea_rva( $reg, $target, $txtrva ) {
-            my $ri   = $self->reg($reg);
-            if ($target =~ /^[A-Z_]/i) {
-                # It's a Label! Register a 32-bit relative fixup
+                # It's a Label!
                 $code .= $self->_rex( 1, $ri, 0, 0 ) . pack( 'CC', 0x8D, 0x05 | ( ( $ri & 7 ) << 3 ) );
                 push @fixups, { offset => length($code), target => $target };
-                $code .= pack( 'L<', 0 ); # Placeholder
-            } else {
-                # It's an absolute offset number
-                my $next = $txtrva + length($code) + 7;
+                $code .= pack( 'L<', 0 );
+            }
+            else {
+                # It's a numeric offset (Data Segment)
+                my $next = $base_rva + length($code) + 7;
                 $code .= $self->_rex( 1, $ri, 0, 0 ) . pack( 'CC l<', 0x8D, 0x05 | ( ( $ri & 7 ) << 3 ), $target - $next );
             }
         }

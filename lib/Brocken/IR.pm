@@ -29,7 +29,7 @@ class Brocken::IR::Builder {
             if ( $i->{args} ) {
                 @al = map {
                     if    ( !defined($_) )               {"undef"}
-                    elsif ( ref($_) && $_->can('dump') ) { $_->dump }                 # Call our new dump method
+                    elsif ( ref($_) && $_->can('dump') ) { $_->dump }
                     elsif ( ref($_) )                    { "OBJ(" . ref($_) . ")" }
                     else                                 {$_}
                 } @{ $i->{args} };

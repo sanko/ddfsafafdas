@@ -86,8 +86,6 @@ my Any $arr = 0;
 my Any $fused = map { $_ - 5 } map { $_ * 2 } map { $_ + 1 } $arr;
 say "Milestone 5 Complete! 🚀";
 BROCKEN
-
-
 $source_code = <<'BROCKEN';
 method multiply(Int $val, Int $factor) {
     return $val * $factor;
@@ -135,8 +133,6 @@ my Int $x = 10;
 my Int $y = multiply($x, 2);
 exit $y + 22; # Exit natively instead of return
 BROCKEN
-
-
 say "Bootstrapping Brocken...";
 my $p = Pulse::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
@@ -153,6 +149,7 @@ $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
 $lowering->builder->dump_ir("OPTIMIZED IR");
 my $exe = $p->format->write_bin( 'brocken_out' . ( $p->os eq 'win64' ? '.exe' : '' ), $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
-say "Executing Native Binary...";
-system( $^O eq 'MSWin32' ? $exe : "./$exe" );
-say "Exit code: " . ( $? >> 8 );
+
+#~ say "Executing Native Binary...";
+#~ system( $^O eq 'MSWin32' ? $exe : "./$exe" );
+#~ say "Exit code: " . ( $? >> 8 );

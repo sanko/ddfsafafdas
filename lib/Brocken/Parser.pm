@@ -54,16 +54,17 @@ class Brocken::Parser {
             $self->expect('}');
             my $source = $self->parse_expression(25);
             $left = Brocken::AST::Map->new( expr => $expr, source => $source );
-        }elsif ( $tok->{value} eq 'fiber' ) {
-                $self->advance();
-                my $block = $self->parse_block();
-                $left = Brocken::AST::FiberBlock->new( body => $block );
-            }
-            elsif ( $tok->{value} eq 'yield' ) {
-                $self->advance();
-                my $expr = $self->parse_expression(0);
-                $left = Brocken::AST::Yield->new( expr => $expr );
-            }
+        }
+        elsif ( $tok->{value} eq 'fiber' ) {
+            $self->advance();
+            my $block = $self->parse_block();
+            $left = Brocken::AST::FiberBlock->new( body => $block );
+        }
+        elsif ( $tok->{value} eq 'yield' ) {
+            $self->advance();
+            my $expr = $self->parse_expression(0);
+            $left = Brocken::AST::Yield->new( expr => $expr );
+        }
         else { die "Unexpected token in expr: $tok->{value} at L:$tok->{line}\n"; }
         while ( $precedence < ( $PRECEDENCE{ $self->current->{value} } // 0 ) ) {
             my $op = $self->current->{value};
@@ -109,7 +110,6 @@ class Brocken::Parser {
             $self->expect(';');
             return Brocken::AST::Exit->new( expr => $expr );
         }
-
         if ( $tok->{value} =~ /^(print|say)$/ ) {
             my $name = $tok->{value};
             $self->advance();
