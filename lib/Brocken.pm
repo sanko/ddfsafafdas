@@ -28,9 +28,11 @@ package Brocken {
     class Brocken::Scope {
         field $parent : param : reader = undef;
         field %symbols;
+
         method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef ) {
             die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
-            return $symbols{$name} = Brocken::Symbol->new( name => $name, type => $type, is_state => $is_state, state_idx => $state_idx, stack_offset => $stack_offset );
+            return $symbols{$name}
+                = Brocken::Symbol->new( name => $name, type => $type, is_state => $is_state, state_idx => $state_idx, stack_offset => $stack_offset );
         }
         method resolve($name) { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
     }

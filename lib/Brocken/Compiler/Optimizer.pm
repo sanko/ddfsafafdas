@@ -6,15 +6,16 @@ package Brocken::Compiler::Optimizer {
     use Brocken::AST;
 
     class Brocken::Compiler::Optimizer {
+
         method optimize($builder) {
             my @instructions = $builder->instructions();
             return unless @instructions;
             my $changed = 1;
             while ($changed) {
                 $changed = 0;
-                my (%def, %use_count, %shadow_map);
+                my ( %def, %use_count, %shadow_map );
                 for my $i (@instructions) {
-                    next if $i->{op} eq 'nop';
+                    next                    if $i->{op} eq 'nop';
                     $def{ $i->{dest} } = $i if defined $i->{dest};
                     if ( $i->{args} ) {
                         for my $arg ( @{ $i->{args} } ) { $use_count{$arg}++ if $arg && !ref($arg) && $arg =~ /^%/; }
@@ -38,10 +39,15 @@ package Brocken::Compiler::Optimizer {
             }
             $builder->set_instructions(@instructions);
         }
+
         method substitute_ast( $node, $var_name, $repl_node ) {
             if ( $node isa Brocken::AST::Var ) { return $node->name eq $var_name ? $repl_node : $node; }
             if ( $node isa Brocken::AST::BinOp ) {
-                return Brocken::AST::BinOp->new( op => $node->op, left => $self->substitute_ast( $node->left, $var_name, $repl_node ), right => $self->substitute_ast( $node->right, $var_name, $repl_node ) );
+                return Brocken::AST::BinOp->new(
+                    op    => $node->op,
+                    left  => $self->substitute_ast( $node->left,  $var_name, $repl_node ),
+                    right => $self->substitute_ast( $node->right, $var_name, $repl_node )
+                );
             }
             if ( $node isa Brocken::AST::Const ) { return $node; }
             die 'Optimizer Error: Unhandled AST node ' . ref($node);

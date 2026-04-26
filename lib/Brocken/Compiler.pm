@@ -26,34 +26,39 @@ package Brocken::Compiler {
             elsif ( $os eq 'macos' ) { $format = Brocken::Format::MachO->new() }
             else                     { $format = Brocken::Format::ELF->new() }
         }
-        method text_rva ()        { $format->rva_for( '.text' ) }
-        method data_rva ()        { $format->rva_for( '.data' ) }
-        method idata_rva ()       { $format->rva_for( '.idata' ) }
+        method text_rva ()        { $format->rva_for('.text') }
+        method data_rva ()        { $format->rva_for('.data') }
+        method idata_rva ()       { $format->rva_for('.idata') }
         method import_rva ($name) { $format->import_rva($name) }
         method local_ptr ()       { return $local_ptr; }
         method set_local_ptr ($v) { $local_ptr = $v; }
         method reset_locals ()    { $local_ptr = 0; }
+
         method alloc_local_slot () {
             $local_ptr += 8;
             die 'Stack Overflow: Local variable space exceeded' if $local_ptr > 128;
             return $local_ptr;
         }
-        method frame_reg_size () {64}
+        method frame_reg_size ()   {64}
         method frame_local_size () {168}
+
         method iso_offset ($name) {
             state $ISO = { heap_ptr => 0, heap_limit => 8, state_ptr => 16, current_fcb => 24, };
             die 'Unknown Isolate offset: ' . $name unless exists $ISO->{$name};
             return $ISO->{$name};
         }
+
         method fcb_offset ($name) {
             state $FCB = { sp => 0, stack_base => 8, shadow_base => 16, shadow_ptr => 24, caller => 32, };
             die 'Unknown FCB offset: ' . $name unless exists $FCB->{$name};
             return $FCB->{$name};
         }
+
         method cc ($name) {
             return { eq => 0, ne => 1, lt => 0xB, gt => 0xC, z => 0, nz => 1 }->{$name} if $arch eq 'arm64';
             return { eq => 4, ne => 5, lt => 0xC, gt => 0xF, z => 4, nz => 5 }->{$name};
         }
+
         method exit_reg ($reg) {
             my $r_name = $reg // ( $arch eq 'arm64' ? 'xzr' : 'rax' );
             if ( $os eq 'linux' || $os eq 'macos' ) {
@@ -61,16 +66,19 @@ package Brocken::Compiler {
                     $as->mov_imm( $os eq 'macos' ? 'x16' : 'x8', $os eq 'macos' ? 0x2000001 : 93 );
                     $as->mov_reg( 'x0', $r_name ) if $r_name ne 'x0';
                     $as->syscall( $os eq 'macos' );
-                } else {
+                }
+                else {
                     $as->mov_imm( 'rax', $os eq 'macos' ? 0x2000001 : 60 );
                     $as->mov_reg( 'rdi', $r_name ) if $r_name ne 'rdi';
                     $as->syscall();
                 }
-            } else {
+            }
+            else {
                 if ( $arch eq 'arm64' ) {
                     $as->mov_reg( 'x0', $r_name ) if $r_name ne 'x0';
                     $as->call_rva( $self->import_rva('ExitProcess'), $self->text_rva );
-                } else { $as->mov_reg( 'rcx', $r_name ) if $r_name ne 'rcx'; $as->call_rva( $self->import_rva('ExitProcess'), $self->text_rva ); }
+                }
+                else { $as->mov_reg( 'rcx', $r_name ) if $r_name ne 'rcx'; $as->call_rva( $self->import_rva('ExitProcess'), $self->text_rva ); }
             }
         }
     }
