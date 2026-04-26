@@ -6,149 +6,60 @@ no warnings 'portable', 'experimental::class';
 use lib 'lib';
 use Brocken;
 $|++;
+
 my $source_code = <<'BROCKEN';
-# 1. Method Definition (Milestone 3!)
-method multiply(Int $val, Int $factor) {
-    say "Multiplying...";
-    return $val * $factor;
-}
+class User {
+    field $id;
+    field $status;
 
-my Int $countdown = 3;
-while ($countdown > 0) {
-    if ($countdown == 2) {
-        say "Almost there...";
-    } else {
-        say "Counting...";
+    method set_id(Int $val) {
+        $id = $val;
+        $status = 1;
     }
-    $countdown = $countdown - 1;
+
+    method get_id() {
+        return $id;
+    }
 }
 
-my Int $x = 10;
-{
-    my Int $x = 32; # Inner scope shadows outer scope
-}
+say "Booting Brocken Runtime... ❤️😭";
 
-say "Blast off!";
-# 2. Map Loop Fusion Test
-my Any $arr = 0;
-my Any $fused = map { $_ - 5 } map { $_ * 2 } map { $_ + 1 } $arr;
+# Milestone 8: Test Native OOP & Static Dispatch
+my Any $u = User->new();
+$u->set_id(42);
 
-# 3. Main script logic using method call
-say "Brocken Milestone 3 Complete! 🚀";
-
-print "你好";
-
-my Int $y = multiply($x, 2); # Calls our method above!
-return $y;
-# $y should be 20. Return 20 + 22 = 42.
-say "Blast off!";
-return $y + 22;
+say "Brocken executed successfully!";
+exit $u->get_id();
 BROCKEN
-$source_code = <<'BROCKEN';
-# 1. State Variable Test (Milestone 5)
-method generate_id() {
-    state Int $counter = 0;
-    $counter = $counter + 1;
-    return $counter;
-}
 
-method generate_id_alt(Int $inc) {
-    say $inc;
-    state Int $counter = 0;
-    $counter = $counter + $inc;
-    return $counter;
-}
-
-say "Testing Isolate-Local State";
-say generate_id(); # 1
-say generate_id(); # 2
-say generate_id_alt(1); # 1
-say generate_id(); # 3
-say generate_id_alt(10); # 11
-say generate_id_alt(5); # 16
-say generate_id_alt(5); # 21
-
-# 2. GC Region Allocator Test (Milestone 5)
-say "Testing Region Heap Allocation";
-my Int $i = 0;
-while ($i < 10000) {
-    # Each array uses 48 bytes. 10,000 * 48 = 480KB.
-    # This proves the Region Allocator successfully requests
-    # new 64KB OS memory chunks behind the scenes!
-    my Any $tmp = [1, 2, 3];
-    $i = $i + 1;
-}
-say "Survived 10,000 dynamic heap allocations!";
-
-# 3. Futhark Fusion
-my Any $arr = 0;
-my Any $fused = map { $_ - 5 } map { $_ * 2 } map { $_ + 1 } $arr;
-say "Milestone 5 Complete! 🚀";
-BROCKEN
-$source_code = <<'BROCKEN';
-method multiply(Int $val, Int $factor) {
-    return $val * $factor;
-}
-
-# 1. State Variable Test
-method generate_id() {
-    state Int $counter = 0;
-    $counter = $counter + 1;
-    return $counter;
-}
-
-say "Testing Isolate-Local State";
-say generate_id(); # 1
-say generate_id(); # 2
-
-# 2. GC Region Allocator Test
-say "Testing Region Heap Allocation";
-my Int $i = 0;
-while ($i < 10000) {
-    my Any $tmp =[1, 2, 3];
-    $i = $i + 1;
-}
-say "Survived 10,000 dynamic heap allocations!";
-
-# 3. Fiber and Dynamic Stack Page Faults
-say "Testing Fibers & Virtual Stacks";
-my Any $fib = fiber {
-    say "Inside fiber!";
-    yield 42;
-    say "Resumed fiber!";
-    yield 99;
-};
-
-say "Transferring to fiber...";
-my Any $r1 = transfer($fib, 0);
-say $r1; # 42
-say "Transferring again...";
-my Any $r2 = transfer($fib, 0);
-say $r2; # 99
-
-# 4. Exit Keyword
-say "Milestone 6 Complete! 🚀";
-my Int $x = 10;
-my Int $y = multiply($x, 2);
-
-exit $y + 22; # Exit natively instead of return
-BROCKEN
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
-my $tokens   = Brocken::Lexer->new( source => $source_code )->lex();
-my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-my $ds       = Brocken::Compiler::DataSegment->new();
+
+my $tokens = Brocken::Lexer->new( source => $source_code )->lex();
+my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+my $ds     = Brocken::Compiler::DataSegment->new();
+
 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $p );
 $lowering->lower_program($ast);
+
 my $optimizer = Brocken::Compiler::Optimizer->new();
-$lowering->builder->dump_ir('ORIGINAL IR');
 $optimizer->optimize( $lowering->builder );
-$lowering->builder->dump_ir("OPTIMIZED IR");
+
+$lowering->builder->dump_ir("FINAL IR");
+
+my $est_text = scalar($lowering->builder->instructions) * 32 + 4096;
+my $est_data = length($ds->get_raw_data()) + 4096;
+$p->format->pre_layout($est_text, $est_data, $p->arch, $p->os);
+
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
-$codegen->compile( [ $lowering->builder->instructions() ], $p );
+$codegen->compile([ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
-my $exe = $p->format->write_bin( 'brocken_out' . ( $p->os eq 'win64' ? '.exe' : '' ), $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
+
+my $ext = $p->os eq 'win64' ? '.exe' : '';
+my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
+
 say "Executing Native Binary...";
-system( $^O eq 'MSWin32' ? $exe : "./$exe" );
+my $run = $^O eq 'MSWin32' ? $exe : "./$exe";
+system($run);
 say "Exit code: " . ( $? >> 8 );

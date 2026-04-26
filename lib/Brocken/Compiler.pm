@@ -26,9 +26,9 @@ package Brocken::Compiler {
             elsif ( $os eq 'macos' ) { $format = Brocken::Format::MachO->new() }
             else                     { $format = Brocken::Format::ELF->new() }
         }
-        method text_rva ()        { $format->rva_for( '.text',  $arch, $os ) }
-        method data_rva ()        { $format->rva_for( '.data',  $arch, $os ) }
-        method idata_rva ()       { $format->rva_for( '.idata', $arch, $os ) }
+        method text_rva ()        { $format->rva_for( '.text' ) }
+        method data_rva ()        { $format->rva_for( '.data' ) }
+        method idata_rva ()       { $format->rva_for( '.idata' ) }
         method import_rva ($name) { $format->import_rva($name) }
         method local_ptr ()       { return $local_ptr; }
         method set_local_ptr ($v) { $local_ptr = $v; }

@@ -7,16 +7,13 @@ class Brocken::IR::Builder {
     field @instructions : reader;
     field $reg_count   = 0;
     field $label_count = 0;
+
     method new_reg()               { return '%' . ++$reg_count; }
     method new_label()             { return 'L' . ++$label_count; }
     method set_instructions(@inst) { @instructions = @inst }
 
     method emit( $op, $type, $args, $dest = undef ) {
-
-        # Only assign a new virtual register if type is not void and no dest provided
-        if ( !defined($dest) && $type ne 'void' ) {
-            $dest = $self->new_reg();
-        }
+        if ( !defined($dest) && $type ne 'void' ) { $dest = $self->new_reg(); }
         push @instructions, { op => $op, type => $type, dest => $dest, args => $args };
         return $dest;
     }
@@ -30,21 +27,11 @@ class Brocken::IR::Builder {
             my $op   = $i->{op}   // '???';
             my $dest = $i->{dest} // '';
             my @al;
-            if ( $i->{args} ) {
-                @al = map {
-                    if    ( !defined($_) )               {'undef'}
-                    elsif ( ref($_) && $_->can('dump') ) { $_->dump }
-                    elsif ( ref($_) )                    { 'OBJ(' . ref($_) . ')' }
-                    else                                 {$_}
-                } @{ $i->{args} };
-            }
+            if ( $i->{args} ) { @al = map { !defined($_) ? 'undef' : (ref($_) ? 'OBJ' : $_) } @{ $i->{args} }; }
             elsif ( $i->{target} ) { push @al, 'target:' . $i->{target}; }
             elsif ( $i->{name} )   { push @al, 'name:' . $i->{name}; }
-            elsif ( $i->{op} eq 'cond_br' ) {
-                push @al, 'reg:' . $i->{reg} . ' true:' . $i->{true_l} . ' false:' . $i->{false_l};
-            }
-            my $args = join( ', ', @al );
-            say sprintf( '  %-3s %-15s %-5s [%s]', ( $dest ? $dest : '' ), $op, ( $i->{type} // '' ), $args );
+            elsif ( $i->{op} eq 'cond_br' ) { push @al, 'reg:' . $i->{reg} . ' t:' . $i->{true_l} . ' f:' . $i->{false_l}; }
+            say sprintf( '  %-3s %-15s %-5s [%s]', ( $dest ? $dest : '' ), $op, ( $i->{type} // '' ), join( ', ', @al ) );
         }
     }
 };

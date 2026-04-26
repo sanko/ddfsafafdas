@@ -9,14 +9,8 @@ class Brocken::Lexer {
     field $line = 1;
     field $col  = 1;
     my %KEYWORDS = map { $_ => 1 } qw[
-        my our state
-        class method field
-        return exit
-        fiber yield
-        if else
-        while for map
-        say print
-        Int String Any];
+        my our state class method field return exit fiber yield
+        if else while for map say print Int String Any];
 
     method lex() {
         my @tokens;
@@ -27,12 +21,9 @@ class Brocken::Lexer {
             if ( $remaining =~ /^(#.*)/ ) { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(\d+)/ ) { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^"([^"\\]*(?:\\.[^"\\]*)*)"/s ) {
-                my $val = $1;
-                $val =~ s/\\n/\n/g;
-                $val =~ s/\\"/"/g;
+                my $val = $1; $val =~ s/\\n/\n/g; $val =~ s/\\"/"/g;
                 push @tokens, $self->_make_token( 'STRING', $val );
-                $self->_advance( length($&) );
-                next;
+                $self->_advance( length($&) ); next;
             }
             if ( $remaining =~ /^([\$@%]?[a-zA-Z_]\w*)/ ) {
                 my $val  = $1;
@@ -40,21 +31,18 @@ class Brocken::Lexer {
                 if    ( $val =~ /^[\$@%]/ ) { $type = 'VAR'; }
                 elsif ( $KEYWORDS{$val} )   { $type = 'KEYWORD'; }
                 push @tokens, $self->_make_token( $type, $val );
-                $self->_advance( length($val) );
-                next;
+                $self->_advance( length($val) ); next;
             }
             if ( $remaining =~ /^(==|!=|<=|>=|=>|->)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
-            if ( $remaining =~ /^([+\-*\/=<>])/ )       { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
-            if ( $remaining =~ /^([{};(),\[\]])/ )      { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1);            next; }
+            if ( $remaining =~ /^([+\-*\/=<>])/ )       { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1); next; }
+            if ( $remaining =~ /^([{};(),\[\]])/ )      { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1); next; }
             die sprintf( "Lexer Error at L:%d C:%d: Unrecognized char '%s'\n", $line, $col, substr( $source, $pos, 1 ) );
         }
         push @tokens, $self->_make_token( 'EOF', 'EOF' );
         return \@tokens;
     }
-
     method _advance($len) {
-        my $str = substr( $source, $pos, $len );
-        $pos += $len;
+        my $str = substr( $source, $pos, $len ); $pos += $len;
         while ( $str =~ /\n/g ) { $line++; $col = 1; }
         if ( $str =~ /([^\n]+)$/ ) { $col += length($1); }
     }
