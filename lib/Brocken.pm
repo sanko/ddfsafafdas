@@ -5,10 +5,17 @@ package Brocken {
     no warnings 'portable', 'experimental::class';
     use Brocken::AST;
     use Brocken::Compiler;
+    use Brocken::Compiler::Lowering;
+    use Brocken::Compiler::Optimizer;
+    use Brocken::Compiler::DataSegment;
     use Brocken::Codegen;
     use Brocken::Lexer;
     use Brocken::Parser;
     use Brocken::IR;
+
+    package Brocken::Util {
+        sub align ( $val, $align ) { ( $val + $align - 1 ) & ~( $align - 1 ) }
+    }
 
     class Brocken::Symbol {
         field $name         : param : reader;
@@ -21,11 +28,9 @@ package Brocken {
     class Brocken::Scope {
         field $parent : param : reader = undef;
         field %symbols;
-
         method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef ) {
             die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
-            return $symbols{$name}
-                = Brocken::Symbol->new( name => $name, type => $type, is_state => $is_state, state_idx => $state_idx, stack_offset => $stack_offset );
+            return $symbols{$name} = Brocken::Symbol->new( name => $name, type => $type, is_state => $is_state, state_idx => $state_idx, stack_offset => $stack_offset );
         }
         method resolve($name) { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
     }

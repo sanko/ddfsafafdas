@@ -7,6 +7,7 @@
 - [x] Mach-O (macOS) Formatter.
 - [x] Position Independent Code (ASLR support).
 - [x] Basic System Calls / WinAPI Imports.
+- [x] Automated Layout Manager (Section & Offset tracking).
 
 ## **Milestone 1: The IR & Optimizer Pipeline**
 - [x] Lexer, Parser, and AST Generation.
