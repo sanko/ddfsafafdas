@@ -200,7 +200,7 @@ elsif ( $op eq 'shadow_push' ) {
                     }
                     $as->call_label($target); if ( defined $dest ) { $as->mov_reg( $dest, 'rax' ); }
                 }
-                elsif ( $op eq 'sys_alloc' ) {
+elsif ( $op eq 'sys_alloc' ) {
                     my $d  = $reg_map{ $inst->{dest} }; my $sz = $val->( $inst->{args}[0] );
                     if ( $driver->os eq 'win64' ) {
                         $as->mov_imm( 'rcx', 0 );
@@ -211,7 +211,7 @@ elsif ( $op eq 'shadow_push' ) {
                     } else {
                         $as->mov_imm( 'rax', 9 ); $as->mov_imm( 'rdi', 0 );
                         if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rsi', $reg_map{$inst->{args}[0]} ); } else { $as->mov_imm( 'rsi', $sz ); }
-                        $as->mov_imm( 'rdx', 3 ); $as->mov_imm( 'r10', 0x22 ); $as->mov_imm( 'r8',  -1 ); $as->mov_imm( 'r9',  0 );
+                        $as->mov_imm( 'rdx', 3 ); $as->mov_imm( 'r10', 0x22 ); $as->mov_imm( 'r8',  -1 ); $as->mov_imm( 'r9', 0 );
                         $as->syscall(); $as->mov_reg( $d, 'rax' );
                     }
                 }
@@ -288,7 +288,7 @@ elsif ( $op eq 'shadow_push' ) {
             if ( $arch eq 'arm64' ) { @free = qw(x19 x20 x21 x22 x23 x24 x25 x26 x28); }
             else {
                 if ( $driver->os eq 'win64' ) { @free = qw(rbx rsi rdi r12 r13 r15 r8 r9 r10); }
-                else { @free = qw(rbx r12 r13 r15 r8 r9 r10); }
+                else { @free = qw(rbx r12 r13 r15); }
             }
             my @intervals = sort { ( $a->{start} // 0 ) <=> ( $b->{start} // 0 ) } map { { vreg => $_, %{ $live{$_} } } } keys %live;
             my @active;
