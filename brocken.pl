@@ -116,5 +116,5 @@ my $ext = $p->os eq 'win64' ? '.exe' : '';
 my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
 say "Executing Native Binary...";
 my $run = $^O eq 'MSWin32' ? $exe : "./$exe";
-system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" --args ' . $run );
+system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" -ex "quit $_exitcode" --args ' . $run );
 say "Exit code: " . ( $? >> 8 );

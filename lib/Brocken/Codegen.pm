@@ -269,10 +269,10 @@ package Brocken::Codegen {
                     $as->load_reg_mem( 'r11', $iso, $driver->iso_offset('current_fcb') );
                     $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('sp'), 'rsp' );
                     if ( $driver->os eq 'win64' ) {
-                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x04, 0x25, 0x08) );
-                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_base'), 'rax' );
-                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x0C, 0x25, 0x10) );
-                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_limit'), 'rcx' );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x14, 0x25, 0x08) ); # mov r10, gs:[0x08]
+                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_base'), 'r10' );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x14, 0x25, 0x10) ); # mov r10, gs:[0x10]
+                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_limit'), 'r10' );
                     }
 
                     # 4. Swap to Target Fiber
@@ -283,10 +283,10 @@ package Brocken::Codegen {
 
                     # 5. Restore Target's TEB limits
                     if ( $driver->os eq 'win64' ) {
-                        $as->load_reg_mem( 'rax', $target_reg, $driver->fcb_offset('stack_base') );
-                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x04, 0x25, 0x08) );
-                        $as->load_reg_mem( 'rcx', $target_reg, $driver->fcb_offset('stack_limit') );
-                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x0C, 0x25, 0x10) );
+                        $as->load_reg_mem( 'r10', $target_reg, $driver->fcb_offset('stack_base') );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x14, 0x25, 0x08) ); # mov gs:[0x08], r10
+                        $as->load_reg_mem( 'r10', $target_reg, $driver->fcb_offset('stack_limit') );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x14, 0x25, 0x10) ); # mov gs:[0x10], r10
                     }
 
                     # 6. Restore target context and return

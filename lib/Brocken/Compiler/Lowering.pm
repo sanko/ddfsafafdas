@@ -466,11 +466,17 @@ package Brocken::Compiler::Lowering {
                 $routine_depth--;
                 $current_scope = $current_scope->parent;
                 $builder->emit(
-                    'fiber_transfer',
-                    'Any',[   $builder->emit(
-                            'load_mem_disp', 'ptr',[ $builder->emit( 'load_iso_disp', 'ptr',[ $driver->iso_offset('current_fcb') ] ), $driver->fcb_offset('caller') ]
-                        ),
-                        $res // 0
+                    'leave_func',
+                    'void',[
+                        $builder->emit(
+                            'fiber_transfer',
+                            'Any',[
+                                $builder->emit(
+                                    'load_mem_disp', 'ptr',[ $builder->emit( 'load_iso_disp', 'ptr',[ $driver->iso_offset('current_fcb') ] ), $driver->fcb_offset('caller') ]
+                                ),
+                                $res // 0
+                            ]
+                        )
                     ]
                 );
                 $builder->emit( 'exit_program', 'void', [0] );
@@ -520,8 +526,13 @@ package Brocken::Compiler::Lowering {
 
                 if ($routine_types[-1] eq 'fiber') {
                     $builder->emit(
-                        'fiber_transfer',
-                        'Any',[ $builder->emit( 'load_mem_disp', 'ptr',[ $builder->emit( 'load_iso_disp', 'ptr',[ $driver->iso_offset('current_fcb') ] ), $driver->fcb_offset('caller') ] ), $ret_val ]
+                        'leave_func',
+                        'void',[
+                            $builder->emit(
+                                'fiber_transfer',
+                                'Any',[ $builder->emit( 'load_mem_disp', 'ptr',[ $builder->emit( 'load_iso_disp', 'ptr',[ $driver->iso_offset('current_fcb') ] ), $driver->fcb_offset('caller') ] ), $ret_val ]
+                            )
+                        ]
                     );
                     $builder->emit('exit_program', 'void', [0]);
                 } else {
