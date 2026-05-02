@@ -10,8 +10,8 @@ class Brocken::IR::Builder {
     method new_reg()               { return '%' . ++$reg_count; }
     method new_label()             { return 'L' . ++$label_count; }
     method set_instructions(@inst) { @instructions = @inst }
-    method push_instructin($inst) {push @instructions, $inst }
-    method last_instruction() { $instructions[-1] }
+    method push_instructin($inst)  { push @instructions, $inst }
+    method last_instruction()      { $instructions[-1] }
 
     method emit( $op, $type, $args, $dest = undef ) {
         if ( !defined($dest) && $type ne 'void' ) { $dest = $self->new_reg(); }

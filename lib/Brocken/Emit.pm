@@ -70,7 +70,14 @@ package Brocken::Emit {
             my $rd = $self->reg($r);
             $code .= pack( 'L<', 0xEB000000 | ( $rd << 16 ) | 31 | ( $ld << 5 ) );
         }
-        method setcc( $cc, $dest ) { my $d = $self->reg($dest); my $inv = $cc ^ 1; $code .= pack( 'L<', 0x9A9F03E0 | ( $inv << 12 ) | $d ) }
+
+        method setcc( $cc, $r ) {
+            my $ri = $self->reg($r);
+
+            # REX prefix is required to access the low byte of R8-R15 or if using Sil/Dil
+            my $rex = 0x40 | ( $ri >= 8 ? 1 : 0 );
+            $code .= pack( 'C', $rex ) . pack( 'CCC', 0x0F, $cc, 0xC0 | ( $ri & 7 ) );
+        }
 
         method test_reg_reg( $l, $r ) {
             my $ld = $self->reg($l);
@@ -230,11 +237,6 @@ package Brocken::Emit {
             my $ri = $self->reg($r);
             $code .= $self->_rex( 0, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xF8 | ( $ri & 7 ), $imm );
         }
-
-        method setcc( $cc, $r ) {
-            my $ri = $self->reg($r);
-            $code .= pack( 'C', 0x40 | ( $ri >= 8 ? 1 : 0 ) ) . pack( 'CCC', 0x0F, $cc, 0xC0 | ( $ri & 7 ) );
-        }
         method add_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xC0 | ( $ri & 7 ), $i ); }
         method sub_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xE8 | ( $ri & 7 ), $i ); }
 
@@ -242,6 +244,14 @@ package Brocken::Emit {
             my $di = $self->reg($d);
             my $si = $self->reg($s);
             $code .= $self->_rex( 1, $si, 0, $di ) . pack( 'CC', 0x01, 0xC0 | ( ( $si & 7 ) << 3 ) | ( $di & 7 ) );
+        }
+
+        method setcc( $cc, $r ) {
+            my $ri = $self->reg($r);
+
+            # REX prefix is required to access the low byte of R8-R15 or if using Sil/Dil
+            my $rex = 0x40 | ( $ri >= 8 ? 1 : 0 );
+            $code .= pack( 'C', $rex ) . pack( 'CCC', 0x0F, $cc, 0xC0 | ( $ri & 7 ) );
         }
 
         method sub_reg( $d, $s ) {
@@ -293,7 +303,7 @@ package Brocken::Emit {
             $code .= pack( 'L<', 0 );
         }
 
-       method resolve {
+        method resolve {
             for (@fixups) {
                 my $t = $labels{ $_->{target} };
                 die "Linker Error: Unresolved label '$_->{target}'\n" unless defined $t;

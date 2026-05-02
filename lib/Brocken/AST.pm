@@ -8,6 +8,10 @@ package Brocken::AST::Node {
         method dump {'Node'}
     }
 
+    class Brocken::AST::AnonSub : isa(Brocken::AST::Node) { field $params : param : reader; field $body : param : reader; }
+
+    class Brocken::AST::AnonCall : isa(Brocken::AST::Node) { field $invocant : param : reader; field $args : param : reader; }
+
     class Brocken::AST::BinOp : isa(Brocken::AST::Node) { field $op : param : reader; field $left : param : reader; field $right : param : reader; }
 
     class Brocken::AST::Const : isa(Brocken::AST::Node) { field $value : param : reader; field $type : param : reader; }

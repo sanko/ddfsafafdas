@@ -6,10 +6,21 @@ no warnings 'portable', 'experimental::class';
 use lib 'lib';
 use Brocken;
 $|++;
-
 my $source_code = <<'BROCKEN';
-# 1. Method Definition (Milestone 3!)
-method multiply(Int $val, Int $factor) {
+ my $add_one = sub (Int $n) {
+  return $n + 1;
+ };
+
+my $val = 41;
+my $res = $add_one->($val);
+
+print "The answer is: "; say $res;
+
+ if ($res == 42) {
+     say "Anonymous call works! 🎉";
+ }
+
+sub multiply(Int $val, Int $factor) {
     say "Multiplying...";
     return $val * $factor;
 }
@@ -89,6 +100,32 @@ say "Main: Transferring to fiber (3rd and final time)...";
 my Int $f3 = transfer($gen, 0);
 print "Main: Received from fiber return: ";
 say $f3;
+
+
+
+sub test_defer() {
+    #~ say "Entering function...";
+    #~ defer {
+        #~ say "   [Defer] Executing cleanup 1 (LIFO)";
+    #~ }
+    #~ defer {
+        #~ say "   [Defer] Executing cleanup 2 (LIFO)";
+    #~ }
+    #~ say "Doing work...";
+    #~ return 42;
+}
+
+#~ say test_defer();
+
+#~ # Testing Immix GC by forcing allocations in a loop
+#~ my Int $i = 0;
+#~ while ($i < 100) {
+    #~ my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation to trigger GC line marking
+    #~ $i = $i + 1;
+#~ }
+
+
+
 
 say "\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉";
 

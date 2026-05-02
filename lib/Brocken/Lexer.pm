@@ -9,22 +9,25 @@ class Brocken::Lexer {
     field $line = 1;
     field $col  = 1;
     my %KEYWORDS = map { $_ => 1 } qw[
-        my our state class method field return exit fiber yield
+        my our state
+        class method field
+        return exit
+        sub
+        fiber yield
         if else while for map say print Int String Any];
 
     method lex() {
         my @tokens;
         while ( $pos < length($source) ) {
             my $remaining = substr( $source, $pos );
-
-            if ( $remaining =~ /^(\s+)/ ) { $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^(\s+)/ )     { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(#[^\n]*)/ ) { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(\d+)/ ) { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
 
             # Robust String Lexing: Handles \" and \n and UTF-8 correctly
             if ( $remaining =~ /^"((?:[^"\\]|\\.)*)"/s ) {
                 my $full_match = $&;
-                my $val = $1;
+                my $val        = $1;
                 $val =~ s/\\n/\n/g;
                 $val =~ s/\\"/"/g;
                 $val =~ s/\\\\/\\/g;
@@ -32,7 +35,6 @@ class Brocken::Lexer {
                 $self->_advance( length($full_match) );
                 next;
             }
-
             if ( $remaining =~ /^([\$@%]?[a-zA-Z_]\w*)/ ) {
                 my $val  = $1;
                 my $type = $KEYWORDS{$val} ? 'KEYWORD' : ( $val =~ /^[\$@%]/ ? 'VAR' : 'IDENT' );
@@ -40,11 +42,9 @@ class Brocken::Lexer {
                 $self->_advance( length($val) );
                 next;
             }
-
             if ( $remaining =~ /^(==|!=|<=|>=|=>|->)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^([+\-*\/=<>\[\].:])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
             if ( $remaining =~ /^([{};(),])/ )          { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1);            next; }
-
             die sprintf( "Lexer Error at L:%d C:%d: Unrecognized char '%s'\n", $line, $col, substr( $remaining, 0, 1 ) );
         }
         push @tokens, $self->_make_token( 'EOF', 'EOF' );
