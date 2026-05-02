@@ -7,11 +7,16 @@ package Brocken::Codegen {
     class Brocken::Codegen {
         field $arch : param;
 
+        method _abi_max_args($os) {
+            return 4 if $arch eq 'arm64';
+            return $os eq 'win64' ? 4 : 6;
+        }
+
         method _abi_arg_reg( $idx, $os ) {
             if ( $arch eq 'arm64' ) { return 'x' . $idx; }
             else {
-                if ( $os eq 'win64' ) { return (qw[rcx rdx r8 r9])[$idx] // die 'Too many args'; }
-                else { return (qw[rdi rsi rdx rcx r8 r9])[$idx] // die 'Too many args'; }
+                if ( $os eq 'win64' ) { return (qw[rcx rdx r8 r9])[$idx] // 'stack'; }
+                else { return (qw[rdi rsi rdx rcx r8 r9])[$idx] // 'stack'; }
             }
         }
 

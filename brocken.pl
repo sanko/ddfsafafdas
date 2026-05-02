@@ -6,7 +6,43 @@ no warnings 'portable', 'experimental::class';
 use lib 'lib';
 use Brocken;
 $|++;
+
 my $source_code = <<'BROCKEN';
+# 1. Method Definition (Milestone 3!)
+method multiply(Int $val, Int $factor) {
+    say "Multiplying...";
+    return $val * $factor;
+}
+
+my Int $countdown = 3;
+while ($countdown > 0) {
+    if ($countdown == 2) {
+        say "Almost there...";
+    } else {
+        say "Counting...";
+    }
+    $countdown = $countdown - 1;
+}
+
+my Int $x = 10;
+{
+    my Int $x = 32; # Inner scope shadows outer scope
+}
+
+say "Blast off!";
+# 2. Map Loop Fusion Test
+my Any $arr = 0;
+my Any $fused = map { $_ - 5 } map { $_ * 2 } map { $_ + 1 } $arr;
+
+# 3. Main script logic using method call
+say "Brocken Milestone 3 Complete! 🚀";
+
+print "你好";
+
+my Int $y = multiply($x, 2); # Calls our method above!
+ # $y should be 20. Return 20 + 22 = 42.
+say "Blast off!";
+
 class User {
     field $id;
     field $status;
@@ -23,7 +59,6 @@ class User {
 
 say "Booting Brocken Runtime... ❤️😭";
 
-# Milestone 8: Test Native OOP & Static Dispatch
 my Any $u = User->new();
 $u->set_id(42);
 
@@ -51,5 +86,5 @@ my $ext = $p->os eq 'win64' ? '.exe' : '';
 my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
 say "Executing Native Binary...";
 my $run = $^O eq 'MSWin32' ? $exe : "./$exe";
-system($run);
+system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" --args ' . $run );
 say "Exit code: " . ( $? >> 8 );
