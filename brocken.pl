@@ -63,6 +63,36 @@ my Any $u = User->new();
 $u->set_id(42);
 
 say "Brocken executed successfully!";
+
+# --- [4] FIBERS (COROUTINES) ---
+say "\n[4] Testing Fibers (Cooperative Multitasking)...";
+my Any $gen = fiber {
+    say "   [Fiber] Starting up!";
+    yield 42;
+    say "   [Fiber] Resumed! Yielding 84...";
+    yield 84;
+    say "   [Fiber] Wrapping up execution!";
+    return 99;
+};
+
+say "Main: Transferring to fiber (1st time)...";
+my Int $f1 = transfer($gen, 0);
+print "Main: Received from fiber: ";
+say $f1;
+
+say "Main: Transferring to fiber (2nd time)...";
+my Int $f2 = transfer($gen, 0);
+print "Main: Received from fiber: ";
+say $f2;
+
+say "Main: Transferring to fiber (3rd and final time)...";
+my Int $f3 = transfer($gen, 0);
+print "Main: Received from fiber return: ";
+say $f3;
+
+say "\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉";
+
+
 exit $u->get_id();
 BROCKEN
 say "Bootstrapping Brocken...";

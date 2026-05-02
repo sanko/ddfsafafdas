@@ -106,7 +106,9 @@ package Brocken::Codegen {
                     if ( $driver->os eq 'win64' ) {
                         $as->mov_imm( 'rcx', -11 ); $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
                         $as->mov_reg( 'rcx', 'rax' ); $as->mov_reg( 'rdx', $p ); $as->add_imm( 'rdx', 24 );
-                        $as->load_reg_mem( 'r8', $p, 0 ); $as->lea_reg_disp( 'r9', 'rsp', 88 );
+                        $as->load_reg_mem( 'r8', $p, 0 );
+                        # FIX: WriteFile's bytes_written out-param goes to RSP + 40 (safe scratch space), NOT RSP + 88!
+                        $as->lea_reg_disp( 'r9', 'rsp', 40 );
                         $as->mov_imm( 'rax', 0 ); $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
                         $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
                     } else {
@@ -119,16 +121,18 @@ package Brocken::Codegen {
                     my $char = $val->( $inst->{args}[0] );
                     my $src_reg = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map{$inst->{args}[0]} : 'r11';
                     $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
-                    $as->store_mem_disp_byte( 'rsp', 64, $src_reg );
+                    $as->store_mem_disp_byte( 'rsp', 48, $src_reg );
                     if ( $driver->os eq 'win64' ) {
                         $as->mov_imm( 'rcx', -11 ); $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
-                        $as->mov_reg( 'rcx', 'rax' ); $as->lea_reg_disp( 'rdx', 'rsp', 64 );
-                        $as->mov_imm( 'r8', 1 ); $as->lea_reg_disp( 'r9', 'rsp', 88 );
+                        $as->mov_reg( 'rcx', 'rax' ); $as->lea_reg_disp( 'rdx', 'rsp', 48 );
+                        $as->mov_imm( 'r8', 1 );
+                        # FIX: Same here, use RSP + 40 for out-param
+                        $as->lea_reg_disp( 'r9', 'rsp', 40 );
                         $as->mov_imm( 'rax', 0 ); $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
                         $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
                     } else {
                         $as->mov_imm( 'rax', ( $driver->os eq 'macos' ? 0x2000004 : 1 ) );
-                        $as->mov_imm( 'rdi', 1 ); $as->lea_reg_disp( 'rsi', 'rsp', 64 );
+                        $as->mov_imm( 'rdi', 1 ); $as->lea_reg_disp( 'rsi', 'rsp', 48 );
                         $as->mov_imm( 'rdx', 1 ); $as->syscall();
                     }
                 }
@@ -139,7 +143,7 @@ package Brocken::Codegen {
                     if ( $driver->os eq 'win64' ) { $as->mov_reg( 'rcx', $target ); $as->call_rva( $driver->import_rva('ExitProcess'), $driver->text_rva ); }
                     else                          { $driver->exit_reg($target); $as->append_code(pack('CC', 0x0F, 0x0B)); }
                 }
-elsif ( $op eq 'shadow_push' ) {
+                elsif ( $op eq 'shadow_push' ) {
                     my $v = $val->( $inst->{args}[0] );
                     my $iso = ( $arch eq 'x64' ? 'r14' : 'x27' );
                     $as->load_reg_mem( 'r11', $iso,  $driver->iso_offset('current_fcb') );
@@ -147,7 +151,6 @@ elsif ( $op eq 'shadow_push' ) {
                     if ( $inst->{args}[0] =~ /^%/ ) { $as->store_mem_disp_reg( 'rax', 0, $reg_map{$inst->{args}[0]} ); }
                     else                            { $as->mov_imm( 'r11', $v ); $as->store_mem_disp_reg( 'rax', 0, 'r11' ); }
                     $as->add_imm( 'rax', 8 );
-                    # Must reload FCB pointer into r11 because we might have used r11 for mov_imm
                     $as->load_reg_mem( 'r11', $iso,  $driver->iso_offset('current_fcb') );
                     $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), 'rax' );
                 }
@@ -205,7 +208,7 @@ elsif ( $op eq 'shadow_push' ) {
                     }
                     $as->call_label($target); if ( defined $dest ) { $as->mov_reg( $dest, 'rax' ); }
                 }
-elsif ( $op eq 'sys_alloc' ) {
+                elsif ( $op eq 'sys_alloc' ) {
                     my $d  = $reg_map{ $inst->{dest} }; my $sz = $val->( $inst->{args}[0] );
                     if ( $driver->os eq 'win64' ) {
                         $as->mov_imm( 'rcx', 0 );
@@ -256,11 +259,33 @@ elsif ( $op eq 'sys_alloc' ) {
                     my $iso = ( $arch eq 'x64' ? 'r14' : 'x27' );
                     if ( $inst->{args}[1] =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map{$inst->{args}[1]} ) if $reg_map{$inst->{args}[1]} ne 'rax'; } else { $as->mov_imm( 'rax', $v ); }
                     for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
+
                     $as->load_reg_mem( 'r11', $iso, $driver->iso_offset('current_fcb') );
-                    $as->store_mem_disp_reg( 'r11',   $driver->fcb_offset('sp'),          'rsp' );
-                    $as->store_mem_disp_reg( $reg_map{$inst->{args}[0]}, $driver->fcb_offset('caller'),      'r11' );
-                    $as->store_mem_disp_reg( $iso,    $driver->iso_offset('current_fcb'), $reg_map{$inst->{args}[0]} );
+                    $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('sp'), 'rsp' );
+
+                    if ( $driver->os eq 'win64' ) {
+                        $as->push_reg('rax'); $as->push_reg('rcx');
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x04, 0x25, 0x08) );
+                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_base'), 'rax' );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x0C, 0x25, 0x10) );
+                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_limit'), 'rcx' );
+                        $as->pop_reg('rcx'); $as->pop_reg('rax');
+                    }
+
+                    $as->store_mem_disp_reg( $reg_map{$inst->{args}[0]}, $driver->fcb_offset('caller'), 'r11' );
+                    $as->store_mem_disp_reg( $iso, $driver->iso_offset('current_fcb'), $reg_map{$inst->{args}[0]} );
+
                     $as->load_reg_mem( 'rsp', $reg_map{$inst->{args}[0]}, $driver->fcb_offset('sp') );
+
+                    if ( $driver->os eq 'win64' ) {
+                        $as->push_reg('rax'); $as->push_reg('rcx');
+                        $as->load_reg_mem( 'rax', $reg_map{$inst->{args}[0]}, $driver->fcb_offset('stack_base') );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x04, 0x25, 0x08) );
+                        $as->load_reg_mem( 'rcx', $reg_map{$inst->{args}[0]}, $driver->fcb_offset('stack_limit') );
+                        $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x0C, 0x25, 0x10) );
+                        $as->pop_reg('rcx'); $as->pop_reg('rax');
+                    }
+
                     for my $r ( reverse qw(rbp rsi rdi rbx r12 r13 r14 r15) ) { $as->pop_reg($r); }
                     if ( defined($dest) ) { $as->mov_reg( $dest, 'rax' ) if $dest ne 'rax'; }
                 }
@@ -292,7 +317,9 @@ elsif ( $op eq 'sys_alloc' ) {
             my %live = %$live_ref; my %rmap; my @free;
             if ( $arch eq 'arm64' ) { @free = qw(x19 x20 x21 x22 x23 x24 x25 x26 x28); }
             else {
-                if ( $driver->os eq 'win64' ) { @free = qw(rbx rsi rdi r12 r13 r15 r8 r9 r10); }
+                # FIX: ONLY provide truly non-volatile (callee-saved) registers to our allocator!
+                # Windows Volatiles (RAX, RCX, RDX, R8, R9, R10, R11) are destroyed by VirtualAlloc
+                if ( $driver->os eq 'win64' ) { @free = qw(rbx rsi rdi r12 r13 r15); }
                 else { @free = qw(rbx r12 r13 r15); }
             }
             my @intervals = sort { ( $a->{start} // 0 ) <=> ( $b->{start} // 0 ) } map { { vreg => $_, %{ $live{$_} } } } keys %live;

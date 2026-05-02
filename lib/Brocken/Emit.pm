@@ -293,8 +293,12 @@ package Brocken::Emit {
             $code .= pack( 'L<', 0 );
         }
 
-        method resolve {
-            for (@fixups) { my $t = $labels{ $_->{target} }; substr( $code, $_->{offset}, 4, pack( 'l<', $t - ( $_->{offset} + 4 ) ) ); }
+       method resolve {
+            for (@fixups) {
+                my $t = $labels{ $_->{target} };
+                die "Linker Error: Unresolved label '$_->{target}'\n" unless defined $t;
+                substr( $code, $_->{offset}, 4, pack( 'l<', $t - ( $_->{offset} + 4 ) ) );
+            }
         }
     }
 }
