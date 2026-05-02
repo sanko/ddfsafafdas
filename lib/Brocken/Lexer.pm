@@ -14,38 +14,38 @@ class Brocken::Lexer {
 
     method lex() {
         my @tokens;
-        my $length = length($source);
-        while ( $pos < $length ) {
+        while ( $pos < length($source) ) {
             my $remaining = substr( $source, $pos );
+
             if ( $remaining =~ /^(\s+)/ ) { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(#[^\n]*)/ ) { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(\d+)/ ) { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
 
-            # Replaced complex string regex with simple character-by-character scan for robustness against emojis
-            if ( $remaining =~ /^"([^"]*)"/s ) {
+            # Robust String Lexing: Handles \" and \n and UTF-8 correctly
+            if ( $remaining =~ /^"((?:[^"\\]|\\.)*)"/s ) {
+                my $full_match = $&;
                 my $val = $1;
                 $val =~ s/\\n/\n/g;
                 $val =~ s/\\"/"/g;
+                $val =~ s/\\\\/\\/g;
                 push @tokens, $self->_make_token( 'STRING', $val );
-                $self->_advance( length($&) );
+                $self->_advance( length($full_match) );
                 next;
             }
+
             if ( $remaining =~ /^([\$@%]?[a-zA-Z_]\w*)/ ) {
                 my $val  = $1;
-                my $type = 'IDENT';
-                if    ( $val =~ /^[\$@%]/ ) { $type = 'VAR'; }
-                elsif ( $KEYWORDS{$val} )   { $type = 'KEYWORD'; }
+                my $type = $KEYWORDS{$val} ? 'KEYWORD' : ( $val =~ /^[\$@%]/ ? 'VAR' : 'IDENT' );
                 push @tokens, $self->_make_token( $type, $val );
                 $self->_advance( length($val) );
                 next;
             }
-            if ( $remaining =~ /^(==|!=|<=|>=|=>|->)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
-            # Included literal '.' as a valid operator so comment skips/etc won't break if it somehow falls through
-            if ( $remaining =~ /^([+\-*\/=<>\[\].])/ )  { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
-            if ( $remaining =~ /^([{};(),\[\]])/ )      { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1);            next; }
 
-            # If all else fails, just skip the char instead of crashing the lexer on emojis (for now)
-            $self->_advance(1);
+            if ( $remaining =~ /^(==|!=|<=|>=|=>|->)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^([+\-*\/=<>\[\].:])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
+            if ( $remaining =~ /^([{};(),])/ )          { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1);            next; }
+
+            die sprintf( "Lexer Error at L:%d C:%d: Unrecognized char '%s'\n", $line, $col, substr( $remaining, 0, 1 ) );
         }
         push @tokens, $self->_make_token( 'EOF', 'EOF' );
         return \@tokens;

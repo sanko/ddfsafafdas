@@ -106,9 +106,9 @@ package Brocken::Codegen {
                     if ( $driver->os eq 'win64' ) {
                         $as->mov_imm( 'rcx', -11 ); $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
                         $as->mov_reg( 'rcx', 'rax' ); $as->mov_reg( 'rdx', $p ); $as->add_imm( 'rdx', 24 );
-                        $as->load_reg_mem( 'r8', $p, 0 );
-                        # FIX: WriteFile's bytes_written out-param goes to RSP + 40 (safe scratch space), NOT RSP + 88!
-                        $as->lea_reg_disp( 'r9', 'rsp', 40 );
+                        $as->load_reg_mem( 'r8', $p, 0 ); # length of string in bytes
+                        # Move scratch space to a safe space away from locals at 8, 16, 24, etc.
+                        $as->lea_reg_disp( 'r9', 'rsp', 160 );
                         $as->mov_imm( 'rax', 0 ); $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
                         $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
                     } else {
@@ -257,35 +257,39 @@ package Brocken::Codegen {
                 elsif ( $op eq 'fiber_transfer' ) {
                     my $target = $val->( $inst->{args}[0] ); my $v = $val->( $inst->{args}[1] ); my $dest = $reg_map{ $inst->{dest} };
                     my $iso = ( $arch eq 'x64' ? 'r14' : 'x27' );
-                    if ( $inst->{args}[1] =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map{$inst->{args}[1]} ) if $reg_map{$inst->{args}[1]} ne 'rax'; } else { $as->mov_imm( 'rax', $v ); }
+
+                    # 1. Prepare yield value in RAX
+                    if ( $inst->{args}[1] =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map{$inst->{args}[1]} ) if $reg_map{$inst->{args}[1]} ne 'rax'; }
+                    else                            { $as->mov_imm( 'rax', $v ); }
+
+                    # 2. Save current non-volatile state
                     for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
 
+                    # 3. Store current RSP and TEB limits in current FCB
                     $as->load_reg_mem( 'r11', $iso, $driver->iso_offset('current_fcb') );
                     $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('sp'), 'rsp' );
-
                     if ( $driver->os eq 'win64' ) {
-                        $as->push_reg('rax'); $as->push_reg('rcx');
                         $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x04, 0x25, 0x08) );
                         $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_base'), 'rax' );
                         $as->append_code( pack('C5 L<', 0x65, 0x48, 0x8B, 0x0C, 0x25, 0x10) );
                         $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_limit'), 'rcx' );
-                        $as->pop_reg('rcx'); $as->pop_reg('rax');
                     }
 
-                    $as->store_mem_disp_reg( $reg_map{$inst->{args}[0]}, $driver->fcb_offset('caller'), 'r11' );
-                    $as->store_mem_disp_reg( $iso, $driver->iso_offset('current_fcb'), $reg_map{$inst->{args}[0]} );
+                    # 4. Swap to Target Fiber
+                    my $target_reg = $reg_map{$inst->{args}[0]};
+                    $as->store_mem_disp_reg( $target_reg, $driver->fcb_offset('caller'), 'r11' );
+                    $as->store_mem_disp_reg( $iso, $driver->iso_offset('current_fcb'), $target_reg );
+                    $as->load_reg_mem( 'rsp', $target_reg, $driver->fcb_offset('sp') );
 
-                    $as->load_reg_mem( 'rsp', $reg_map{$inst->{args}[0]}, $driver->fcb_offset('sp') );
-
+                    # 5. Restore Target's TEB limits
                     if ( $driver->os eq 'win64' ) {
-                        $as->push_reg('rax'); $as->push_reg('rcx');
-                        $as->load_reg_mem( 'rax', $reg_map{$inst->{args}[0]}, $driver->fcb_offset('stack_base') );
+                        $as->load_reg_mem( 'rax', $target_reg, $driver->fcb_offset('stack_base') );
                         $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x04, 0x25, 0x08) );
-                        $as->load_reg_mem( 'rcx', $reg_map{$inst->{args}[0]}, $driver->fcb_offset('stack_limit') );
+                        $as->load_reg_mem( 'rcx', $target_reg, $driver->fcb_offset('stack_limit') );
                         $as->append_code( pack('C5 L<', 0x65, 0x48, 0x89, 0x0C, 0x25, 0x10) );
-                        $as->pop_reg('rcx'); $as->pop_reg('rax');
                     }
 
+                    # 6. Restore target context and return
                     for my $r ( reverse qw(rbp rsi rdi rbx r12 r13 r14 r15) ) { $as->pop_reg($r); }
                     if ( defined($dest) ) { $as->mov_reg( $dest, 'rax' ) if $dest ne 'rax'; }
                 }
