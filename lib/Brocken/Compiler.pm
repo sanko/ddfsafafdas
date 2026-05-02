@@ -43,14 +43,14 @@ package Brocken::Compiler {
         method frame_local_size () {168}
 
         method iso_offset ($name) {
-            state $ISO = { heap_ptr => 0, heap_limit => 8, state_ptr => 16, current_fcb => 24, };
+            state $ISO = { heap_ptr => 0, heap_limit => 8, state_ptr => 16, current_fcb => 24, fiber_head => 32, };
             die 'Unknown Isolate offset: ' . $name unless exists $ISO->{$name};
             return $ISO->{$name};
         }
 
         # Added stack_limit space for the TEB swap
         method fcb_offset ($name) {
-            state $FCB = { sp => 0, stack_base => 8, shadow_base => 16, shadow_ptr => 24, caller => 32, stack_limit => 48 };
+            state $FCB = { sp => 0, stack_base => 8, stack_limit => 16, shadow_base => 24, shadow_ptr => 32, caller => 40, next => 48 };
             die 'Unknown FCB offset: ' . $name unless exists $FCB->{$name};
             return $FCB->{$name};
         }

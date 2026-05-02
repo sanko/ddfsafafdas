@@ -139,21 +139,47 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func',         'void', [0] );
             $builder->emit_label($l_not_z);
             my $buf = $builder->emit( 'sys_alloc', 'ptr',[32] );
+            my $buf_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $buf_slot, $buf ] );
+
             my $idx = $builder->emit( 'constant',  'i64',[0] );
+            my $idx_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $idx_slot, $idx ] );
+
+            my $n_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $n_slot, $n ] );
+
             my $l1  = $builder->new_label();
             my $l2  = $builder->new_label();
             $builder->emit_label($l1);
-            $builder->emit( 'store_mem_byte', 'void',[ $buf, $idx, $builder->emit( 'add', 'i64',[ $builder->emit( 'mod', 'i64', [ $n, 10 ] ), 48 ] ) ] );
-            $idx = $builder->emit( 'add', 'i64',[ $idx, 1 ],  $idx );
-            $n   = $builder->emit( 'div', 'i64',[ $n,   10 ], $n );
-            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $n, 0 ] ), $l1, $l2 );
+            
+            # Reduce pressure by loading only when needed
+            my $curr_n   = $builder->emit( 'local_load', 'i64', [ $n_slot ] );
+            my $rem      = $builder->emit( 'mod', 'i64', [ $curr_n, 10 ] );
+            my $char_val = $builder->emit( 'add', 'i64', [ $rem, 48 ] );
+            my $curr_buf = $builder->emit( 'local_load', 'ptr', [ $buf_slot ] );
+            my $curr_idx = $builder->emit( 'local_load', 'i64', [ $idx_slot ] );
+            $builder->emit( 'store_mem_byte', 'void',[ $curr_buf, $curr_idx, $char_val ] );
+            
+            $curr_idx = $builder->emit( 'add', 'i64',[ $curr_idx, 1 ] );
+            $builder->emit( 'local_store', 'void', [ $idx_slot, $curr_idx ] );
+            
+            $curr_n = $builder->emit( 'div', 'i64',[ $curr_n, 10 ] );
+            $builder->emit( 'local_store', 'void', [ $n_slot, $curr_n ] );
+
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $curr_n, 0 ] ), $l1, $l2 );
             $builder->emit_label($l2);
             my $l3 = $builder->new_label();
             my $l4 = $builder->new_label();
             $builder->emit_label($l3);
-            $idx = $builder->emit( 'sub', 'i64',[ $idx, 1 ], $idx );
-            $builder->emit( 'builtin_print_char', 'void',[ $builder->emit( 'load_mem_byte', 'Int',[ $buf, $idx ] ) ] );
-            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int',[ $idx, 0 ] ), $l3, $l4 );
+            
+            $curr_idx = $builder->emit( 'local_load', 'i64', [ $idx_slot ] );
+            $curr_idx = $builder->emit( 'sub', 'i64',[ $curr_idx, 1 ] );
+            $builder->emit( 'local_store', 'void', [ $idx_slot, $curr_idx ] );
+            
+            $curr_buf = $builder->emit( 'local_load', 'ptr', [ $buf_slot ] );
+            $builder->emit( 'builtin_print_char', 'void',[ $builder->emit( 'load_mem_byte', 'Int',[ $curr_buf, $curr_idx ] ) ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int',[ $curr_idx, 0 ] ), $l3, $l4 );
             $builder->emit_label($l4);
             $builder->emit( 'leave_func', 'void', [0] );
 
@@ -190,22 +216,40 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'store_mem_disp', 'void',[ $top, -8, $zero ] );
 
             my $shadow = $builder->emit( 'call_func', 'ptr',[ 'M_gc_alloc', 65536 ] );
+            my $shadow_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $shadow_slot, $shadow ] );
+
             $fcb_reg = $builder->emit( 'local_load', 'ptr',[$fcb_slot] );
             $builder->emit( 'store_mem_disp', 'void',[ $fcb_reg, $driver->fcb_offset('shadow_base'), $shadow ] );
             $builder->emit( 'store_mem_disp', 'void',[ $fcb_reg, $driver->fcb_offset('shadow_ptr'),  $shadow ] );
+            
             my $iso_val   = $builder->emit( 'get_isolate_ctx', 'ptr',[] );
-            my $prev_head = $builder->emit( 'load_mem_disp',   'ptr',[ $iso_val, 32 ] );
-            $builder->emit( 'store_mem_disp', 'void',[ $fcb_reg, 40, $prev_head ] );
-            $builder->emit( 'store_mem_disp', 'void',[ $iso_val, 32, $fcb_reg ] );
+            my $iso_slot  = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $iso_slot, $iso_val ] );
+
+            my $prev_head = $builder->emit( 'load_mem_disp',   'ptr',[ $iso_val, $driver->iso_offset('fiber_head') ] );
+            $builder->emit( 'store_mem_disp', 'void',[ $fcb_reg, $driver->fcb_offset('next'), $prev_head ] );
+            $builder->emit( 'store_mem_disp', 'void',[ $iso_val, $driver->iso_offset('fiber_head'), $fcb_reg ] );
+            
             my $reg_sz   = $driver->frame_reg_size();
             my $local_sz = $driver->frame_local_size();
             my $l_regs   = $builder->emit( 'sub', 'ptr',[ $rip_loc, $reg_sz ] );
-            for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void',[ $l_regs, $o, $zero ] ); }
+            my $l_regs_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $l_regs_slot, $l_regs ] );
+
+            my $zero_fill = $builder->emit( 'constant', 'i64', [0] );
+            for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void',[ $l_regs, $o, $zero_fill ] ); }
+            
+            $iso_val = $builder->emit( 'local_load', 'ptr', [ $iso_slot ] );
             $builder->emit( 'store_mem_disp', 'void',[ $l_regs, 8, $iso_val ] );
+            
             my $skip   = $builder->emit( 'add', 'i64',[ $builder->emit( 'constant', 'i64',[$local_sz] ), $reg_sz ] );
             my $t_regs = $builder->emit( 'sub', 'ptr', [ $l_regs, $skip ] );
-            for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void',[ $t_regs, $o, $zero ] ); }
+            for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void',[ $t_regs, $o, $zero_fill ] ); }
+            
+            $iso_val = $builder->emit( 'local_load', 'ptr', [ $iso_slot ] );
             $builder->emit( 'store_mem_disp', 'void',[ $t_regs, 8, $iso_val ] );
+            
             $fcb_reg = $builder->emit( 'local_load', 'ptr',[$fcb_slot] );
             $builder->emit( 'store_mem_disp', 'void',[ $fcb_reg, $driver->fcb_offset('sp'), $t_regs ] );
             $builder->emit( 'leave_func',     'void', [$fcb_reg] );
@@ -227,18 +271,21 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'setup_page_fault_handler', 'void',[] );
             $builder->emit( 'setup_console',            'void',[] );
             my $iso_reg = $builder->emit( 'sys_alloc', 'ptr',[1024] );
+            my $iso_reg_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $iso_reg_slot, $iso_reg ] );
+            
             $builder->emit( 'set_isolate_ctx', 'void',[$iso_reg] );
-            my $zero = $builder->emit( 'constant', 'i64', [0] );
-            $builder->emit( 'store_mem_disp', 'void',[ $iso_reg, 32, $zero ] );
+            my $zero_init = $builder->emit( 'constant', 'i64', [0] );
+            $builder->emit( 'store_mem_disp', 'void',[ $iso_reg, $driver->iso_offset('fiber_head'), $zero_init ] );
 
             my $c1m       = $builder->emit( 'constant',  'i64',[268435456] );
             my $init_heap = $builder->emit( 'sys_alloc', 'ptr', [$c1m] );
-            $builder->emit( 'store_iso_disp', 'void',[ 0, $init_heap ] );
-            $builder->emit( 'store_iso_disp', 'void',[ 8, $builder->emit( 'add', 'ptr',[ $init_heap, $c1m ] ) ] );
+            $builder->emit( 'store_iso_disp', 'void',[ $driver->iso_offset('heap_ptr'), $init_heap ] );
+            $builder->emit( 'store_iso_disp', 'void',[ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr',[ $init_heap, $c1m ] ) ] );
 
             my $c1m_state = $builder->emit( 'constant',  'i64',[1048576] );
             my $state_mem = $builder->emit( 'sys_alloc', 'ptr',[$c1m_state] );
-            $builder->emit( 'store_iso_disp', 'void',[ 16, $state_mem ] );
+            $builder->emit( 'store_iso_disp', 'void',[ $driver->iso_offset('state_ptr'), $state_mem ] );
 
             for my $cname ( sort keys %class_info ) {
                 my $c = $class_info{$cname};
@@ -259,15 +306,15 @@ package Brocken::Compiler::Lowering {
 
             my $main_fcb  = $builder->emit( 'call_func', 'ptr',[ 'M_gc_alloc', 64 ] );
             my $main_shad = $builder->emit( 'call_func', 'ptr',[ 'M_gc_alloc', 65536 ] );
-            $builder->emit( 'store_mem_disp', 'void',[ $main_fcb, 16, $main_shad ] );
-            $builder->emit( 'store_mem_disp', 'void',[ $main_fcb, 24, $main_shad ] );
-            $builder->emit( 'store_iso_disp', 'void',[ 24, $main_fcb ] );
+            $builder->emit( 'store_mem_disp', 'void',[ $main_fcb, $driver->fcb_offset('shadow_base'), $main_shad ] );
+            $builder->emit( 'store_mem_disp', 'void',[ $main_fcb, $driver->fcb_offset('shadow_ptr'),  $main_shad ] );
+            $builder->emit( 'store_iso_disp', 'void',[ $driver->iso_offset('current_fcb'), $main_fcb ] );
 
             my $zero2 = $builder->emit( 'constant', 'i64', [0] );
-            $builder->emit( 'store_mem_disp', 'void',[ $main_fcb, 40, $zero2 ] );
+            $builder->emit( 'store_mem_disp', 'void',[ $main_fcb, $driver->fcb_offset('caller'), $zero2 ] );
 
             my $iso_reg2 = $builder->emit( 'get_isolate_ctx', 'ptr',[] );
-            $builder->emit( 'store_mem_disp', 'void',[ $iso_reg2,  32, $main_fcb ] );
+            $builder->emit( 'store_mem_disp', 'void',[ $iso_reg2, $driver->iso_offset('fiber_head'), $main_fcb ] );
 
             $self->lower_block( \@main_stmts );
             $builder->emit( 'exit_program',         'void', [0] );
