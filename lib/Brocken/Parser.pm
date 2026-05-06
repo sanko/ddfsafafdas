@@ -72,14 +72,16 @@
                 my $body   = $self->parse_block();
                 $left = Brocken::AST::AnonSub->new( params => $params, body => $body );
             }
-            elsif ( $tok->{type} eq 'IDENT' && $self->peek()->{value} eq '(' ) {
-                my $name = $tok->{value};
-                $self->advance();
-                $left = Brocken::AST::Call->new( name => $name, args => $self->parse_args() );
-            }
             elsif ( $tok->{type} eq 'IDENT' ) {
-                $left = Brocken::AST::Const->new( value => $tok->{value}, type => 'Class' );
-                $self->advance();
+                if ( $self->peek()->{value} eq '(' ) {
+                    my $name = $tok->{value};
+                    $self->advance();
+                    $left = Brocken::AST::Call->new( name => $name, args => $self->parse_args() );
+                }
+                else {
+                    $left = Brocken::AST::Const->new( value => $tok->{value}, type => 'Class' );
+                    $self->advance();
+                }
             }
             elsif ( $tok->{value} eq 'map' ) {
                 $self->advance();

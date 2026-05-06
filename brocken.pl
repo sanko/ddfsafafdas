@@ -158,14 +158,14 @@ say testing();
 
 # Fiber now accepts a parameter $x!
 my Any $f = fiber (Any $x) {
-    say "Fiber received: ";
+    print "Fiber received: ";
     say $x;
     yield 42;
 };
 
 say "Main sending 10...";
-my Int $res = transfer($f, 10);
-say "Main received from fiber: ";
+my Int $res = transfer($f, "ten 10");
+print "Main received from fiber: ";
 say $res;
 BROCKEN
 
