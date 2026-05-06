@@ -14,7 +14,12 @@ class Brocken::Lexer {
         return exit
         sub
         fiber yield
-        if else while for map say print Int String Any];
+        if else unless
+        while for map
+        say print
+        Int String Any Bool
+        true false
+        ];
 
     method lex() {
         my @tokens;
@@ -42,9 +47,10 @@ class Brocken::Lexer {
                 $self->_advance( length($val) );
                 next;
             }
-            if ( $remaining =~ /^(==|!=|<=|>=|=>|->)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
-            if ( $remaining =~ /^([+\-*\/=<>\[\].:])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
+            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\|)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^([+\-*\/=<>\[\].:!?])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
             if ( $remaining =~ /^([{};(),])/ )          { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1);            next; }
+
             die sprintf( "Lexer Error at L:%d C:%d: Unrecognized char '%s'\n", $line, $col, substr( $remaining, 0, 1 ) );
         }
         push @tokens, $self->_make_token( 'EOF', 'EOF' );

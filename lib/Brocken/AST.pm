@@ -60,5 +60,8 @@ field $body : param : reader; }
 
     class Brocken::AST::MethodCall : isa(Brocken::AST::Node)
     { field $invocant : param : reader; field $name : param : reader; field $args : param : reader; }
+
+        class Brocken::AST::UnaryOp : isa(Brocken::AST::Node) { field $op : param : reader; field $expr : param : reader; }
+    class Brocken::AST::Ternary : isa(Brocken::AST::Node) { field $cond : param : reader; field $then : param : reader; field $else : param : reader; }
 };
 1;

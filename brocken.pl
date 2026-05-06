@@ -115,11 +115,11 @@ sub test_defer() {
 #~ say test_defer();
 
 #~ # Testing Immix GC by forcing allocations in a loop
-#~ my Int $i = 0;
-#~ while ($i < 100) {
-    #~ my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation to trigger GC line marking
-    #~ $i = $i + 1;
-#~ }
+my Int $i = 0;
+while ($i < 100) {
+    my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation to trigger GC line marking
+    $i = $i + 1;
+}
 
 
 say "\n[5] Testing new Spec features (unless, until, ternary, logical)...";
@@ -149,10 +149,8 @@ say "\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉";
 
 exit $u->get_id();
 BROCKEN
-
-$source_code = 'sub testing() {return "Hi";} say testing(); my Any $f = fiber { yield 10; }; say transfer($f, "10");';
-
-$source_code = <<'BROCKEN';
+$source_code = 'sub testing() {return "Hi";} say testing(); my Any $f = fiber ($i) { say $i; yield "hi 10"; }; say transfer($f, "10 arg");' if 0;
+$source_code = <<'BROCKEN'                                                                                                                  if 0;
 sub testing() { return "Hi"; }
 say testing();
 
@@ -168,7 +166,6 @@ my Int $res = transfer($f, "ten 10");
 print "Main received from fiber: ";
 say $res;
 BROCKEN
-
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
@@ -192,3 +189,10 @@ say "Executing Native Binary...";
 my $run = $^O eq 'MSWin32' ? $exe : "./$exe";
 system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" -ex "quit $_exitcode" --args ' . $run );
 say "Exit code: " . ( $? >> 8 );
+
+#~ say "\n--- MACHINE CODE HEX DUMP ---";
+#~ my $code_bytes = $p->as->code;
+#~ for (my $i=0; $i < length($code_bytes); $i += 16) {
+#~ my $chunk = substr($code_bytes, $i, 16);
+#~ printf("%04X: %-40s\n", $i, unpack("H*", $chunk));
+#~ }

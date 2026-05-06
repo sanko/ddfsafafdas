@@ -6,8 +6,16 @@
     class Brocken::Parser {
         field $tokens : param;
         field $pos = 0;
-        my %PRECEDENCE
-            = ( '=' => 10, '==' => 15, '!=' => 15, '<' => 15, '>' => 15, '+' => 20, '-' => 20, '*' => 30, '/' => 30, '[' => 50, '->' => 60 );
+        my %PRECEDENCE = (
+            '='  => 10,                                                              #
+            '?'  => 11,                                                              # Ternary is low
+            '||' => 12,                                                              #
+            '&&' => 13,                                                              #
+            '==' => 15, '!=' => 15, '<' => 15, '>' => 15, '<=' => 15, '>=' => 15,    #
+            '+'  => 20, '-'  => 20,                                                  #
+            '*'  => 30, '/'  => 30,                                                  #
+            '['  => 50, '->' => 60                                                   #
+        );
         method current() { return $tokens->[$pos]       // { type => 'EOF', value => 'EOF' }; }
         method peek()    { return $tokens->[ $pos + 1 ] // { type => 'EOF', value => 'EOF' }; }
         method advance() { $pos++; return $self->current(); }
@@ -52,7 +60,13 @@
         method parse_expression( $precedence = 0 ) {
             my $tok = $self->current();
             my $left;
-            if    ( $tok->{type} eq 'NUM' )    { $left = Brocken::AST::Const->new( value => $tok->{value}, type => 'Int' );    $self->advance(); }
+            if ( $tok->{value} eq '!' ) {
+                $self->advance();
+                $left = Brocken::AST::UnaryOp->new( op => '!', expr => $self->parse_expression(40) );
+            }
+            elsif ( $tok->{value} eq 'true' )  { $left = Brocken::AST::Const->new( value => 1,             type => 'Int' );    $self->advance(); }
+            elsif ( $tok->{value} eq 'false' ) { $left = Brocken::AST::Const->new( value => 0,             type => 'Int' );    $self->advance(); }
+            elsif ( $tok->{type} eq 'NUM' )    { $left = Brocken::AST::Const->new( value => $tok->{value}, type => 'Int' );    $self->advance(); }
             elsif ( $tok->{type} eq 'STRING' ) { $left = Brocken::AST::Const->new( value => $tok->{value}, type => 'String' ); $self->advance(); }
             elsif ( $tok->{type} eq 'VAR' )    { $left = Brocken::AST::Var->new( name => $tok->{value} ); $self->advance(); }
             elsif ( $tok->{value} eq '[' ) {
@@ -106,7 +120,13 @@
             while ( $precedence < ( $PRECEDENCE{ $self->current->{value} } // 0 ) ) {
                 my $op = $self->current->{value};
                 $self->advance();
-                if ( $op eq '->' ) {
+                if ( $op eq '?' ) {
+                    my $then = $self->parse_expression(0);
+                    $self->expect(':');
+                    my $else = $self->parse_expression(0);
+                    $left = Brocken::AST::Ternary->new( cond => $left, then => $then, else => $else );
+                }
+                elsif ( $op eq '->' ) {
                     if ( $self->current->{value} eq '(' ) {
 
                         # Anonymous call: $fn->()
@@ -119,11 +139,7 @@
                     }
                 }
                 else {
-                    $left = Brocken::AST::BinOp->new(
-                        op    => $op,
-                        left  => $left,
-                        right => $self->parse_expression( $PRECEDENCE{$op} - ( $op eq '=' ? 1 : 0 ) )
-                    );
+                    $left = Brocken::AST::BinOp->new( op => $op, left => $left, right => $self->parse_expression( $PRECEDENCE{$op} ) );
                 }
             }
             return $left;
@@ -209,6 +225,20 @@
                     $else = ( $self->current->{value} eq 'if' ) ? $self->parse_statement() : $self->parse_block();
                 }
                 return Brocken::AST::If->new( condition => $cond, then_block => $then, else_block => $else );
+            }
+            if ( $tok->{value} eq 'unless' ) {
+                $self->advance();
+                $self->expect('(');
+                my $cond = Brocken::AST::UnaryOp->new( op => '!', expr => $self->parse_expression() );
+                $self->expect(')');
+                return Brocken::AST::If->new( condition => $cond, then_block => $self->parse_block() );
+            }
+            if ( $tok->{value} eq 'until' ) {
+                $self->advance();
+                $self->expect('(');
+                my $cond = Brocken::AST::UnaryOp->new( op => '!', expr => $self->parse_expression() );
+                $self->expect(')');
+                return Brocken::AST::While->new( condition => $cond, body => $self->parse_block() );
             }
             if ( $tok->{value} eq 'while' ) {
                 $self->advance();
