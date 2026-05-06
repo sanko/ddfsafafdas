@@ -90,7 +90,11 @@
             }
             elsif ( $tok->{value} eq 'fiber' ) {
                 $self->advance();
-                $left = Brocken::AST::FiberBlock->new( body => $self->parse_block() );
+                my $params = [];
+                if ( $self->current->{value} eq '(' ) {
+                    $params = $self->parse_routine_params();
+                }
+                $left = Brocken::AST::FiberBlock->new( params => $params, body => $self->parse_block() );
             }
             elsif ( $tok->{value} eq 'yield' ) {
                 $self->advance();

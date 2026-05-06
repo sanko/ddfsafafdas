@@ -55,16 +55,38 @@ package Brocken::Codegen {
                 }
                 elsif ( $op eq 'mov' ) {
                     my $d = $reg_map{ $inst->{dest} };
-                    my $s = $val->( $inst->{args}[0] );
-                    if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( $d, $s ) if $d ne $s; }
-                    else                            { $as->mov_imm( $d, $s ); }
+                    my $s = $val->( $inst->{args}[0] ) // $inst->{args}[0];    # Fallback to literal name
+                    if ( $inst->{args}[0] =~ /^%/ || $inst->{args}[0] =~ /^[a-z]/i ) {
+                        $as->mov_reg( $d, $s ) if $d ne $s;
+                    }
+                    else {
+                        $as->mov_imm( $d, $s );
+                    }
                 }
                 elsif ( $op eq 'local_store' ) {
                     my $v = $val->( $inst->{args}[1] );
-                    if ( $inst->{args}[1] !~ /^%/ ) { $as->mov_imm( 'r11', $v ); $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' ); }
-                    else                            { $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], $v ); }
+                    if ( $arch eq 'x64' ) {
+                        if ( $inst->{args}[1] !~ /^%/ ) { $as->mov_imm( 'r11', $v ); $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' ); }
+                        else                            { $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], $v ); }
+                    }
+                    else {
+                        my $src = ( $inst->{args}[1] =~ /^%/ ) ? $v : 'x16';
+                        $as->mov_imm( 'x16', $v ) if $inst->{args}[1] !~ /^%/;
+                        $as->sub_imm( 'x17', $inst->{args}[0] );
+                        $as->add_reg( 'x17', 'x29' );
+                        $as->store_mem_disp_reg( 'x17', 0, $src );
+                    }
                 }
-                elsif ( $op eq 'local_load' ) { $as->load_reg_mem( $reg_map{ $inst->{dest} }, 'rbp', -$inst->{args}[0] ); }
+                elsif ( $op eq 'local_load' ) {
+                    if ( $arch eq 'x64' ) {
+                        $as->load_reg_mem( $reg_map{ $inst->{dest} }, 'rbp', -$inst->{args}[0] );
+                    }
+                    else {
+                        $as->sub_imm( 'x17', $inst->{args}[0] );
+                        $as->add_reg( 'x17', 'x29' );
+                        $as->load_reg_mem( $reg_map{ $inst->{dest} }, 'x17', 0 );
+                    }
+                }
                 elsif ( $op =~ /^(and|or)$/ ) {
                     my $d  = $reg_map{ $inst->{dest} };
                     my $lv = $val->( $inst->{args}[0] );
@@ -127,9 +149,7 @@ package Brocken::Codegen {
                         $as->mov_reg( 'rdx', $p );
                         $as->add_imm( 'rdx', 24 );
                         $as->load_reg_mem( 'r8', $p, 0 );    # length of string in bytes
-
-                        # Move scratch space to a safe space away from locals at 8, 16, 24, etc.
-                        $as->lea_reg_disp( 'r9', 'rsp', 160 );
+                        $as->lea_reg_disp( 'r9', 'rsp', 40 );
                         $as->mov_imm( 'rax', 0 );
                         $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
                         $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
@@ -247,19 +267,43 @@ package Brocken::Codegen {
                 elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( ( $arch eq 'x64' ? 'r14' : 'x27' ), $reg_map{ $inst->{args}[0] } ); }
                 elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $reg_map{ $inst->{dest} },          ( $arch eq 'x64' ? 'r14' : 'x27' ) ); }
                 elsif ( $op eq 'enter_func' ) {
-                    $as->append_code( pack( 'C*', 0x55, 0x56, 0x57, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE5 ) );
-                    $as->sub_imm( 'rsp', $driver->frame_local_size ) if $arch eq 'x64';
+                    if ( $arch eq 'x64' ) {
+                        $as->append_code( pack( 'C*', 0x55, 0x56, 0x57, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE5 ) );
+                        $as->sub_imm( 'rsp', $driver->frame_local_size );
+                    }
+                    else {
+                        $as->push_reg('x29');
+                        $as->push_reg('x30');
+                        $as->mov_reg( 'x29', 'sp' );
+                        $as->sub_imm( 'sp', 160 );
+                    }
                 }
                 elsif ( $op eq 'leave_func' ) {
                     my $rv = $val->( $inst->{args}[0] );
                     if ( defined $rv ) {
                         if ( $inst->{args}[0] =~ /^%/ ) {
-                            $as->mov_reg( 'rax', $reg_map{ $inst->{args}[0] } ) if $reg_map{ $inst->{args}[0] } ne 'rax';
+                            if ( $arch eq 'x64' ) {
+                                $as->mov_reg( 'rax', $reg_map{ $inst->{args}[0] } ) if $reg_map{ $inst->{args}[0] } ne 'rax';
+                            }
+                            else {
+                                $as->mov_reg( 'x0', $reg_map{ $inst->{args}[0] } ) if $reg_map{ $inst->{args}[0] } ne 'x0';
+                            }
                         }
-                        else { $as->mov_imm( 'rax', $rv ); }
+                        else {
+                            if   ( $arch eq 'x64' ) { $as->mov_imm( 'rax', $rv ); }
+                            else                    { $as->mov_imm( 'x0',  $rv ); }
+                        }
                     }
-                    $as->add_imm( 'rsp', $driver->frame_local_size ) if $arch eq 'x64';
-                    $as->append_code( pack( 'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0x5F, 0x5E, 0x5D, 0xC3 ) );
+                    if ( $arch eq 'x64' ) {
+                        $as->add_imm( 'rsp', $driver->frame_local_size );
+                        $as->append_code( pack( 'C*', 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0x5F, 0x5E, 0x5D, 0xC3 ) );
+                    }
+                    else {
+                        $as->add_imm( 'sp', 160 );
+                        $as->pop_reg('x30');
+                        $as->pop_reg('x29');
+                        $as->append_code( pack( 'L<', 0xD65F03C0 ) );
+                    }
                 }
                 elsif ( $op eq 'call_func' ) {
                     my $target = $inst->{args}[0];
@@ -364,47 +408,76 @@ package Brocken::Codegen {
                         $as->mov_imm( 'rax', 15 );
                         $as->syscall();
                     }
-                }
-                elsif ( $op eq 'fiber_transfer' ) {
-                    my $target = $val->( $inst->{args}[0] );
-                    my $v      = $val->( $inst->{args}[1] );
-                    my $dest   = $reg_map{ $inst->{dest} };
-                    my $iso    = ( $arch eq 'x64' ? 'r14' : 'x27' );
 
-                    # 1. Prepare yield value in RAX
-                    if ( $inst->{args}[1] =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map{ $inst->{args}[1] } ) if $reg_map{ $inst->{args}[1] } ne 'rax'; }
-                    else                            { $as->mov_imm( 'rax', $v ); }
-
-                    # 2. Save current non-volatile state
-                    for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
-
-                    # 3. Store current RSP and TEB limits in current FCB
-                    $as->load_reg_mem( 'r11', $iso, $driver->iso_offset('current_fcb') );
-                    $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('sp'), 'rsp' );
-                    if ( $driver->os eq 'win64' ) {
-                        $as->append_code( pack( 'C5 L<', 0x65, 0x48, 0x8B, 0x14, 0x25, 0x08 ) );    # mov r10, gs:[0x08]
-                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_base'), 'r10' );
-                        $as->append_code( pack( 'C5 L<', 0x65, 0x48, 0x8B, 0x14, 0x25, 0x10 ) );    # mov r10, gs:[0x10]
-                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_limit'), 'r10' );
+                    # --- fiber_switch native assembly ---
+                    $as->mark_label('M_fiber_switch');
+                    my $iso = ( $arch eq 'x64' ? 'r14' : 'x27' );
+                    if ( $arch eq 'x64' ) {
+                        if ( $driver->os eq 'win64' ) {
+                            $as->mov_reg( 'rax', 'rdx' );
+                            $as->mov_reg( 'r10', 'rcx' );
+                        }
+                        else {
+                            $as->mov_reg( 'rax', 'rsi' );
+                            $as->mov_reg( 'r10', 'rdi' );
+                        }
+                        for my $r (qw(rbp rsi rdi rbx r12 r13 r14 r15)) { $as->push_reg($r); }
+                        $as->load_reg_mem( 'r11', $iso, $driver->iso_offset('current_fcb') );
+                        $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('sp'), 'rsp' );
+                        if ( $driver->os eq 'win64' ) {
+                            $as->append_code( pack( 'C5 L<', 0x65, 0x4C, 0x8B, 0x04, 0x25, 0x08 ) );    # mov r8, gs:[0x08]
+                            $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_base'), 'r8' );
+                            $as->append_code( pack( 'C5 L<', 0x65, 0x4C, 0x8B, 0x04, 0x25, 0x10 ) );    # mov r8, gs:[0x10]
+                            $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('stack_limit'), 'r8' );
+                        }
+                        $as->store_mem_disp_reg( 'r10', $driver->fcb_offset('caller'),      'r11' );
+                        $as->store_mem_disp_reg( $iso,  $driver->iso_offset('current_fcb'), 'r10' );
+                        $as->load_reg_mem( 'rsp', 'r10', $driver->fcb_offset('sp') );
+                        if ( $driver->os eq 'win64' ) {
+                            $as->load_reg_mem( 'r8', 'r10', $driver->fcb_offset('stack_base') );
+                            $as->append_code( pack( 'C5 L<', 0x65, 0x4C, 0x89, 0x04, 0x25, 0x08 ) );    # mov gs:[0x08], r8
+                            $as->load_reg_mem( 'r8', 'r10', $driver->fcb_offset('stack_limit') );
+                            $as->append_code( pack( 'C5 L<', 0x65, 0x4C, 0x89, 0x04, 0x25, 0x10 ) );    # mov gs:[0x10], r8
+                        }
+                        for my $r ( reverse qw(rbp rsi rdi rbx r12 r13 r14 r15) ) { $as->pop_reg($r); }
+                        $as->append_code( pack( 'C', 0xC3 ) );                                          # ret
                     }
-
-                    # 4. Swap to Target Fiber
-                    my $target_reg = $reg_map{ $inst->{args}[0] };
-                    $as->store_mem_disp_reg( $target_reg, $driver->fcb_offset('caller'),      'r11' );
-                    $as->store_mem_disp_reg( $iso,        $driver->iso_offset('current_fcb'), $target_reg );
-                    $as->load_reg_mem( 'rsp', $target_reg, $driver->fcb_offset('sp') );
-
-                    # 5. Restore Target's TEB limits
-                    if ( $driver->os eq 'win64' ) {
-                        $as->load_reg_mem( 'r10', $target_reg, $driver->fcb_offset('stack_base') );
-                        $as->append_code( pack( 'C5 L<', 0x65, 0x48, 0x89, 0x14, 0x25, 0x08 ) );    # mov gs:[0x08], r10
-                        $as->load_reg_mem( 'r10', $target_reg, $driver->fcb_offset('stack_limit') );
-                        $as->append_code( pack( 'C5 L<', 0x65, 0x48, 0x89, 0x14, 0x25, 0x10 ) );    # mov gs:[0x10], r10
+                    elsif ( $arch eq 'arm64' ) {
+                        $as->mov_reg( 'x8', 'x0' );
+                        $as->mov_reg( 'x0', 'x1' );
+                        $as->push_reg('x19');
+                        $as->push_reg('x20');
+                        $as->push_reg('x21');
+                        $as->push_reg('x22');
+                        $as->push_reg('x23');
+                        $as->push_reg('x24');
+                        $as->push_reg('x25');
+                        $as->push_reg('x26');
+                        $as->push_reg('x27');
+                        $as->push_reg('x28');
+                        $as->push_reg('x29');
+                        $as->push_reg('x30');
+                        $as->load_reg_mem( 'x9', 'x27', $driver->iso_offset('current_fcb') );
+                        $as->mov_reg( 'x10', 'sp' );
+                        $as->store_mem_disp_reg( 'x9',  $driver->fcb_offset('sp'),          'x10' );
+                        $as->store_mem_disp_reg( 'x8',  $driver->fcb_offset('caller'),      'x9' );
+                        $as->store_mem_disp_reg( 'x27', $driver->iso_offset('current_fcb'), 'x8' );
+                        $as->load_reg_mem( 'x10', 'x8', $driver->fcb_offset('sp') );
+                        $as->mov_reg( 'sp', 'x10' );
+                        $as->pop_reg('x30');
+                        $as->pop_reg('x29');
+                        $as->pop_reg('x28');
+                        $as->pop_reg('x27');
+                        $as->pop_reg('x26');
+                        $as->pop_reg('x25');
+                        $as->pop_reg('x24');
+                        $as->pop_reg('x23');
+                        $as->pop_reg('x22');
+                        $as->pop_reg('x21');
+                        $as->pop_reg('x20');
+                        $as->pop_reg('x19');
+                        $as->append_code( pack( 'L<', 0xD65F03C0 ) );    # ret
                     }
-
-                    # 6. Restore target context and return
-                    for my $r ( reverse qw(rbp rsi rdi rbx r12 r13 r14 r15) ) { $as->pop_reg($r); }
-                    if ( defined($dest) ) { $as->mov_reg( $dest, 'rax' ) if $dest ne 'rax'; }
                 }
                 elsif ( $op eq 'map_op' ) { }
                 else                      { warn 'Unhandled op: ' . $op; }

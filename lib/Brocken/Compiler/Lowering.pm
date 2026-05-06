@@ -182,59 +182,68 @@ package Brocken::Compiler::Lowering {
             $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $curr_idx, 0 ] ), $l3, $l4 );
             $builder->emit_label($l4);
             $builder->emit( 'leave_func', 'void', [0] );
-            $driver->reset_locals();
-            $builder->emit_label('M_fiber_switch');
-            $builder->emit( 'enter_func', 'void', [] );
-            $builder->emit( 'leave_func', 'void',
-                [ $builder->emit( 'fiber_transfer', 'Any', [ $builder->emit( 'get_arg', 'ptr', [0] ), $builder->emit( 'get_arg', 'ptr', [1] ) ] ) ] );
-            $driver->reset_locals();
-            $builder->emit_label('M_fiber_new');
-            $builder->emit( 'enter_func', 'void', [] );
-            my $func_ptr_reg = $builder->emit( 'get_arg', 'i64', [0] );
-            my $func_slot    = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $func_slot, $func_ptr_reg ] );
-            my $fcb      = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 64 ] );
-            my $fcb_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $fcb_slot, $fcb ] );
-            my $mstack  = $builder->emit( 'sys_alloc',  'ptr', [65536] );
-            my $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
-            my $top     = $builder->emit( 'add',        'ptr', [ $mstack, 65536 ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('stack_base'),  $top ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('stack_limit'), $mstack ] );
-            my $rip_loc  = $builder->emit( 'sub', 'ptr', [ $top, 16 ] );
-            my $func_ptr = $builder->emit( 'local_load', 'i64', [$func_slot] );
-            $builder->emit( 'store_mem_disp', 'void', [ $rip_loc, 0, $func_ptr ] );
-            my $zero = $builder->emit( 'constant', 'i64', [0] );
-            $builder->emit( 'store_mem_disp', 'void', [ $top, -8, $zero ] );
-            my $shadow      = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 65536 ] );
-            my $shadow_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $shadow_slot, $shadow ] );
-            $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('shadow_base'), $shadow ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('shadow_ptr'),  $shadow ] );
-            my $iso_val  = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
-            my $iso_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $iso_slot, $iso_val ] );
-            my $prev_head = $builder->emit( 'load_mem_disp', 'ptr', [ $iso_val, $driver->iso_offset('fiber_head') ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('next'),       $prev_head ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $iso_val, $driver->iso_offset('fiber_head'), $fcb_reg ] );
-            my $reg_sz      = $driver->frame_reg_size();
-            my $local_sz    = $driver->frame_local_size();
-            my $l_regs      = $builder->emit( 'sub', 'ptr', [ $rip_loc, $reg_sz ] );
-            my $l_regs_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $l_regs_slot, $l_regs ] );
-            my $zero_fill = $builder->emit( 'constant', 'i64', [0] );
-            for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $l_regs, $o, $zero_fill ] ); }
-            $iso_val = $builder->emit( 'local_load', 'ptr', [$iso_slot] );
-            $builder->emit( 'store_mem_disp', 'void', [ $l_regs, 8, $iso_val ] );
-            my $skip   = $builder->emit( 'add', 'i64', [ $builder->emit( 'constant', 'i64', [$local_sz] ), $reg_sz ] );
-            my $t_regs = $builder->emit( 'sub', 'ptr', [ $l_regs, $skip ] );
-            for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $t_regs, $o, $zero_fill ] ); }
-            $iso_val = $builder->emit( 'local_load', 'ptr', [$iso_slot] );
-            $builder->emit( 'store_mem_disp', 'void', [ $t_regs, 8, $iso_val ] );
-            $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('sp'), $t_regs ] );
-            $builder->emit( 'leave_func',     'void', [$fcb_reg] );
+            {
+                $builder->emit_label('M_fiber_new');
+                $builder->emit( 'enter_func', 'void', [] );
+                my $func_ptr_reg = $builder->emit( 'get_arg', 'i64', [0] );
+                my $func_slot    = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $func_slot, $func_ptr_reg ] );
+                my $fcb      = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 64 ] );
+                my $fcb_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $fcb_slot, $fcb ] );
+                my $mstack  = $builder->emit( 'sys_alloc',  'ptr', [65536] );
+                my $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
+                my $top     = $builder->emit( 'add',        'ptr', [ $mstack, 65536 ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('stack_base'),  $top ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('stack_limit'), $mstack ] );
+                my $actual_func = $builder->emit( 'local_load',      'i64', [$func_slot] );
+                my $iso_val     = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+                my $zero        = $builder->emit( 'constant',        'i64', [0] );
+                my $reg_block;
+
+                if ( $driver->arch eq 'arm64' ) {
+                    $reg_block = $builder->emit( 'sub', 'ptr', [ $top, 96 ] );
+                    for ( my $o = 0; $o < 96; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $reg_block, $o, $zero ] ); }
+                    $builder->emit( 'store_mem_disp', 'void', [ $reg_block, 0,  $actual_func ] );
+                    $builder->emit( 'store_mem_disp', 'void', [ $reg_block, 24, $iso_val ] );
+                }
+                else {
+                    my $rip_loc = $builder->emit( 'sub', 'ptr', [ $top, 16 ] );
+                    $builder->emit( 'store_mem_disp', 'void', [ $rip_loc, 0, $actual_func ] );
+                    $reg_block = $builder->emit( 'sub', 'ptr', [ $rip_loc, 64 ] );
+                    for ( my $o = 0; $o < 64; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $reg_block, $o, $zero ] ); }
+                    $builder->emit( 'store_mem_disp', 'void', [ $reg_block, 8, $iso_val ] );
+                }
+                my $shadow = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', 65536 ] );
+                $fcb_reg = $builder->emit( 'local_load', 'ptr', [$fcb_slot] );
+                $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('shadow_base'), $shadow ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('shadow_ptr'),  $shadow ] );
+                my $prev_head = $builder->emit( 'load_mem_disp', 'ptr', [ $iso_val, $driver->iso_offset('fiber_head') ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('next'),       $prev_head ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $iso_val, $driver->iso_offset('fiber_head'), $fcb_reg ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $fcb_reg, $driver->fcb_offset('sp'),         $reg_block ] );
+                $builder->emit( 'leave_func',     'void', [$fcb_reg] );
+            }
+            {
+                $driver->reset_locals();
+                $builder->emit_label('M_print_any');
+                $builder->emit( 'enter_func', 'void', [] );
+                my $val_reg   = $builder->emit( 'get_arg',  'i64', [0] );
+                my $threshold = $builder->emit( 'constant', 'i64', [1000000] );                  # Simple native threshold
+                my $is_ptr    = $builder->emit( 'cmp_gt',   'Int', [ $val_reg, $threshold ] );
+                my $l_ptr     = $builder->new_label();
+                my $l_int     = $builder->new_label();
+                my $l_end     = $builder->new_label();
+                $builder->emit_cond_br( $is_ptr, $l_ptr, $l_int );
+                $builder->emit_label($l_ptr);
+                $builder->emit( 'builtin_print', 'void', [$val_reg] );
+                $builder->emit_jump($l_end);
+                $builder->emit_label($l_int);
+                $builder->emit( 'call_func', 'void', [ 'M_print_int', $val_reg ] );
+                $builder->emit_jump($l_end);
+                $builder->emit_label($l_end);
+                $builder->emit( 'leave_func', 'void', [0] );
+            }
         }
 
         method lower_program($nodes) {
@@ -265,6 +274,7 @@ package Brocken::Compiler::Lowering {
             # Setup heap
             my $c1m       = $builder->emit( 'constant',  'i64', [268435456] );
             my $init_heap = $builder->emit( 'sys_alloc', 'ptr', [$c1m] );
+            $builder->emit( 'store_iso_disp', 'void', [ 40, $init_heap ] );    # Offset 40 = heap_start
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'),   $init_heap ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $init_heap, $c1m ] ) ] );
 
@@ -490,26 +500,28 @@ package Brocken::Compiler::Lowering {
                 $current_scope = Brocken::Scope->new( parent => $current_scope );
                 $routine_depth++;
                 push @routine_types, 'fiber';
+
+                # Transfer values arrive in the RAX register.
+                if ( scalar @{ $node->params } > 0 ) {
+                    my $input_val = $builder->emit( 'mov', 'Any', ['rax'] );
+                    my $p         = $node->params->[0];                        # Map first parameter to the transferred value
+                    my $slot      = $driver->alloc_local_slot();
+                    $current_scope->define( $p->{name}, $p->{type}, 0, undef, $slot );
+                    $builder->emit( 'local_store', 'void', [ $slot, $input_val ] );
+                }
                 my ( $res, $type ) = $self->lower_block( $node->body->statements );
                 pop @routine_types;
                 $routine_depth--;
                 $current_scope = $current_scope->parent;
                 $builder->emit(
-                    'leave_func',
-                    'void',
-                    [   $builder->emit(
-                            'fiber_transfer',
-                            'Any',
-                            [   $builder->emit(
-                                    'load_mem_disp',
-                                    'ptr',
-                                    [   $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('current_fcb') ] ),
-                                        $driver->fcb_offset('caller')
-                                    ]
-                                ),
-                                $res // 0
-                            ]
-                        )
+                    'call_func',
+                    'Any',
+                    [   'M_fiber_switch',
+                        $builder->emit(
+                            'load_mem_disp', 'ptr',
+                            [ $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('current_fcb') ] ), $driver->fcb_offset('caller') ]
+                        ),
+                        $res // 0
                     ]
                 );
                 $builder->emit( 'exit_program', 'void', [0] );
@@ -541,40 +553,42 @@ package Brocken::Compiler::Lowering {
                         $builder->emit(
                             'call_func', 'Int', [ 'M_fiber_switch', ( $self->lower( $node->args->[0] ) )[0], ( $self->lower( $node->args->[1] ) )[0] ]
                         ),
-                        'Int'
+                        'Any'
                     );
                 }
                 if ( $node->name =~ /^(say|print)$/ ) {
                     my ( $r, $t ) = $self->lower( $node->args->[0] );
-                    $builder->emit( ( $t eq 'Int' ? 'call_func' : 'builtin_print' ), 'void', ( $t eq 'Int' ? [ 'M_print_int', $r ] : [$r] ) );
+                    if ( $t eq 'String' ) {
+                        $builder->emit( 'builtin_print', 'void', [$r] );
+                    }
+                    elsif ( $t eq 'Int' ) {
+                        $builder->emit( 'call_func', 'void', [ 'M_print_int', $r ] );
+                    }
+                    else {
+                        # Polymorphic: Could be Int or String (like from a fiber)
+                        $builder->emit( 'call_func', 'void', [ 'M_print_any', $r ] );
+                    }
                     if ( $node->name eq 'say' ) {
                         $builder->emit( 'builtin_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
                     }
                     return ( undef, 'void' );
                 }
                 my @args = map { ( $self->lower($_) )[0] } @{ $node->args };
-                return ( $builder->emit( 'call_func', 'i64', [ 'M_' . $node->name, @args ] ), 'Int' );
+                return ( $builder->emit( 'call_func', 'i64', [ 'M_' . $node->name, @args ] ), 'Any' );
             }
             if ( $node isa Brocken::AST::Return ) {
                 die "Semantic Error: return outside of subroutine or fiber\n" if $routine_depth == 0;
                 my $ret_val = ( $self->lower( $node->expr ) )[0];
                 if ( $routine_types[-1] eq 'fiber' ) {
                     $builder->emit(
-                        'leave_func',
-                        'void',
-                        [   $builder->emit(
-                                'fiber_transfer',
-                                'Any',
-                                [   $builder->emit(
-                                        'load_mem_disp',
-                                        'ptr',
-                                        [   $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('current_fcb') ] ),
-                                            $driver->fcb_offset('caller')
-                                        ]
-                                    ),
-                                    $ret_val
-                                ]
-                            )
+                        'call_func',
+                        'Any',
+                        [   'M_fiber_switch',
+                            $builder->emit(
+                                'load_mem_disp', 'ptr',
+                                [ $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('current_fcb') ] ), $driver->fcb_offset('caller') ]
+                            ),
+                            $ret_val
                         ]
                     );
                     $builder->emit( 'exit_program', 'void', [0] );
@@ -658,8 +672,8 @@ package Brocken::Compiler::Lowering {
                 my ( $ptr_reg, $ptr_typ ) = $self->lower( $node->invocant );
                 my @args = map { ( $self->lower($_) )[0] } @{ $node->args };
 
-                # Default dynamic calls to return Int to avoid print crash
-                return ( $builder->emit( 'call_reg', 'i64', [ $ptr_reg, @args ] ), 'Int' );
+                # Return 'Any' so 'say' uses the Smart Printer
+                return ( $builder->emit( 'call_reg', 'i64', [ $ptr_reg, @args ] ), 'Any' );
             }
             return ( undef, 'void' );
         }

@@ -43,6 +43,35 @@ say "Result: $result";  # Output: Result: 20
 ```
 
 
+```perl
+# Native, memory-safe classes
+class User {
+    field Int $id;
+    field String $status;
+
+    method set_id(Int $val) {
+        $id = $val;
+        $status = "Active";
+    }
+}
+
+# Blazing fast execution
+my User $u = User->new();
+$u->set_id(42);
+
+# True OS-Level Fibers
+my Any $gen = fiber {
+    say "Fiber booting...";
+    yield 100;
+    say "Fiber shutting down...";
+    return 200;
+};
+
+my Int $res1 = transfer($gen, 0); # 100
+my Int $res2 = transfer($gen, 0); # 200
+```
+
+
 ## I. Core Language Semantics
 *   **Safety by Default:** Variables must be declared. Strict types are gradual but enforced when used. Source code and all strings are strictly UTF-8.
 *   **Invariant Sigils:** Sigils indicate the structural container type, not the access context.

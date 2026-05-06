@@ -1,4 +1,3 @@
-#!/usr/bin/env perl
 use v5.40;
 use utf8;
 use feature 'class';
@@ -7,14 +6,14 @@ use lib 'lib';
 use Brocken;
 $|++;
 my $source_code = <<'BROCKEN';
- my $add_one = sub (Int $n) {
-  return $n + 1;
- };
+my $add_one = sub (Int $n) {
+    return $n + 1;
+};
 
 my $val = 41;
 my $res = $add_one->($val);
 
-print "The answer is: "; say $res;
+say "The answer is: $res";
 
  if ($res == 42) {
      say "Anonymous call works! 🎉";
@@ -101,8 +100,6 @@ my Int $f3 = transfer($gen, 0);
 print "Main: Received from fiber return: ";
 say $f3;
 
-
-
 sub test_defer() {
     #~ say "Entering function...";
     #~ defer {
@@ -125,13 +122,53 @@ sub test_defer() {
 #~ }
 
 
+say "\n[5] Testing new Spec features (unless, until, ternary, logical)...";
+my Bool $is_cool = true;
+my Bool $is_bad  = false;
 
+unless ($is_bad) {
+    say "   Unless block works!";
+}
+
+my Int $c = 0;
+until ($c == 3) {
+    $c = $c + 1;
+}
+if ($c == 3) {
+    say "   Until loop works!";
+}
+
+if ($is_cool && !$is_bad) {
+    say "   Logical AND short-circuit works!";
+}
+
+my String $t_res = $is_cool ? "   Ternary works!" : "   Ternary Failed!";
+say $t_res;
 
 say "\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉";
 
-
 exit $u->get_id();
 BROCKEN
+
+$source_code = 'sub testing() {return "Hi";} say testing(); my Any $f = fiber { yield 10; }; say transfer($f, "10");';
+
+$source_code = <<'BROCKEN';
+sub testing() { return "Hi"; }
+say testing();
+
+# Fiber now accepts a parameter $x!
+my Any $f = fiber (Any $x) {
+    say "Fiber received: ";
+    say $x;
+    yield 42;
+};
+
+say "Main sending 10...";
+my Int $res = transfer($f, 10);
+say "Main received from fiber: ";
+say $res;
+BROCKEN
+
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
