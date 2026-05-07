@@ -23,11 +23,11 @@
             }
             elsif ( $op eq 'intrinsic_print' ) {
                 my $p = $reg_map->{ $inst->{args}[0] };
-                $as->mov_reg( 'rsi', $p );
-                $as->load_reg_mem( 'rdx', 'rsi', 0 );
-                $as->add_imm( 'rsi', 24 );
-                $as->mov_imm( 'rdi', 1 );
-                $as->mov_imm( 'rax', 1 );
+              $as->mov_reg('rsi', $p);
+            $as->load_reg_mem('rdx', 'rsi', 0); # Load ByteLen (at offset 0)
+            $as->add_imm('rsi', 16);           # Skip ByteLen(8) + CharLen(8) to reach bytes
+            $as->mov_imm('rdi', 1);            # stdout
+            $as->mov_imm('rax', 1);            # write
                 $as->syscall();
             }
             elsif ( $op eq 'intrinsic_print_char' ) {

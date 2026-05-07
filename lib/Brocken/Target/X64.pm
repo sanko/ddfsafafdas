@@ -162,19 +162,31 @@ package Brocken::Target::X64 {
                 else { $as->mov_reg('r11', $target); $as->append_code(pack('CCC', 0x41, 0xFF, 0xD3)); }
                 $as->mov_reg($d_reg, 'rax') if defined $d_reg;
             }
-            elsif ($op eq 'shadow_push') {
+             elsif ($op eq 'shadow_push') {
                 my $val = $v->($inst->{args}[0]);
                 $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
                 $as->load_reg_mem('rax', 'r11', $driver->fcb_offset('shadow_ptr'));
-                if ($inst->{args}[0] =~ /^%/ || $inst->{args}[0] =~ /^[a-z]/i) { $as->store_mem_disp_reg('rax', 0, $reg_map->{$inst->{args}[0]}); }
+                if ($inst->{args}[0] =~ /^%/) { $as->store_mem_disp_reg('rax', 0, $reg_map->{$inst->{args}[0]}); }
                 else { $as->mov_imm('r11', $val); $as->store_mem_disp_reg('rax', 0, 'r11'); }
-                $as->add_imm('rax', 8); $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
+                $as->add_imm('rax', 8);
+                $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
                 $as->store_mem_disp_reg('r11', $driver->fcb_offset('shadow_ptr'), 'rax');
             }
-            elsif ($op eq 'get_sp') { $as->mov_reg($d_reg, 'rsp'); }
-            elsif ($op eq 'shadow_restore') {
+            elsif ($op eq 'shadow_get') { # Get the current shadown stack height
+                $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
+                $as->load_reg_mem($d_reg, 'r11', $driver->fcb_offset('shadow_ptr'));
+            }elsif ($op eq 'shadow_set') { # Restore shadow stack to previous height
                 $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
                 $as->store_mem_disp_reg('r11', $driver->fcb_offset('shadow_ptr'), $v->($inst->{args}[0]));
+            }
+
+            elsif ($op eq 'get_sp') { $as->mov_reg($d_reg, 'rsp'); }
+            elsif ($op eq 'shadow_restore') {
+                      $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
+                $as->store_mem_disp_reg('r11', $driver->fcb_offset('shadow_ptr'), $v->($inst->{args}[0]));
+            } elsif ($op eq 'map_op') {
+                # Map loop fusion is pending. Return tagged 0 (1) to prevent GC crashes.
+                $as->mov_imm($d_reg, 1) if defined $d_reg;
             }
             }
 

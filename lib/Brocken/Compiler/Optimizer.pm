@@ -41,15 +41,15 @@ package Brocken::Compiler::Optimizer {
         }
 
         method substitute_ast( $node, $var_name, $repl_node ) {
-            if ( $node isa Brocken::AST::Var ) { return $node->name eq $var_name ? $repl_node : $node; }
-            if ( $node isa Brocken::AST::BinOp ) {
-                return Brocken::AST::BinOp->new(
+            if ( $node isa Brocken::AST::Expr::Var ) { return $node->name eq $var_name ? $repl_node : $node; }
+            if ( $node isa Brocken::AST::Expr::BinOp ) {
+                return Brocken::AST::Expr::BinOp->new(
                     op    => $node->op,
                     left  => $self->substitute_ast( $node->left,  $var_name, $repl_node ),
                     right => $self->substitute_ast( $node->right, $var_name, $repl_node )
                 );
             }
-            if ( $node isa Brocken::AST::Const ) { return $node; }
+            if ( $node isa Brocken::AST::Expr::Const ) { return $node; }
             die 'Optimizer Error: Unhandled AST node ' . ref($node);
         }
     }

@@ -166,6 +166,22 @@ my Int $res = transfer($f, "ten 10");
 print "Main received from fiber: ";
 say $res;
 BROCKEN
+
+
+$source_code = <<'END';
+# Testing Immix GC by forcing allocations in a loop
+my Int $i = 0;
+while ($i < 10000000) {
+    my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation triggers GC line marking
+    $i = $i + 1;
+    if ($i == 10000000) {
+        say "Ready...";
+    }
+}
+say "Done";
+END
+
+
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;

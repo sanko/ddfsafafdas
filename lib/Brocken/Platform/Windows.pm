@@ -28,7 +28,7 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->mov_imm('rcx', -11); $as->call_rva($driver->import_rva('GetStdHandle'), $driver->text_rva);
             $as->mov_reg('rcx', 'rax');
             if ($is_char) { $as->lea_reg_disp('rdx', 'rsp', 48); $as->mov_imm('r8', 1); }
-            else { $as->mov_reg('rdx', $p); $as->add_imm('rdx', 24); $as->load_reg_mem('r8', $p, 0); }
+            else { $as->mov_reg('rdx', $p); $as->add_imm('rdx', 16); $as->load_reg_mem('r8', $p, 0); }
             $as->lea_reg_disp('r9', 'rsp', 40); $as->mov_imm('rax', 0); $as->store_mem_disp_reg('rsp', 32, 'rax');
             $as->call_rva($driver->import_rva('WriteFile'), $driver->text_rva);
         }
