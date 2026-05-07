@@ -32,8 +32,10 @@ package Brocken::AST::Node {
 
     class Brocken::AST::Yield : isa(Brocken::AST::Node) { field $expr : param : reader; }
 
-    class Brocken::AST::FiberBlock : isa(Brocken::AST::Node) {     field $params : param : reader = [];
-field $body : param : reader; }
+    class Brocken::AST::FiberBlock : isa(Brocken::AST::Node) {
+        field $params : param : reader = [];
+        field $body : param : reader;
+    }
 
     class Brocken::AST::Block : isa(Brocken::AST::Node) { field $statements : param : reader; }
 
@@ -61,7 +63,9 @@ field $body : param : reader; }
     class Brocken::AST::MethodCall : isa(Brocken::AST::Node)
     { field $invocant : param : reader; field $name : param : reader; field $args : param : reader; }
 
-        class Brocken::AST::UnaryOp : isa(Brocken::AST::Node) { field $op : param : reader; field $expr : param : reader; }
-    class Brocken::AST::Ternary : isa(Brocken::AST::Node) { field $cond : param : reader; field $then : param : reader; field $else : param : reader; }
+    class Brocken::AST::UnaryOp : isa(Brocken::AST::Node) { field $op : param : reader; field $expr : param : reader; }
+
+    class Brocken::AST::Ternary : isa(Brocken::AST::Node)
+    { field $cond : param : reader; field $then : param : reader; field $else : param : reader; }
 };
 1;

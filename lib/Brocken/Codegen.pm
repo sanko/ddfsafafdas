@@ -399,7 +399,11 @@ package Brocken::Codegen {
                     my $regs    = $driver->preserved_regs();
                     my $iso_reg = ( $arch eq 'x64' ? 'r14' : 'x27' );
                     if ( $arch eq 'x64' ) {
+
+                        # 1. Save current context
                         for my $r (@$regs) { $as->push_reg($r); }
+
+                        # Move arguments out of ABI registers before we swap RSP
                         if ( $driver->os eq 'win64' ) {
                             $as->mov_reg( 'rax', 'rdx' );    # result value
                             $as->mov_reg( 'r10', 'rcx' );    # target FCB
@@ -409,18 +413,22 @@ package Brocken::Codegen {
                             $as->mov_reg( 'r10', 'rdi' );    # target FCB
                         }
 
-                        # Save current state
+                        # 2. Swap stack pointers
                         $as->load_reg_mem( 'r11', $iso_reg, $driver->iso_offset('current_fcb') );
                         $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('sp'), 'rsp' );
 
-                        # Update Isolate to new Fiber
+                        # Update caller link and Isolate state
                         $as->store_mem_disp_reg( 'r10',    $driver->fcb_offset('caller'),      'r11' );
                         $as->store_mem_disp_reg( $iso_reg, $driver->iso_offset('current_fcb'), 'r10' );
 
-                        # Restore new state
+                        # Load new stack pointer
                         $as->load_reg_mem( 'rsp', 'r10', $driver->fcb_offset('sp') );
+
+                        # 3. Restore new context
                         for my $r ( reverse @$regs ) { $as->pop_reg($r); }
-                        $as->append_code( pack( 'C', 0xC3 ) );    # rax contains result
+
+                        # 4. Jump to the RIP (either back to transfer() call or fiber start)
+                        $as->append_code( pack( 'C', 0xC3 ) );    # ret
                     }
                 }
                 elsif ( $op eq 'map_op' ) { }

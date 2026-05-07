@@ -21,15 +21,16 @@
 - [ ] Variant Types: Implement the 16-byte `Any` struct (Tag + Payload) for gradual typing.
 - [ ] The Shadow Stack: IR instructions to push/pop pointers for the GC.
 - [ ] The Allocator: Bump-pointer allocation in a pre-allocated `.data` or `mmap` arena.
-- [ ] Cheney GC: The semi-space copying algorithm (triggered when the bump allocator fills).
+- [ ] Immix GC: Transition the current stub into a Mark-Region collector.
 - [ ] Smart Strings: UTF-8 strings with the O(1) offset-map header.
+- [ ] Defined-OR: Implement the `//` operator in Parser/Lowering.
 
 ## **Milestone 3: Data Structures (The "Perl" Experience)**
 - [ ] Arrays: Heap-allocated contiguous memory with bounds checking.
 - [ ] Hashes: Built-in DJB2 or MurmurHash implementation in assembly.
 - [ ] Classes: first class based on perlclass (no bless) with method dispatch, inheritence, roles, etc.
 - [ ] Tuples: Stack-allocated fixed-size structures.
-- [ ] Context: The `match want` dynamic return dispatcher.
+- [ ] String Ops: Implement `eq`, `ne`, `lt`, `gt` using string-byte comparison.
 
 ## **Milestone 4: Advanced Runtime (Concurrency)**
 - [ ] Fibers: Context switching by saving/restoring `rsp`/`sp` and registers.
