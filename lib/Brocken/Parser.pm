@@ -119,7 +119,7 @@ class Brocken::Parser {
     method parse_expression( $precedence = 0 ) {
         my $tok           = $self->current;
         my $prefix_method = $PREFIX_HANDLERS{ $tok->{value} } // $PREFIX_HANDLERS{ $tok->{type} };
-        die "Parse Error L:$tok->{line}: Unexpected token in expression: " . $tok->{value} unless $prefix_method;
+        die "Parse Error L:$tok->{line} C:$tok->{col}: Unexpected token in expression: " . $tok->{value} . "\n" unless $prefix_method;
         my $left = $self->$prefix_method($tok);
         while ( $precedence < ( $PRECEDENCE{ $self->current->{value} } // 0 ) ) {
             my $op           = $self->current->{value};
@@ -192,14 +192,14 @@ class Brocken::Parser {
 
     method _parse_return() {
         $self->advance();
-        my $expr = $self->parse_expression(0);
+        my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
         $self->expect(';');
         return Brocken::AST::Stmt::Return->new( expr => $expr );
     }
 
     method _parse_exit() {
         $self->advance();
-        my $expr = $self->parse_expression(0);
+        my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
         $self->expect(';');
         return Brocken::AST::Stmt::Exit->new( expr => $expr );
     }
@@ -219,8 +219,9 @@ class Brocken::Parser {
         my $body   = $self->_parse_block_stmt();
         return Brocken::AST::OOP::Method->new( name => $name, params => $params, body => $body );
     }
+
     method _parse_defer() {
-        $self->advance(); # consume 'defer'
+        $self->advance();    # consume 'defer'
         my $block = $self->_parse_block_stmt();
         return Brocken::AST::Stmt::Defer->new( block => $block );
     }
@@ -262,8 +263,12 @@ class Brocken::Parser {
     # --- Expression Prefix Handlers ---
     method _parse_num_literal($tok)    { $self->advance(); Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'Int' ) }
     method _parse_string_literal($tok) { $self->advance(); Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'String' ) }
-    method _parse_bool_literal($tok)   { $self->advance(); Brocken::AST::Expr::Const->new( value => ( $tok->{value} eq 'true' ? 1 : 0 ), type => 'Int' ) }
-    method _parse_var_ref($tok)        { $self->advance(); Brocken::AST::Expr::Var->new( name => $tok->{value} ) }
+
+    method _parse_bool_literal($tok) {
+        $self->advance();
+        Brocken::AST::Expr::Const->new( value => ( $tok->{value} eq 'true' ? 1 : 0 ), type => 'Int' );
+    }
+    method _parse_var_ref($tok) { $self->advance(); Brocken::AST::Expr::Var->new( name => $tok->{value} ) }
 
     method _parse_ident_or_call($tok) {
         my $name = $tok->{value};
@@ -315,7 +320,8 @@ class Brocken::Parser {
 
     method _parse_yield($tok) {
         $self->advance();
-        return Brocken::AST::Async::Yield->new( expr => $self->parse_expression(0) );
+        my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
+        return Brocken::AST::Async::Yield->new( expr => $expr );
     }
 
     method _parse_map($tok) {
@@ -341,7 +347,6 @@ class Brocken::Parser {
             if ( $left isa Brocken::AST::Expr::Var ) {
                 return Brocken::AST::Stmt::Assignment->new( name => $left->name, value => $right );
             }
-
 
             # For Milestone 3/4: Support $obj->field = val
             # if ($left isa Brocken::AST::OOP::MethodCall) { ... }

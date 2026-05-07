@@ -178,7 +178,6 @@ while ($i < 10000000) {
 }
 say "Done";
 END
-
 $source_code = <<'END' if 0;
 sub test_defer() {
      say "Entering function...";
@@ -193,8 +192,28 @@ sub test_defer() {
 }
 
 say test_defer();
-END
 
+{
+  defer{ say "Demo";  }
+  say "Hi";
+  defer {say "Last"; }
+}
+END
+$source_code = <<'END' if 0;
+do_nothing();
+{
+    defer { say "This will run"; exit; say "After return"; }
+    #return;
+    #defer { say "This will not"; }
+}
+
+sub do_nothing() {
+    say "Wait for it...";
+    return;
+    say "Never seen";
+}
+
+END
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
