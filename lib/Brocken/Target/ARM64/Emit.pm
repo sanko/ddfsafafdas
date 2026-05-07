@@ -1,10 +1,10 @@
-package Brocken::Emit {
+package Brocken::Target::ARM64::Emit {
     use v5.40;
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
 
-    class Brocken::Emit::ARM64 {
+    class Brocken::Target::ARM64::Emit {
         our %REG = (
             x0  => 0,
             x1  => 1,

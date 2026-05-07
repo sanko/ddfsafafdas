@@ -1,3 +1,15 @@
+package Brocken::AST {
+    use v5.40;
+    use Brocken::AST::Node;
+    use Brocken::AST::Expr;
+    use Brocken::AST::Stmt;
+    use Brocken::AST::OOP;
+    use Brocken::AST::Async;
+}
+1;
+
+
+__END__
 package Brocken::AST::Node {
     use v5.40;
     use utf8;

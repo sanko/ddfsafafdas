@@ -55,12 +55,12 @@ package Brocken::Compiler {
             # 4. Load Target & Emitter
             if ($arch eq 'x64') {
                 require Brocken::Target::X64;
-                require Brocken::Emit; # Contains Brocken::Emit::X64
+                require Brocken::Target::X64::Emit;
                 $target = Brocken::Target::X64->new(os => $os, arch => $arch);
-                $as     = Brocken::Emit::X64->new();
+                $as     = Brocken::Target::X64::Emit->new();
             } elsif ($arch eq 'arm64') {
                 # require Brocken::Target::ARM64;
-                # require Brocken::Emit;
+                require Brocken::Target::ARM64::Emit;
                 die "Target ARM64 support pending refactor";
             } else {
                 die "Unsupported Architecture: $arch";
