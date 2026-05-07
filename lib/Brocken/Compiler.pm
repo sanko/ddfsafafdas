@@ -121,7 +121,19 @@ package Brocken::Compiler {
 
         # --- Brocken Runtime Layouts ---
         method iso_offset ($name) {
-            state $ISO = { heap_ptr => 0, heap_limit => 8, state_ptr => 16, current_fcb => 24, fiber_head => 32 };
+            state $ISO = { 
+                heap_ptr => 0, 
+                heap_limit => 8, 
+                state_ptr => 16, 
+                current_fcb => 24, 
+                fiber_head => 32,
+                heap_base => 40,
+                block_cursor => 48,
+                block_limit => 56,
+                free_blocks => 64,
+                recyclable_blocks => 72,
+                gc_cycle => 80
+            };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }
         method fcb_offset ($name) {

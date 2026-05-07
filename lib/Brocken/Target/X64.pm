@@ -63,6 +63,51 @@ package Brocken::Target::X64 {
                 my $cc_map = { eq => 0x94, ne => 0x95, lt => 0x9C, ge => 0x9D, le => 0x9E, gt => 0x9F };
                 $as->setcc($cc_map->{$type}, $d_reg);
             }
+            # Inside Brocken::Target::X64 -> emit_op
+            elsif ($op =~ /^(add|sub|mul|and|or|xor)$/) {
+                my $lv = $v->($inst->{args}[0]); my $rv = $v->($inst->{args}[1]);
+                $as->mov_reg($d_reg, $lv) if $d_reg ne $lv;
+                if ($inst->{args}[1] =~ /^%/) {
+                    my $rs = $reg_map->{$inst->{args}[1]};
+                    if    ($op eq 'add') { $as->add_reg($d_reg, $rs); }
+                    elsif ($op eq 'sub') { $as->sub_reg($d_reg, $rs); }
+                    elsif ($op eq 'and') { $as->and_reg($d_reg, $rs); }
+                    elsif ($op eq 'or')  { $as->or_reg($d_reg, $rs); }
+                    elsif ($op eq 'xor') { $as->xor_reg($d_reg, $rs); }
+                    else                 { $as->mul_reg($d_reg, $rs); }
+                } else {
+                    if    ($op eq 'add') { $as->add_imm($d_reg, $rv); }
+                    elsif ($op eq 'sub') { $as->sub_imm($d_reg, $rv); }
+                    elsif ($op eq 'and') { $as->and_imm($d_reg, $rv); }
+                    elsif ($op eq 'or')  { $as->or_imm($d_reg, $rv); }
+                    elsif ($op eq 'xor') { $as->xor_imm($d_reg, $rv); }
+                    else                 { $as->mov_imm('r11', $rv); $as->mul_reg($d_reg, 'r11'); }
+                }
+            }elsif ($op =~ /^(shl|shr)$/) {
+                my $val = $v->($inst->{args}[0]);
+                my $amt = $inst->{args}[1];
+
+                if ($amt !~ /^%/) {
+                    # Constant shift (already implemented)
+                    if ($inst->{args}[0] =~ /^%/) { $as->mov_reg($d_reg, $val) if $d_reg ne $val; }
+                    else                          { $as->mov_imm($d_reg, $val); }
+
+                    if ($op eq 'shl') { $as->shl_imm($d_reg, $v->($amt)); }
+                    else              { $as->shr_imm($d_reg, $v->($amt)); }
+                } else {
+                    # Variable shift: Amount must be in RCX
+                    my $amt_reg = $reg_map->{$amt};
+                    $as->mov_reg('rcx', $amt_reg) if $amt_reg ne 'rcx';
+
+                    # Load the value to be shifted into the destination
+                    if ($inst->{args}[0] =~ /^%/) { $as->mov_reg($d_reg, $val) if $d_reg ne $val; }
+                    else                          { $as->mov_imm($d_reg, $val); }
+
+                    # Perform the shift using CL
+                    if ($op eq 'shl') { $as->shl_cl($d_reg); }
+                    else              { $as->shr_cl($d_reg); }
+                }
+            }
             elsif ($op eq 'local_store') {
                 my $val = $v->($inst->{args}[1]);
                 if ($inst->{args}[1] !~ /^%/) { $as->mov_imm('r11', $val); $as->store_mem_disp_reg('rbp', -$inst->{args}[0], 'r11'); }
@@ -121,12 +166,17 @@ package Brocken::Target::X64 {
                 my $val = $v->($inst->{args}[0]);
                 $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
                 $as->load_reg_mem('rax', 'r11', $driver->fcb_offset('shadow_ptr'));
-                if ($inst->{args}[0] =~ /^%/) { $as->store_mem_disp_reg('rax', 0, $reg_map->{$inst->{args}[0]}); }
+                if ($inst->{args}[0] =~ /^%/ || $inst->{args}[0] =~ /^[a-z]/i) { $as->store_mem_disp_reg('rax', 0, $reg_map->{$inst->{args}[0]}); }
                 else { $as->mov_imm('r11', $val); $as->store_mem_disp_reg('rax', 0, 'r11'); }
                 $as->add_imm('rax', 8); $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
                 $as->store_mem_disp_reg('r11', $driver->fcb_offset('shadow_ptr'), 'rax');
             }
-        }
+            elsif ($op eq 'get_sp') { $as->mov_reg($d_reg, 'rsp'); }
+            elsif ($op eq 'shadow_restore') {
+                $as->load_reg_mem('r11', 'r14', $driver->iso_offset('current_fcb'));
+                $as->store_mem_disp_reg('r11', $driver->fcb_offset('shadow_ptr'), $v->($inst->{args}[0]));
+            }
+            }
 
         method compile_intrinsic($as, $inst, $reg_map, $driver) {
             # Pure delegation to the platform

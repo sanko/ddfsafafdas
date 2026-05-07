@@ -85,6 +85,56 @@ package Brocken::Target::X64::Emit {
         method add_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xC0 | ( $ri & 7 ), $i ); }
         method sub_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xE8 | ( $ri & 7 ), $i ); }
 
+
+
+
+
+
+
+
+
+        method and_reg($d, $s) { $code .= $self->_rex(1, $self->reg($s), 0, $self->reg($d)) . pack('CC', 0x21, 0xC0 | (($self->reg($s) & 7) << 3) | ($self->reg($d) & 7)); }
+        method or_reg($d, $s)  { $code .= $self->_rex(1, $self->reg($s), 0, $self->reg($d)) . pack('CC', 0x09, 0xC0 | (($self->reg($s) & 7) << 3) | ($self->reg($d) & 7)); }
+        method xor_reg($d, $s) { $code .= $self->_rex(1, $self->reg($s), 0, $self->reg($d)) . pack('CC', 0x31, 0xC0 | (($self->reg($s) & 7) << 3) | ($self->reg($d) & 7)); }
+
+        method and_imm($r, $i) { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack('CCl<', 0x81, 0xE0 | ($ri & 7), $i); }
+        method or_imm($r, $i)  { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack('CCl<', 0x81, 0xC8 | ($ri & 7), $i); }
+        method xor_imm($r, $i) { my $ri = $self->reg($r); $code .= $self->_rex(1, 0, 0, $ri) . pack('CCl<', 0x81, 0xF0 | ($ri & 7), $i); }
+
+
+
+
+
+        method shl_cl($r) {
+            my $ri = $self->reg($r);
+            # Opcode D3 /4: SHL r/m64, CL
+            $code .= $self->_rex(1, 0, 0, $ri) . pack('CC', 0xD3, 0xE0 | ($ri & 7));
+        }
+
+        method shr_cl($r) {
+            my $ri = $self->reg($r);
+            # Opcode D3 /5: SHR r/m64, CL
+            $code .= $self->_rex(1, 0, 0, $ri) . pack('CC', 0xD3, 0xE8 | ($ri & 7));
+        }
+
+        # Ensure you also have the constant versions from the previous fix:
+        method shl_imm($r, $i) {
+            my $ri = $self->reg($r);
+            $code .= $self->_rex(1, 0, 0, $ri) . pack('CCC', 0xC1, 0xE0 | ($ri & 7), $i & 0xFF);
+        }
+        method shr_imm($r, $i) {
+            my $ri = $self->reg($r);
+            $code .= $self->_rex(1, 0, 0, $ri) . pack('CCC', 0xC1, 0xE8 | ($ri & 7), $i & 0xFF);
+        }
+
+
+
+
+
+
+
+
+
         method add_reg( $d, $s ) {
             $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
                 pack( 'CC', 0x01, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );

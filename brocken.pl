@@ -114,9 +114,9 @@ sub test_defer() {
 
 #~ say test_defer();
 
-#~ # Testing Immix GC by forcing allocations in a loop
+# Testing Immix GC by forcing allocations in a loop
 my Int $i = 0;
-while ($i < 100) {
+while ($i < 10000000) {
     my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation to trigger GC line marking
     $i = $i + 1;
 }
