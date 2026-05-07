@@ -95,7 +95,24 @@ class Brocken::Parser {
         die sprintf "Parse Error L:%d C:%d: Expected '%s', got '%s'\n", $tok->{line}, $tok->{col}, $val, $tok->{value};
     }
 
-    # --- Main Entry Points ---
+    # Utils
+    method _consume_stmt_terminator() {
+        if ( $self->current->{value} eq ';' ) {
+            $self->advance();
+            return 1;
+        }
+
+        # If the next token is a closing brace or end of file,
+        # we allow the semicolon to be omitted (Perl behavior).
+        if ( $self->current->{value} eq '}' || $self->current->{type} eq 'EOF' ) {
+            return 1;
+        }
+
+        # Otherwise, it's a legitimate missing semicolon error
+        my $tok = $self->current;
+        die sprintf "Parse Error L:%d C:%d: Expected ';' or block end, got '%s'\n", $tok->{line}, $tok->{col}, $tok->{value};
+    }
+    #
     method parse() {
         my @nodes;
         while ( $self->current->{type} ne 'EOF' ) {
@@ -106,13 +123,19 @@ class Brocken::Parser {
 
     method parse_statement() {
         my $val = $self->current->{value};
+
+        # Handle bare semicolons (empty statements: ;;;;)
+        if ( $val eq ';' ) {
+            $self->advance();
+            return undef;    # Lowering handles undef nodes gracefully
+        }
         if ( my $method = $STMT_HANDLERS{$val} ) {
             return $self->$method();
         }
 
-        # Fallback: Handle $var = expr; as an assignment expression
+        # Fallback: Handle expressions as statements (e.g., $x = 10)
         my $expr = $self->parse_expression(0);
-        $self->expect(';');
+        $self->_consume_stmt_terminator();    # Use the new helper here
         return $expr;
     }
 
@@ -131,14 +154,14 @@ class Brocken::Parser {
         return $left;
     }
 
-    # --- Statement Handlers ---
+    # Statement Handlers
     method _parse_var_decl() {
         $self->advance();    # consume 'my'
         my $type = $self->_parse_type_spec();
         my $name = $self->expect('VAR')->{value};
         $self->expect('=');
         my $val = $self->parse_expression(0);
-        $self->expect(';');
+        $self->_consume_stmt_terminator();
         return Brocken::AST::Stmt::VarDecl->new( name => $name, type => $type, value => $val );
     }
 
@@ -148,7 +171,7 @@ class Brocken::Parser {
         my $name = $self->expect('VAR')->{value};
         $self->expect('=');
         my $val = $self->parse_expression(0);
-        $self->expect(';');
+        $self->_consume_stmt_terminator();
         return Brocken::AST::Stmt::StateDecl->new( name => $name, type => $type, value => $val );
     }
 
@@ -192,15 +215,15 @@ class Brocken::Parser {
 
     method _parse_return() {
         $self->advance();
-        my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
-        $self->expect(';');
+        my $expr = ( $self->current->{value} ne ';' ) ? $self->parse_expression(0) : undef;
+        $self->_consume_stmt_terminator();
         return Brocken::AST::Stmt::Return->new( expr => $expr );
     }
 
     method _parse_exit() {
         $self->advance();
         my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
-        $self->expect(';');
+        $self->_consume_stmt_terminator();
         return Brocken::AST::Stmt::Exit->new( expr => $expr );
     }
 
@@ -208,7 +231,7 @@ class Brocken::Parser {
         my $tok  = $self->advance();
         my $name = $tok->{value};
         my $expr = $self->parse_expression(0);
-        $self->expect(';');
+        $self->_consume_stmt_terminator();
         return Brocken::AST::Expr::Call->new( name => $name, args => [$expr] );
     }
 
@@ -253,11 +276,14 @@ class Brocken::Parser {
     }
 
     method _parse_block_stmt() {
-        $self->expect('{');
-        my @stmts;
-        while ( $self->current->{value} ne '}' ) { push @stmts, $self->parse_statement(); }
-        $self->expect('}');
-        return Brocken::AST::Stmt::Block->new( statements => \@stmts );
+     $self->expect('{');
+    my @stmts;
+    while ( $self->current->{value} ne '}' ) {
+        my $node = $self->parse_statement();
+        push @stmts, $node if defined $node; # Don't collect empty statements
+    }
+    $self->expect('}');
+    return Brocken::AST::Stmt::Block->new( statements => \@stmts );
     }
 
     # --- Expression Prefix Handlers ---

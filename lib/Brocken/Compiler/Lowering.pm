@@ -87,7 +87,9 @@ package Brocken::Compiler::Lowering {
 
         method lower_block($statements) {
             my ( $reg, $type );
-            for my $stmt (@$statements) { ( $reg, $type ) = $self->lower($stmt); }
+            for my $stmt ( grep {defined} @$statements ) {
+                ( $reg, $type ) = $self->lower($stmt);
+            }
             return ( $reg, $type );
         }
 

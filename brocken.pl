@@ -200,17 +200,17 @@ say test_defer();
 }
 END
 $source_code = <<'END' if 0;
-do_nothing();
+do_nothing();;
 {
-    defer { say "This will run"; exit; say "After return"; }
+    defer { say "This will run"; exit; say "After return" }
     #return;
-    #defer { say "This will not"; }
+    #defer { say "This will not" }
 }
 
 sub do_nothing() {
     say "Wait for it...";
     return;
-    say "Never seen";
+    say "Never seen"
 }
 
 END
