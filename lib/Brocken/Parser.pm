@@ -8,7 +8,7 @@ class Brocken::Parser {
     field $tokens : param;
     field $pos = 0;
 
-    # 1. Precedence Table (Higher number = binds tighter)
+    # Precedence Table (Higher number = binds tighter)
     my %PRECEDENCE = (
         '='  => 10,                                                              #
         '?'  => 11,                                                              #
@@ -22,7 +22,7 @@ class Brocken::Parser {
         '('  => 70,                                                              # Expression calls
     );
 
-    # 2. Statement Registry (Keyword -> Method)
+    # Statement Registry (Keyword -> Method)
     my %STMT_HANDLERS = (
         'my'     => '_parse_var_decl',
         'state'  => '_parse_state_decl',
@@ -32,6 +32,7 @@ class Brocken::Parser {
         'until'  => '_parse_until',
         'class'  => '_parse_class',
         'sub'    => '_parse_sub_stmt',
+        'defer'  => '_parse_defer',
         'return' => '_parse_return',
         'exit'   => '_parse_exit',
         'say'    => '_parse_builtin_call',
@@ -39,7 +40,7 @@ class Brocken::Parser {
         '{'      => '_parse_block_stmt',
     );
 
-    # 3. Expression Prefix Registry (Starts an expression)
+    # Expression Prefix Registry (Starts an expression)
     my %PREFIX_HANDLERS = (
         'NUM'    => '_parse_num_literal',
         'STRING' => '_parse_string_literal',
@@ -56,7 +57,7 @@ class Brocken::Parser {
         'map'    => '_parse_map',
     );
 
-    # 4. Expression Infix Registry (Connects two expressions)
+    # Expression Infix Registry (Connects two expressions)
     my %INFIX_HANDLERS = (
         '+'  => '_parse_bin_op',
         '-'  => '_parse_bin_op',
@@ -75,7 +76,7 @@ class Brocken::Parser {
         '?'  => '_parse_ternary',
     );
 
-    # --- Core Navigation ---
+    # Core Navigation
     method current() { $tokens->[$pos]       // { type => 'EOF', value => 'EOF' } }
     method peek()    { $tokens->[ $pos + 1 ] // { type => 'EOF', value => 'EOF' } }
 
@@ -217,6 +218,11 @@ class Brocken::Parser {
         my $params = $self->_parse_routine_params();
         my $body   = $self->_parse_block_stmt();
         return Brocken::AST::OOP::Method->new( name => $name, params => $params, body => $body );
+    }
+    method _parse_defer() {
+        $self->advance(); # consume 'defer'
+        my $block = $self->_parse_block_stmt();
+        return Brocken::AST::Stmt::Defer->new( block => $block );
     }
 
     method _parse_class() {

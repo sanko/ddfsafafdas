@@ -101,18 +101,18 @@ print "Main: Received from fiber return: ";
 say $f3;
 
 sub test_defer() {
-    #~ say "Entering function...";
-    #~ defer {
-        #~ say "   [Defer] Executing cleanup 1 (LIFO)";
-    #~ }
-    #~ defer {
-        #~ say "   [Defer] Executing cleanup 2 (LIFO)";
-    #~ }
-    #~ say "Doing work...";
-    #~ return 42;
+     say "Entering function...";
+     defer {
+         say "   [Defer] Executing cleanup 1 (LIFO)";
+     }
+     defer {
+         say "   [Defer] Executing cleanup 2 (LIFO)";
+     }
+     say "Doing work...";
+     return 42;
 }
 
-#~ say test_defer();
+say test_defer();
 
 # Testing Immix GC by forcing allocations in a loop
 my Int $i = 0;
@@ -178,6 +178,23 @@ while ($i < 10000000) {
 }
 say "Done";
 END
+
+$source_code = <<'END' if 0;
+sub test_defer() {
+     say "Entering function...";
+     defer {
+         say "   [Defer] Executing cleanup 1 (LIFO)";
+     }
+     defer {
+         say "   [Defer] Executing cleanup 2 (LIFO)";
+     }
+     say "Doing work...";
+     return 42;
+}
+
+say test_defer();
+END
+
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;

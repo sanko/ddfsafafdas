@@ -14,6 +14,7 @@ class Brocken::Lexer {
         return exit
         sub
         fiber yield
+        defer
         if else unless
         while for map
         say print

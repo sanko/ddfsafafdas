@@ -20,15 +20,23 @@ package Brocken::Compiler::Lowering {
         field $class_id_counter    = 0;
         field $anon_counter        = 0;
         field @fragments;
+        field @defer_stack; # Stack of [ \@instructions ]
         my $BLOCK_SIZE = 32768;
         my $LINE_SIZE  = 128;
 
-        # --- Helper: Boolean Evaluation ---
+        # Helpers
         method _emit_bool_test($reg) {
 
             # In Brocken Smi: False is 1, True is 3. CPU needs 0/1.
             return $builder->emit( 'cmp_ne', 'Int', [ $reg, $builder->emit( 'constant', 'i64', [1] ) ] );
         }
+
+       method _emit_all_defers() {
+           # LIFO: Reverse the stack of currently deferred actions
+           for my $fragment (reverse @defer_stack) {
+               $builder->push_instruction($_) for @$fragment;
+           }
+       }
 
         method _lower_logical($node) {
             my $is_and   = $node->op eq '&&';
@@ -132,7 +140,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'store_mem_disp', 'void', [ $state_mem, $c->{id} * 8, $method_base ] );
             }
 
-            # 7. Initialize "Main" Fiber
+            # Initialize "Main" Fiber
             my $leaf_64   = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
             my $leaf_64k  = $builder->emit( 'constant',  'i64', [ 65536 | hex("2000000000000000") ] );
             my $main_fcb  = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64 ] );
@@ -685,9 +693,19 @@ package Brocken::Compiler::Lowering {
             return ( $res, 'Any' );
         }
 
+        method lower_Defer($node) {
+            my @saved_instructions = $builder->instructions;
+            $builder->set_instructions(); # Clear temporarily
+            $self->lower($node->block);
+            my @deferred_instructions = $builder->instructions;
+            $builder->set_instructions(@saved_instructions); # Restore
+            push @defer_stack, \@deferred_instructions;
+            return (undef, 'void');
+        }
         method lower_Return($node) {
             die "Return outside sub" if $routine_depth == 0;
             my ( $rv, $ty ) = $self->lower( $node->expr );
+            $self->_emit_all_defers();
             if ( $routine_types[-1] eq 'fiber' ) {
                 my $fcb = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('current_fcb') ] );
                 $builder->emit( 'call_func', 'Any',
@@ -697,7 +715,7 @@ package Brocken::Compiler::Lowering {
             else { $builder->emit( 'leave_func', 'void', [$rv] ); }
             return ( undef, 'void' );
         }
-        method lower_Exit($node) { $builder->emit( 'intrinsic_exit', 'void', [ ( $self->lower( $node->expr ) )[0] ] ); return ( undef, 'void' ); }
+        method lower_Exit($node) {  $self->_emit_all_defers(); $builder->emit( 'intrinsic_exit', 'void', [ ( $self->lower( $node->expr ) )[0] ] ); return ( undef, 'void' ); }
 
         method lower_ClassDecl($node) {
             my $ci = $class_info{ $node->name };
@@ -739,6 +757,7 @@ package Brocken::Compiler::Lowering {
                     $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
                 }
                 $self->lower_block( $m->body->statements );
+                 $self->_emit_all_defers();
                 $builder->emit( 'leave_func', 'void', [0] );
                 $routine_depth--;
                 $current_scope = $current_scope->parent;
@@ -749,6 +768,8 @@ package Brocken::Compiler::Lowering {
 
         method lower_Method($node) {
             push @routine_types, 'method';
+            my @old_defers = @defer_stack;
+            @defer_stack = ();
             $driver->reset_locals();
             $builder->emit_label( 'M_' . $node->name );
             $builder->emit( 'enter_func', 'void', [] );
@@ -761,9 +782,11 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
             }
             $self->lower_block( $node->body->statements );
-            $builder->emit( 'leave_func', 'void', [0] );
+$self->_emit_all_defers();
+$builder->emit( 'leave_func', 'void', [0] );
             $routine_depth--;
             $current_scope = $current_scope->parent;
+            @defer_stack = @old_defers;
             pop @routine_types;
             return ( undef, 'void' );
         }
@@ -863,6 +886,7 @@ package Brocken::Compiler::Lowering {
                         $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
                     }
                     $self->lower_block( $node->body->statements );
+                     $self->_emit_all_defers();
                     $builder->emit( 'leave_func', 'void', [0] );
                     $routine_depth--;
                     $current_scope = $current_scope->parent;
@@ -877,7 +901,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'call_reg', 'i64', [ ( $self->lower( $node->invocant ) )[0], map { ( $self->lower($_) )[0] } @{ $node->args } ] ),
                 'Any' );
         }
+
     }
 }
 1;
-
