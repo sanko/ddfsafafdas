@@ -12,6 +12,7 @@ package Brocken::Compiler {
         field $as     : reader;
         field $format : reader;
         field $local_ptr = 0;
+        field $target : reader;
         ADJUST {
             my $d_os = 'linux';
             $d_os = 'win64' if $^O eq 'MSWin32';
@@ -25,6 +26,11 @@ package Brocken::Compiler {
             if    ( $os eq 'win64' ) { $format = Brocken::Format::PE->new() }
             elsif ( $os eq 'macos' ) { $format = Brocken::Format::MachO->new() }
             else                     { $format = Brocken::Format::ELF->new() }
+
+            if ( $arch eq 'x64' ) {
+                require Brocken::Target::X64;
+                $target = Brocken::Target::X64->new( os => $os, arch => $arch );
+            }
         }
 
         # --- ABI DESCRIPTORS ---
