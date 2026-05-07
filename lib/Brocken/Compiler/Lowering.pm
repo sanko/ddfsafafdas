@@ -333,10 +333,12 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_jump($l_bc1);
                 $builder->emit_label($l_bc2);
 
-                my $fib  = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('fiber_head') ] );
+                my $fib_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $fib_slot, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('fiber_head') ] ) ] );
                 my $l_fl = $builder->new_label();
                 my $l_fd = $builder->new_label();
                 $builder->emit_label($l_fl);
+                my $fib = $builder->emit('local_load', 'ptr', [$fib_slot]);
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $fib, 0 ] ), $l_fd, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 my $bs_slot = $driver->alloc_local_slot();
@@ -356,7 +358,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store', 'void', [ $bs_slot, $builder->emit( 'add', 'ptr', [ $cbs, 8 ] ) ] );
                 $builder->emit_jump($l_sl);
                 $builder->emit_label($l_sd);
-                $fib = $builder->emit( 'load_mem_disp', 'ptr', [ $fib, $driver->fcb_offset('next') ] );
+                $builder->emit( 'local_store', 'void', [ $fib_slot, $builder->emit( 'load_mem_disp', 'ptr', [ $fib, $driver->fcb_offset('next') ] ) ] );
                 $builder->emit_jump($l_fl);
                 $builder->emit_label($l_fd);
                 $builder->emit( 'call_func',  'void', ['M_gc_sweep'] );

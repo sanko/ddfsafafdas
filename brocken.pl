@@ -166,9 +166,7 @@ my Int $res = transfer($f, "ten 10");
 print "Main received from fiber: ";
 say $res;
 BROCKEN
-
-
-$source_code = <<'END';
+$source_code = <<'END' if 0;
 # Testing Immix GC by forcing allocations in a loop
 my Int $i = 0;
 while ($i < 10000000) {
@@ -180,8 +178,6 @@ while ($i < 10000000) {
 }
 say "Done";
 END
-
-
 say "Bootstrapping Brocken...";
 my $p = Brocken::Compiler->new();
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
