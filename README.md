@@ -140,14 +140,14 @@ perl brocken.pl --debug=0     # no debug info at all
 ### GDB
 
 ```bash
-# Linux — source-level breakpoints via .debug_line + .eh_frame
+# Linux - source-level breakpoints via .debug_line + .eh_frame
 gdb --batch \
   -ex "break source.brocken:9" \
   -ex "run" \
   -ex "bt" \
   --args ./brocken_out
 
-# Windows — break by address, unwind via SEH .pdata/.xdata
+# Windows - break by address, unwind via SEH .pdata/.xdata
 gdb --batch \
   -ex "break *0x140001000" \
   -ex "run" \

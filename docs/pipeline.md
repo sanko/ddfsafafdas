@@ -31,17 +31,17 @@ my $detected_os =
     : 'linux');
 ```
 
-Architecture detection is similar — check `PROCESSOR_ARCHITECTURE` on Windows, `uname -m` elsewhere.
+Architecture detection is similar - check `PROCESSOR_ARCHITECTURE` on Windows, `uname -m` elsewhere.
 
 The Compiler object becomes the driver that every other phase uses to get ABI info, register lists, memory layout offsets, and format RVAs.
 
 ### What the driver provides
 
-- `preserved_regs()` — callee-saved registers (Windows: rbx, rsi, rdi, r12-r15; SysV: rbx, r12-r15)
-- `context_size()` / `context_offset(name)` — preserved register save area
-- `frame_local_size()` — total frame: context + ret addr + shadow space (Windows) + locals, 16-byte aligned
-- `iso_offset(name)` / `fcb_offset(name)` — field offsets in Isolate/Fiber control blocks
-- `cc(name)` — condition code mapping for branches
+- `preserved_regs()` - callee-saved registers (Windows: rbx, rsi, rdi, r12-r15; SysV: rbx, r12-r15)
+- `context_size()` / `context_offset(name)` - preserved register save area
+- `frame_local_size()` - total frame: context + ret addr + shadow space (Windows) + locals, 16-byte aligned
+- `iso_offset(name)` / `fcb_offset(name)` - field offsets in Isolate/Fiber control blocks
+- `cc(name)` - condition code mapping for branches
 
 ## Phase 2: Lexer
 
@@ -102,11 +102,11 @@ my %KEYWORDS = map { $_ => 1 } qw[
 
 File: `lib/Brocken/Parser.pm` (435 lines)
 
-Pratt parser — top-down operator precedence. Three registries:
+Pratt parser - top-down operator precedence. Three registries:
 
 - **Statement handlers** (`%STMT_HANDLERS`): keyword → parsing method. `if` → `_parse_if`.
-- **Prefix handlers** (`%PREFIX_HANDLERS`): tokens that start expressions — literals, variables, identifiers, `!`, `(`, `sub`, `fiber`, `yield`, `map`.
-- **Infix handlers** (`%INFIX_HANDLERS`): binary operators — arithmetic, comparison, logical, assignment, `->`, `?`.
+- **Prefix handlers** (`%PREFIX_HANDLERS`): tokens that start expressions - literals, variables, identifiers, `!`, `(`, `sub`, `fiber`, `yield`, `map`.
+- **Infix handlers** (`%INFIX_HANDLERS`): binary operators - arithmetic, comparison, logical, assignment, `->`, `?`.
 
 ### Precedence
 
@@ -144,32 +144,32 @@ If a statement doesn't match a keyword handler, it falls through to expression p
 
 ```
 Brocken::AST::Node
-├── Expr::Const       — literal values
-├── Expr::Var         — variable references
-├── Expr::BinOp       — binary operators
-├── Expr::UnaryOp     — unary operators (!)
-├── Expr::Ternary     — cond ? then : else
-├── Expr::Call        — function calls
-├── Expr::AnonCall    — $f->()
-├── Expr::ArrayLiteral — [1, 2, 3]
-├── Expr::IndexExpr   — @arr[0]
-├── Stmt::Block       — { ... }
-├── Stmt::VarDecl     — my declarations
-├── Stmt::StateDecl   — state declarations
-├── Stmt::Assignment  — variable assignment
-├── Stmt::If          — if/elsif/else
-├── Stmt::While       — while loops
-├── Stmt::Return      — return
-├── Stmt::Exit        — exit
-├── Stmt::Map         — map { ... } source
-├── Stmt::Defer       — defer { ... }
-├── OOP::ClassDecl    — class declarations
-├── OOP::FieldDecl    — field declarations
-├── OOP::Method       — method/sub declarations
-├── OOP::MethodCall   — $obj->method(...)
-├── OOP::AnonSub      — sub (...) { ... }
-├── Async::FiberBlock — fiber { ... }
-└── Async::Yield      — yield expr
+├── Expr::Const       - literal values
+├── Expr::Var         - variable references
+├── Expr::BinOp       - binary operators
+├── Expr::UnaryOp     - unary operators (!)
+├── Expr::Ternary     - cond ? then : else
+├── Expr::Call        - function calls
+├── Expr::AnonCall    - $f->()
+├── Expr::ArrayLiteral - [1, 2, 3]
+├── Expr::IndexExpr   - @arr[0]
+├── Stmt::Block       - { ... }
+├── Stmt::VarDecl     - my declarations
+├── Stmt::StateDecl   - state declarations
+├── Stmt::Assignment  - variable assignment
+├── Stmt::If          - if/elsif/else
+├── Stmt::While       - while loops
+├── Stmt::Return      - return
+├── Stmt::Exit        - exit
+├── Stmt::Map         - map { ... } source
+├── Stmt::Defer       - defer { ... }
+├── OOP::ClassDecl    - class declarations
+├── OOP::FieldDecl    - field declarations
+├── OOP::Method       - method/sub declarations
+├── OOP::MethodCall   - $obj->method(...)
+├── OOP::AnonSub      - sub (...) { ... }
+├── Async::FiberBlock - fiber { ... }
+└── Async::Yield      - yield expr
 ```
 
 ## Phase 4: Data Segment
@@ -184,7 +184,7 @@ During lowering, string constants turn into `load_data_addr` IR instructions ref
 
 File: `lib/Brocken/Compiler/Lowering.pm` (963 lines)
 
-This is where the compiler actually does its work. Walks every AST node, emits linear IR. Also dumps the entire runtime into the instruction stream — GC, printers, fiber switcher, everything.
+This is where the compiler actually does its work. Walks every AST node, emits linear IR. Also dumps the entire runtime into the instruction stream - GC, printers, fiber switcher, everything.
 
 ### IR format
 
@@ -220,14 +220,14 @@ Every lowering method returns `($virtual_register, $type)`.
 
 ### Runtime functions injected
 
-- `M_gc_alloc` — Immix bump allocator (128-byte lines, 32KB blocks)
-- `M_gc_collect` — root-walk from shadow stacks, mark with cycle detection
-- `M_gc_mark_obj` — mark objects (arrays, class instances)
-- `M_print_int` — divide-by-10 loop, write digits to stdout
-- `M_print_any` — tagged variant printer
-- `M_fiber_new` — allocate FCB, set up stack + shadow stack
-- `M_fiber_switch` — context switch: save/restore RSP and preserved regs
-- `M_veh_handler` — Windows VEH for stack overflow recovery
+- `M_gc_alloc` - Immix bump allocator (128-byte lines, 32KB blocks)
+- `M_gc_collect` - root-walk from shadow stacks, mark with cycle detection
+- `M_gc_mark_obj` - mark objects (arrays, class instances)
+- `M_print_int` - divide-by-10 loop, write digits to stdout
+- `M_print_any` - tagged variant printer
+- `M_fiber_new` - allocate FCB, set up stack + shadow stack
+- `M_fiber_switch` - context switch: save/restore RSP and preserved regs
+- `M_veh_handler` - Windows VEH for stack overflow recovery
 
 ## Phase 6: Optimizer
 
@@ -245,15 +245,15 @@ File: `lib/Brocken/Codegen.pm` (67 lines)
 
 Three jobs:
 
-1. **Liveness analysis** — for each vreg, find where it's first defined and last used.
-2. **Linear scan register allocation** — sort vregs by start position, maintain active list, spill when out of registers. The spill goes to a local stack slot via `local_load`/`local_store`. Iterates until convergence (usually 2-3 rounds).
-3. **Instruction dispatch** — each IR instruction goes to the target backend's `emit_op` (or `compile_intrinsic` for OS-specific ops).
+1. **Liveness analysis** - for each vreg, find where it's first defined and last used.
+2. **Linear scan register allocation** - sort vregs by start position, maintain active list, spill when out of registers. The spill goes to a local stack slot via `local_load`/`local_store`. Iterates until convergence (usually 2-3 rounds).
+3. **Instruction dispatch** - each IR instruction goes to the target backend's `emit_op` (or `compile_intrinsic` for OS-specific ops).
 
 Available registers:
 - Windows x64: `rbx, rsi, rdi, r12, r13, r15` (6)
 - SysV x64: `rbx, r12, r13, r15` (4)
 
-Volatile registers (rax, rcx, rdx, r8-r11) are excluded — function calls can clobber them at any time.
+Volatile registers (rax, rcx, rdx, r8-r11) are excluded - function calls can clobber them at any time.
 
 After dispatch, `resolve()` patches label references in the code stream.
 

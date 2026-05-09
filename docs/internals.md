@@ -198,9 +198,9 @@ class Brocken::Platform::YourOS : isa(Brocken::Platform) {
 ```
 
 Required intrinsics:
-- `intrinsic_exit(code)` — terminate process
-- `intrinsic_write(fd, buf, count)` — write bytes
-- `intrinsic_alloc(size)` — allocate virtual memory
+- `intrinsic_exit(code)` - terminate process
+- `intrinsic_write(fd, buf, count)` - write bytes
+- `intrinsic_alloc(size)` - allocate virtual memory
 
 ### 2. Format module
 

@@ -184,6 +184,7 @@ say ($res1 == 42 ? "ok 1 - Anonymous sub" : "not ok 1 - Anonymous sub");
 sub multiply(Int $val, Int $factor) { return $val * $factor; }
 my $res2 = multiply(10, 2);
 say ($res2 == 20 ? "ok 2 - Subroutine call" : "not ok 2 - Subroutine call");
+print "# "; say $res2;
 
 # Test 3: Loops & Variables
 my Int $c = 0;
@@ -193,7 +194,7 @@ say ($c == 3 ? "ok 3 - While loop" : "not ok 3 - While loop");
 # Test 4: Fibers
 my Any $f = fiber { yield 42; return 99; };
 my Int $f1 = transfer($f, 0);
-say ($f1 == 42 ? "ok 5 - Fiber yield" : "not ok 5 - Fiber yield");
+say ($f1 == 42 ? "ok 4 - Fiber yield" : "not ok 5 - Fiber yield");
 
 # Test 5: Classes & Methods
 class User {
@@ -201,52 +202,54 @@ class User {
     method set_id(Int $val) { $id = $val; }
     method get_id() { return $id; }
 }
-#~ my Any $u = User->new();
-#~ $u->set_id(42);
-#~ say ($u->get_id() == 42 ? "ok 4 - Class/Method" : "not ok 4 - Class/Method");
+my Any $u = User->new();
+$u->set_id(42);
+say ($u->get_id() == 42 ? "ok 5 - Class/Method" : "not ok 4 - Class/Method");
 
-#~ # Test 6: Defer (LIFO)
-#~ sub test_defer() {
-    #~ my Int $x = 0;
-    #~ defer { $x = $x + 10; }
-    #~ defer { $x = $x + 5; }
-    #~ return $x; # Should be 0
-#~ }
+# Test 6: Defer (LIFO)
+sub test_defer() {
+     my Int $x = 0;
+     defer { $x = $x + 10; }
+     defer { $x = $x + 5; }
+     return $x; # Should be 0
+ }
 #~ # Note: Defer runs on return.
 #~ # We need to verify if the return value captures state correctly.
-#~ say "ok 6 - Defer structure (Manual inspection required)";
+ say "ok 6 - Defer structure (Manual inspection required)";
 
-#~ # Test 7: Unless
-#~ my Bool $bad = false;
-#~ my Int $unless_res = 0;
-#~ unless ($bad) { $unless_res = 1; }
-#~ say ($unless_res == 1 ? "ok 7 - Unless" : "not ok 7 - Unless");
+# Test 7: Unless
+my Bool $bad = false;
+my Int $unless_res = 0;
+unless ($bad) { $unless_res = 1; }
+say ($unless_res == 1 ? "ok 7 - Unless" : "not ok 7 - Unless");
 
-#~ # Test 8: Until
-#~ my Int $until_c = 0;
-#~ until ($until_c == 3) { $until_c = $until_c + 1; }
-#~ say ($until_c == 3 ? "ok 8 - Until" : "not ok 8 - Until");
+# Test 8: Until
+my Int $until_c = 0;
+until ($until_c == 3) { $until_c = $until_c + 1; }
+say ($until_c == 3 ? "ok 8 - Until" : "not ok 8 - Until");
 
-#~ # Test 9: Ternary
-#~ my String $t = true ? "ok" : "not ok";
-#~ say "$t 9 - Ternary";
+# Test 9: Ternary
+my String $t = true ? "ok" : "not ok";
+say "$t 9 - Ternary";
 
-#~ # Test 10: Logical AND
-#~ say (($is_cool = true) && ($is_bad = false) == 0 ? "ok 10 - Logical AND" : "not ok 10 - Logical AND");
+# Test 10: Logical AND
+my Bool $is_cool = true;
+my Bool $is_bad = false;
+# say (($is_cool == true) && ($is_bad == false) == 0 ? "ok 10 - Logical AND" : "not ok 10 - Logical AND");
 
-#~ # Test 11: String Lexing
-#~ print "ok 11 - String Lexing\n";
+# Test 11: String Lexing
+print "ok 11 - String Lexing\n";
 
-#~ # Test 12: Scoping
-#~ my Int $x = 10;
-#~ { my Int $x = 20; }
-#~ say ($x == 10 ? "ok 12 - Scoping" : "not ok 12 - Scoping");
+# Test 12: Scoping
+my Int $x = 10;
+{ my Int $x = 20; }
+say ($x == 10 ? "ok 12 - Scoping" : "not ok 12 - Scoping");
 
-#~ # Test 13: Array/GC
-#~ my Any $arr = [1, 2, 3];
-#~ say ("ok 13 - Array allocation");
+# Test 13: Array/GC
+my Any $arr = [1, 2, 3];
+say ("ok 13 - Array allocation");
 
-#~ exit $u->get_id();
+exit $u->get_id();
 BROCKEN
 $source_code = 'sub testing() {return "Hi";} say testing(); my Any $f = fiber ($i) { say $i; yield "hi 10"; }; say transfer($f, "10 arg");' if 0;
 $source_code = <<'BROCKEN'                                                                                                                  if 0;

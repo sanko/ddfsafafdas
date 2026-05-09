@@ -1,6 +1,6 @@
 # Brocken Runtime System
 
-Brocken doesn't link against a runtime library. The runtime is generated inline during lowering. When you compile a Brocken program, the GC allocator, the fiber context switcher, the integer printer — all of it becomes machine code in the same `.text` section as your code.
+Brocken doesn't link against a runtime library. The runtime is generated inline during lowering. When you compile a Brocken program, the GC allocator, the fiber context switcher, the integer printer - all of it becomes machine code in the same `.text` section as your code.
 
 ## Isolate Control Block
 
@@ -28,7 +28,7 @@ iso_offset => {
 
 ## Fiber Control Block
 
-Each fiber has an FCB — its identity. Holds stack pointer, shadow stack state, and fiber list links.
+Each fiber has an FCB - its identity. Holds stack pointer, shadow stack state, and fiber list links.
 
 ```perl
 fcb_offset => {
@@ -58,10 +58,10 @@ The shadow stack lives inside the fiber's stack allocation, tracked by `shadow_p
 
 ### Where shadow ops are emitted
 
-- **`Any` variable declarations** — `shadow_push` after init
-- **Function entry** — `shadow_get` to capture height
-- **Function exit** (return or implicit end) — `shadow_set` to restore
-- **Method/function calls** — `shadow_push` for the invocant and Any-typed arguments before `call_func`
+- **`Any` variable declarations** - `shadow_push` after init
+- **Function entry** - `shadow_get` to capture height
+- **Function exit** (return or implicit end) - `shadow_set` to restore
+- **Method/function calls** - `shadow_push` for the invocant and Any-typed arguments before `call_func`
 
 ## Immix GC
 
@@ -78,7 +78,7 @@ Bump-pointer within the current line:
 
 ### Marking (M_gc_mark_obj)
 
-- Bit 0 of the object header is the "leaf bit." If set, the object contains no pointers — skip tracing.
+- Bit 0 of the object header is the "leaf bit." If set, the object contains no pointers - skip tracing.
 - Arrays: trace all elements.
 - Class instances: trace all field slots.
 - A visited-set prevents cycles.
@@ -97,7 +97,7 @@ Bump-pointer within the current line:
 
 ## Fibers
 
-Stackful coroutines. Each fiber gets its own machine stack and shadow stack. Switching between them is a full context switch — all callee-saved registers are saved and restored.
+Stackful coroutines. Each fiber gets its own machine stack and shadow stack. Switching between them is a full context switch - all callee-saved registers are saved and restored.
 
 ### Lifecycle
 
@@ -147,12 +147,12 @@ Each OS provides intrinsic functions, emitted as labeled code during lowering.
 
 File: `lib/Brocken/Platform/Windows.pm`
 
-- `VirtualAlloc` — allocate virtual memory
-- `WriteFile` — write bytes to a handle
-- `GetStdHandle` — get stdout handle
-- `ExitProcess` — terminate
-- `SetConsoleOutputCP` — UTF-8 console (65001)
-- `AddVectoredExceptionHandler` — stack overflow recovery
+- `VirtualAlloc` - allocate virtual memory
+- `WriteFile` - write bytes to a handle
+- `GetStdHandle` - get stdout handle
+- `ExitProcess` - terminate
+- `SetConsoleOutputCP` - UTF-8 console (65001)
+- `AddVectoredExceptionHandler` - stack overflow recovery
 
 Uses Windows x64 ABI: args in RCX, RDX, R8, R9; 32 bytes shadow space.
 
@@ -160,9 +160,9 @@ Uses Windows x64 ABI: args in RCX, RDX, R8, R9; 32 bytes shadow space.
 
 File: `lib/Brocken/Platform/Linux.pm`
 
-- `mmap` (syscall 9) — allocate memory
-- `write` (syscall 1) — write to fd
-- `exit` (syscall 60) — terminate
+- `mmap` (syscall 9) - allocate memory
+- `write` (syscall 1) - write to fd
+- `exit` (syscall 60) - terminate
 
 Uses SysV AMD64 ABI: args in RDI, RSI, RDX, RCX, R8, R9. Syscall clobbers RCX, R11.
 

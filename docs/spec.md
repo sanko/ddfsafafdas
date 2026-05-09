@@ -182,7 +182,7 @@ Because Brocken is AOT compiled, it must distinguish between compile time depend
     }
     ```
 *   `throw`: Raises a catchable exception.
-*   `defer`: Pushes a block of code onto a Last-In-First-Out (LIFO) stack. When the current lexical scope exits (for *any* reason—return, throw, or natural exit), the deferred blocks are executed. Excellent for resource management.
+*   `defer`: Pushes a block of code onto a Last-In-First-Out (LIFO) stack. When the current lexical scope exits (for *any* reason-return, throw, or natural exit), the deferred blocks are executed. Excellent for resource management.
     *   *Usage*: `my $file = open("data.txt"); defer { close($file); }`
 
 ---

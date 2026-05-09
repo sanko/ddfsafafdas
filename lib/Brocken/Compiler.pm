@@ -70,10 +70,10 @@ package Brocken::Compiler {
                 $as     = Brocken::Target::X64::Emit->new();
             }
             elsif ( $arch eq 'arm64' ) {
-
-                # require Brocken::Target::ARM64;
+                require Brocken::Target::ARM64;
                 require Brocken::Target::ARM64::Emit;
-                die "Target ARM64 support pending refactor";
+                $target = Brocken::Target::ARM64->new( os => $os, arch => $arch );
+                $as     = Brocken::Target::ARM64::Emit->new();
             }
             else {
                 die "Unsupported Architecture: $arch";
@@ -94,16 +94,18 @@ package Brocken::Compiler {
         }
 
         method context_size() {
-            return scalar( @{ $self->preserved_regs() } ) * 8;
+            my $stride = ( $arch eq 'arm64' ) ? 16 : 8;
+            return scalar( @{ $self->preserved_regs() } ) * $stride;
         }
 
         method context_offset($reg_name) {
-            my $list = $self->preserved_regs();
+            my $list   = $self->preserved_regs();
+            my $stride = ( $arch eq 'arm64' ) ? 16 : 8;
             for my $i ( 0 .. $#$list ) {
 
                 # Stack order is usually reverse of push order
                 if ( $list->[$i] eq $reg_name ) {
-                    return ( scalar(@$list) - 1 - $i ) * 8;
+                    return ( scalar(@$list) - 1 - $i ) * $stride;
                 }
             }
             die "Register $reg_name is not preserved in this ABI";
@@ -186,7 +188,7 @@ package Brocken::Compiler {
         # --- Condition Codes ---
         method cc ($name) {
             if ( $arch eq 'arm64' ) {
-                return { eq => 0, ne => 1, lt => 0xB, gt => 0xC, z => 0, nz => 1 }->{$name};
+                return { eq => 0, ne => 1, lt => 0xB, gt => 0xC, ge => 0xA, le => 0xD, z => 0, nz => 1 }->{$name};
             }
 
             # X64

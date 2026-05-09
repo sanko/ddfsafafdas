@@ -22,7 +22,7 @@ say "[fuzz-semantic] Iterations: $ITERATIONS  Timeout: ${TIMEOUT}s";
 my %stats      = ( iterations => 0, ok => 0, crashes => 0, link_fail => 0, run_fail => 0, exit_mismatch => 0 );
 my $start_time = time();
 
-# We use the existing brocken.pl as our compiler — inject the generated source
+# We use the existing brocken.pl as our compiler - inject the generated source
 # and compile it, then run the binary and check the exit code.
 for my $iter ( 1 .. $ITERATIONS ) {
     $stats{iterations}++;

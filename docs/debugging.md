@@ -67,20 +67,20 @@ Every function (named sub, anonymous sub, method, and the implicit main
 body) is tracked via `push_func_range` / `close_last_func_range`:
 
 ```perl
-# Lowering.pm — on function entry
+# Lowering.pm - on function entry
 $driver->push_func_range({ name => $name, start => $driver->as->offset });
 
-# Codegen.pm — on function exit  
+# Codegen.pm - on function exit  
 $driver->close_last_func_range( $driver->as->offset );
 ```
 
 Each range entry contains:
-- `name` — symbol name (e.g. `M_multiply`, `L_MAIN_START`)
-- `start` — byte offset in `.text`
-- `end` — byte offset in `.text` (set by `close_last_func_range`)
-- `ctx_size` — size of register context save area
-- `params` — array of `{ name, type, slot }` for parameters
-- `locals` — array of `{ name, type, slot }` for local variables
+- `name` - symbol name (e.g. `M_multiply`, `L_MAIN_START`)
+- `start` - byte offset in `.text`
+- `end` - byte offset in `.text` (set by `close_last_func_range`)
+- `ctx_size` - size of register context save area
+- `params` - array of `{ name, type, slot }` for parameters
+- `locals` - array of `{ name, type, slot }` for local variables
 
 ### Plumbing to the Format Layer
 
@@ -115,7 +115,7 @@ my $dw = Brocken::Format::DWARF->new(
 );
 ```
 
-### `.debug_line` — Line Number Program
+### `.debug_line` - Line Number Program
 
 Maps machine-code offsets to source lines using a compact state-machine
 encoding (DWARF3 line number program).
@@ -130,7 +130,7 @@ encoding (DWARF3 line number program).
   unit_length | version(2) | prologue_length | prologue | program
 ```
 
-### `.debug_info` — Compilation Unit & Subprograms
+### `.debug_info` - Compilation Unit & Subprograms
 
 Describes the compilation unit, base types, optional class types (at
 debug >= 4), and subprogram entries for every function.
@@ -151,15 +151,15 @@ debug >= 4), and subprogram entries for every function.
 
 - **Base types**: `Int` (5, signed), `Bool` (2), `String` (1), `Any` (1),
   `ptr` (1), `Array` (1). All 8 bytes wide.
-- **Frame base**: `DW_OP_breg6(0)` — RBP-relative addressing.
-- **Parameter/Location**: `DW_OP_fbreg(N)` — offset from frame base (RBP).
+- **Frame base**: `DW_OP_breg6(0)` - RBP-relative addressing.
+- **Parameter/Location**: `DW_OP_fbreg(N)` - offset from frame base (RBP).
 
-### `.debug_abbrev` — Abbreviation Table
+### `.debug_abbrev` - Abbreviation Table
 
 Compact declaration of the DIE tag/attribute layouts used in
 `.debug_info`. Currently defines 9 abbreviation codes.
 
-### `.debug_frame` — Call Frame Information (DWARF3)
+### `.debug_frame` - Call Frame Information (DWARF3)
 
 Describes how to unwind the stack for each function. Used by GDB for
 backtraces.
@@ -190,16 +190,16 @@ DW_CFA_offset: r14(14), cfa-56
 DW_CFA_offset: r15(15), cfa-64
 ```
 
-The prologue is not explicitly advanced past — GDB's prologue skip
+The prologue is not explicitly advanced past - GDB's prologue skip
 heuristic handles the transition from the initial RSP-based CFA to the
 RBP-based CFA.
 
-### `.debug_aranges` — Address Range Table
+### `.debug_aranges` - Address Range Table
 
 Maps function address ranges for fast debug info lookup. One tuple per
 function: `{ start, length }`, terminated by a null entry.
 
-### `.debug_pubnames` — Public Names Index
+### `.debug_pubnames` - Public Names Index
 
 Maps function names to their DIE offsets in `.debug_info`, for
 symbolic lookup.
@@ -211,7 +211,7 @@ symbolic lookup.
 On win64, Brocken emits SEH (Structured Exception Handling) tables so
 GDB and Windows itself can unwind through Brocken code.
 
-### `.pdata` — Runtime Function Table
+### `.pdata` - Runtime Function Table
 
 Each function gets one `RUNTIME_FUNCTION` entry (12 bytes).
 
@@ -226,7 +226,7 @@ typedef struct _RUNTIME_FUNCTION {
 All entries point to a **single shared `UNWIND_INFO`** in `.xdata` because
 every Brocken function has an identical prologue on win64.
 
-### `.xdata` — Unwind Info
+### `.xdata` - Unwind Info
 
 A single 28-byte `UNWIND_INFO` structure shared across all functions:
 
@@ -243,7 +243,7 @@ Unwind codes (in descending code offset order):
 | CodeOffset | Operation           | Info                       |
 |------------|---------------------|----------------------------|
 | 15         | UWOP_ALLOC_LARGE    | Scaled size = 133 (1064÷8) |
-| 12         | UWOP_SET_FPREG      | —                          |
+| 12         | UWOP_SET_FPREG      | -                          |
 | 10         | UWOP_PUSH_NONVOL    | r15                        |
 | 8          | UWOP_PUSH_NONVOL    | r14                        |
 | 6          | UWOP_PUSH_NONVOL    | r13                        |
@@ -283,13 +283,13 @@ Total: 22 bytes, matching `SizeOfProlog`.
 
 ## `.eh_frame` (Linux ELF)
 
-On Linux, Brocken emits `.eh_frame` — an ELF-specific variant of DWARF
+On Linux, Brocken emits `.eh_frame` - an ELF-specific variant of DWARF
 call frame information that GDB, `perf`, and `libunwind` all consume.
 
 ### CIE
 
 ```c
-Version:            1 (not 3 — .eh_frame uses version 1)
+Version:            1 (not 3 - .eh_frame uses version 1)
 Augmentation:       "zR"
 FDE encoding:       DW_EH_PE_pcrel | DW_EH_PE_sdata4 (0x1B)
 Code alignment:     1
@@ -331,7 +331,7 @@ information format on Linux.
 
 ## Section Layout
 
-### PE (Windows) — with debug
+### PE (Windows) - with debug
 
 ```
 .text       RX   code
@@ -347,7 +347,7 @@ information format on Linux.
 .xdata           SEH unwind info     (win64 only)
 ```
 
-### ELF (Linux) — with debug
+### ELF (Linux) - with debug
 
 ```
 .text   RX      code
@@ -405,7 +405,7 @@ gdb --batch \
   auto-discover `.debug_frame` by name on PE (COFF string table is
   not supported). `.pdata`/`.xdata` are the reliable unwind path.
 - Source-level breakpoints (`break source.brocken:N`) work when GDB
-  can read `.debug_line` — if the section name wasn't truncated.
+  can read `.debug_line` - if the section name wasn't truncated.
   The section is registered as `.debug_line` (exactly 8 chars + null),
   so it should work with GDB.
 
@@ -429,7 +429,7 @@ gdb -ex "break *0x$((0x140000000 + 0x0DA2))" -ex "run" ./brocken_out.exe
 
 ## Configuration Reference
 
-### `Brocken::Compiler` — `debug` parameter
+### `Brocken::Compiler` - `debug` parameter
 
 ```perl
 my $p = Brocken::Compiler->new( debug => $debug_level );
@@ -458,14 +458,14 @@ for (@ARGV) { $dbg = $1 if /--debug=(\d+)/; }
 Each format module checks the debug level in `_setup_layout`:
 
 ```perl
-# ELF.pm — registers debug sections only when $dbg >= 1
+# ELF.pm - registers debug sections only when $dbg >= 1
 if ($dbg >= 1) {
     $l->add_section( '.debug_line',   4096, 0 );
     $l->add_section( '.eh_frame',     4096, 0 );
     ...
 }
 
-# PE.pm — also adds SEH sections on win64
+# PE.pm - also adds SEH sections on win64
 if ($dbg >= 1) {
     ...
     if ($o eq 'win64') {
@@ -491,7 +491,7 @@ my $dw = Brocken::Format::DWARF->new(
 );
 ```
 
-- `eh_frame_base` is computed via `eval` — gracefully degrades to 0 on
+- `eh_frame_base` is computed via `eval` - gracefully degrades to 0 on
   targets that don't have an `.eh_frame` section (e.g. PE).
 - `class_info` is only populated from the lowering phase and only affects
   output at debug ≥ 4.
@@ -520,15 +520,15 @@ The Exception entry (DD[3]) is only valid when `$os eq 'win64'` and
 
 ## Future Work
 
-- **CodeView / PDB** — Full Windows PDB support for Visual Studio / WinDbg
+- **CodeView / PDB** - Full Windows PDB support for Visual Studio / WinDbg
   source-level debugging. Currently deferred; SEH covers the backtrace
   requirement.
-- **`eh_frame_hdr`** — Standard `.eh_frame_hdr` section for fast
+- **`eh_frame_hdr`** - Standard `.eh_frame_hdr` section for fast
   binary-search unwinding. Not needed for GDB but useful for `perf`.
-- **`debug_types`** — Type information is currently embedded inline in
+- **`debug_types`** - Type information is currently embedded inline in
   `.debug_info`. Moving to `.debug_types` would reduce CU size for
   repeated types.
-- **Line-number prologue** — Adding `DW_CFA_advance_loc` to the FDE
+- **Line-number prologue** - Adding `DW_CFA_advance_loc` to the FDE
   instructions would precisely describe when the prologue transitions
   from RSP-relative to RBP-relative CFA. Currently GDB's heuristic
   handles this well enough.

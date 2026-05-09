@@ -143,15 +143,19 @@ package Brocken::Compiler::Lowering {
 
             # 2. Reserve 32 bytes Shadow Space (Home Space) + dummy return slot
             # rl becomes 16n. After RET, RSP will be 16n + 8.
-            my $rl = $builder->emit( 'sub', 'ptr', [ $tp, 48 ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $rl, 0, $builder->emit( 'local_load', 'i64', [$fs] ) ] );
+            my $gap = ( $driver->arch eq 'x64' ) ? 48 : 0;
+            my $rl = $builder->emit( 'sub', 'ptr', [ $tp, $gap ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $rl, 0, $builder->emit( 'local_load', 'i64', [$fs] ) ] ) if $gap > 0;
 
             # 3. Preserved Context below the Return address
             my $cs = $driver->context_size();
             my $rb = $builder->emit( 'sub', 'ptr', [ $rl, $cs ] );
             for ( my $o = 0; $o < $cs; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $rb, $o, 0 ] ); }
+            if ( $driver->arch eq 'arm64' ) {
+                $builder->emit( 'store_mem_disp', 'void', [ $rb, $driver->context_offset('x30'), $builder->emit( 'local_load', 'i64', [$fs] ) ] );
+            }
             $builder->emit( 'store_mem_disp', 'void',
-                [ $rb, $driver->context_offset( ( $driver->arch eq 'x64' ? 'r14' : 'x27' ) ), $builder->emit( 'get_isolate_ctx', 'ptr', [] ) ] );
+                [ $rb, $driver->context_offset( ( $driver->arch eq 'x64' ? 'r14' : 'x28' ) ), $builder->emit( 'get_isolate_ctx', 'ptr', [] ) ] );
             $builder->emit( 'store_mem_disp', 'void', [ $rb, $driver->context_offset( ( $driver->arch eq 'x64' ? 'rbp' : 'x29' ) ), $rb ] );
             my $leaf_64k = $builder->emit( 'constant',  'i64', [ 65536 | hex("2000000000000000") ] );
             my $sh       = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64k ] );
@@ -935,7 +939,7 @@ package Brocken::Compiler::Lowering {
             if ( scalar @{ $node->params } > 0 ) {
                 my $sl = $driver->alloc_local_slot();
                 $current_scope->define( $node->params->[0]{name}, $node->params->[0]{type}, 0, undef, $sl );
-                $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'mov', 'Any', ['rax'] ) ] );
+                $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'mov', 'Any', [ ( $driver->arch eq 'x64' ? 'rax' : 'x0' ) ] ) ] );
                 if ( $driver->debug >= 2 ) {
                     my $sym = $current_scope->resolve( $node->params->[0]{name} );
                     $driver->set_debug_func_params( $l1,
