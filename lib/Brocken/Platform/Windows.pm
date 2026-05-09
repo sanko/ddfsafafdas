@@ -39,8 +39,14 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
         }
         elsif ( $op eq 'intrinsic_exit' ) {
             my $val = $v->( $inst->{args}[0] );
-            $as->mov_reg( 'rcx', $val )      if $inst->{args}[0] =~ /^%/;
-            $as->mov_imm( 'rcx', $val // 0 ) if $inst->{args}[0] !~ /^%/;
+            if ( $inst->{args}[0] =~ /^%/ ) {
+                $as->mov_reg( 'rcx', $val );
+                $as->shr_imm( 'rcx', 1 );
+            }
+            else {
+                my $untagged = ( defined $val && $val =~ /^\d+$/ ) ? ( $val >> 1 ) : ( $val // 0 );
+                $as->mov_imm( 'rcx', $untagged );
+            }
             $as->call_rva( $driver->import_rva('ExitProcess'), $driver->text_rva );
         }
         elsif ( $op eq 'intrinsic_setup_env' ) {

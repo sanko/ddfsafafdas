@@ -367,35 +367,68 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'leave_func', 'void', [0] );
             }
 
-            # --- [2] GC Sweep ---
+            # --- [2] GC Sweep (Line-level) ---
             {
+                $driver->reset_locals();
                 $builder->emit_label('M_gc_sweep');
                 $builder->emit( 'enter_func', 'void', [] );
+                my $cycle   = $builder->emit( 'load_iso_disp', 'i64', [80] );
                 my $bh_slot = $driver->alloc_local_slot();
                 $builder->emit( 'local_store', 'void', [ $bh_slot, $builder->emit( 'load_iso_disp', 'ptr', [40] ) ] );
-                my $l_loop = $builder->new_label();
-                my $l_end  = $builder->new_label();
-                $builder->emit_label($l_loop);
-                my $curr_bh = $builder->emit( 'local_load', 'ptr', [$bh_slot] );
-                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $curr_bh, 0 ] ), $l_end, $builder->new_label() );
-                $builder->emit_label( $builder->last_instruction->{false_l} );
-                my $mark_sum = $builder->emit( 'constant', 'i64', [0] );
-
-                for ( my $off = 0; $off < 256; $off += 8 ) {
-                    my $val = $builder->emit( 'load_mem_disp', 'i64', [ $curr_bh, $off ] );
-                    $mark_sum = $builder->emit( 'or', 'i64', [ $mark_sum, $val ] );
-                }
-                my $l_not_empty = $builder->new_label();
-                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $mark_sum, 0 ] ), $builder->new_label(), $l_not_empty );
-                $builder->emit_label( $builder->last_instruction->{true_l} );
-                $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'), $builder->emit( 'add', 'ptr', [ $curr_bh, 264 ] ) ] );
-                $builder->emit( 'store_iso_disp', 'void',
-                    [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $curr_bh, 32768 ] ) ] );
-                $builder->emit( 'leave_func', 'void', [0] );
-                $builder->emit_label($l_not_empty);
+                my $l_bloop = $builder->new_label();
+                my $l_bend  = $builder->new_label();
+                $builder->emit_label($l_bloop);
+                my $curr_bh       = $builder->emit( 'local_load', 'ptr', [$bh_slot] );
+                my $cmp_block_end = $builder->emit( 'cmp_eq',     'Int', [ $curr_bh, 0 ] );
+                my $l_bcont       = $builder->new_label();
+                $builder->emit_cond_br( $cmp_block_end, $l_bend, $l_bcont );
+                $builder->emit_label($l_bcont);
+                my $line_idx_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'constant', 'i64', [0] ) ] );
+                my $l_lloop = $builder->new_label();
+                my $l_lend  = $builder->new_label();
+                $builder->emit_label($l_lloop);
+                my $line_idx = $builder->emit( 'local_load', 'i64', [$line_idx_slot] );
+                my $cmp_256  = $builder->emit( 'cmp_lt',     'Int', [ $line_idx, $builder->emit( 'constant', 'i64', [256] ) ] );
+                my $l_lcont  = $builder->new_label();
+                $builder->emit_cond_br( $cmp_256, $l_lcont, $l_lend );
+                $builder->emit_label($l_lcont);
+                my $line_addr  = $builder->emit( 'add',           'ptr', [ $curr_bh,   $builder->emit( 'mul', 'i64', [ $line_idx, $LINE_SIZE ] ) ] );
+                my $line_mark  = $builder->emit( 'load_mem_byte', 'Int', [ $curr_bh,   $line_idx ] );
+                my $cmp_mark   = $builder->emit( 'cmp_ne',        'Int', [ $line_mark, 0 ] );
+                my $l_no_mark  = $builder->new_label();
+                my $l_has_mark = $builder->new_label();
+                $builder->emit_cond_br( $cmp_mark, $l_has_mark, $l_no_mark );
+                $builder->emit_label($l_no_mark);
+                $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'add', 'i64', [ $line_idx, 1 ] ) ] );
+                $builder->emit_jump($l_lloop);
+                $builder->emit_label($l_has_mark);
+                my $obj_header = $builder->emit( 'load_mem_disp', 'i64', [ $line_addr,  0 ] );
+                my $obj_is_smi = $builder->emit( 'and',           'i64', [ $obj_header, $builder->emit( 'constant', 'i64', [1] ) ] );
+                my $cmp_smi    = $builder->emit( 'cmp_ne',        'Int', [ $obj_is_smi, 0 ] );
+                my $l_dead_smi = $builder->new_label();
+                my $l_not_smi  = $builder->new_label();
+                $builder->emit_cond_br( $cmp_smi, $l_dead_smi, $l_not_smi );
+                $builder->emit_label($l_not_smi);
+                my $obj_cycle = $builder->emit( 'and', 'i64',
+                    [ $builder->emit( 'shr', 'i64', [ $obj_header, 32 ] ), $builder->emit( 'constant', 'i64', [0xFFFFFF] ) ] );
+                my $cmp_cycle  = $builder->emit( 'cmp_eq', 'Int', [ $obj_cycle, $cycle ] );
+                my $l_live     = $builder->new_label();
+                my $l_dead_obj = $builder->new_label();
+                $builder->emit_cond_br( $cmp_cycle, $l_live, $l_dead_obj );
+                $builder->emit_label($l_dead_smi);
+                $builder->emit( 'store_mem_byte', 'void', [ $curr_bh, $line_idx, $builder->emit( 'constant', 'i64', [0] ) ] );
+                $builder->emit_jump($l_lloop);
+                $builder->emit_label($l_dead_obj);
+                $builder->emit( 'store_mem_byte', 'void', [ $curr_bh, $line_idx, $builder->emit( 'constant', 'i64', [0] ) ] );
+                $builder->emit_jump($l_lloop);
+                $builder->emit_label($l_live);
+                $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'add', 'i64', [ $line_idx, 1 ] ) ] );
+                $builder->emit_jump($l_lloop);
+                $builder->emit_label($l_lend);
                 $builder->emit( 'local_store', 'void', [ $bh_slot, $builder->emit( 'load_mem_disp', 'ptr', [ $curr_bh, 256 ] ) ] );
-                $builder->emit_jump($l_loop);
-                $builder->emit_label($l_end);
+                $builder->emit_jump($l_bloop);
+                $builder->emit_label($l_bend);
                 $builder->emit( 'leave_func', 'void', [0] );
             }
 

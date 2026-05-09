@@ -88,14 +88,26 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
             my $val = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {
                 $as->mov_imm( 'rax', $SYS_exit );
-                if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rdi', $val ); }
-                else                            { $as->mov_imm( 'rdi', $val // 0 ); }
+                if ( $inst->{args}[0] =~ /^%/ ) {
+                    $as->mov_reg( 'rdi', $val );
+                    $as->shr_imm( 'rdi', 1 );
+                }
+                else {
+                    my $untagged = ( defined $val && $val =~ /^\d+$/ ) ? ( $val >> 1 ) : ( $val // 0 );
+                    $as->mov_imm( 'rdi', $untagged );
+                }
                 $as->syscall();
             }
             else {
                 $as->mov_imm( 'x16', $SYS_exit );
-                if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'x0', $val ); }
-                else                            { $as->mov_imm( 'x0', $val // 0 ); }
+                if ( $inst->{args}[0] =~ /^%/ ) {
+                    $as->mov_reg( 'x0', $val );
+                    $as->lsr_reg_imm( 'x0', 'x0', 1 );
+                }
+                else {
+                    my $untagged = ( defined $val && $val =~ /^\d+$/ ) ? ( $val >> 1 ) : ( $val // 0 );
+                    $as->mov_imm( 'x0', $untagged );
+                }
                 $as->syscall(1);
             }
         }
