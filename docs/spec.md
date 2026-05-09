@@ -4,7 +4,7 @@
 This is version 0.01 of the Brocken spec. I'm still sorting it out.
 
 ## 1. Philosophy & Overview
-Brocken is a statically/dynamically typed, AOT-compiled language designed for systems programming, scripting, and web environments. It borrows the text-processing power and expressiveness of Perl but removes its historical ambiguity. It utilizes strict invariant sigils, built-in cooperative multitasking (Fibers), a fast Mark-Region GC, and modern Object-Oriented features.
+Brocken is a statically/dynamically typed, AOT compiled language designed for systems programming, scripting, and web environments. It borrows the text-processing power and expressiveness of Perl but removes its historical ambiguity. It utilizes strict invariant sigils, built-in cooperative multitasking (Fibers), a fast Mark-Region GC, and modern Object-Oriented features.
 
 When executing dynamic code at runtime, Brocken embeds its AOT compiler to act as a Just-In-Time (JIT) engine, generating native machine code directly into memory.
 

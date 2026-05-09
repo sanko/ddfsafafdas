@@ -42,21 +42,21 @@ class Brocken::Parser {
 
     # Expression Prefix Registry (Starts an expression)
     my %PREFIX_HANDLERS = (
-        'NUM'    => '_parse_num_literal',
-        'STRING' => '_parse_string_literal',
+        'NUM'           => '_parse_num_literal',
+        'STRING'        => '_parse_string_literal',
         'INTERP_STRING' => '_parse_interpolated_string',
-        'VAR'    => '_parse_var_ref',
-        'IDENT'  => '_parse_ident_or_call',
-        '['      => '_parse_array_literal',
-        '('      => '_parse_grouped_expr',
-        '!'      => '_parse_unary_op',
-        'true'   => '_parse_bool_literal',
-        'false'  => '_parse_bool_literal',
-        'undef'  => '_parse_undef_literal',
-        'sub'    => '_parse_anon_sub',
-        'fiber'  => '_parse_fiber',
-        'yield'  => '_parse_yield',
-        'map'    => '_parse_map',
+        'VAR'           => '_parse_var_ref',
+        'IDENT'         => '_parse_ident_or_call',
+        '['             => '_parse_array_literal',
+        '('             => '_parse_grouped_expr',
+        '!'             => '_parse_unary_op',
+        'true'          => '_parse_bool_literal',
+        'false'         => '_parse_bool_literal',
+        'undef'         => '_parse_undef_literal',
+        'sub'           => '_parse_anon_sub',
+        'fiber'         => '_parse_fiber',
+        'yield'         => '_parse_yield',
+        'map'           => '_parse_map',
     );
 
     # Expression Infix Registry (Connects two expressions)

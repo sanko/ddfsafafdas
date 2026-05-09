@@ -4,6 +4,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use lib 'lib';
 use Brocken;
+use Carp::Always;
 $|++;
 my $source_code = <<'BROCKEN';
 my $add_one = sub (Int $n) {
@@ -214,9 +215,7 @@ sub test_defer() {
      return $x; # Should be 0
  }
 #~ # Note: Defer runs on return.
-say "# " .
-
-test_defer();
+say "# " . test_defer();
 say "ok 6 - Defer structure (Manual inspection required)";
 
 # Test 7: Unless
@@ -250,6 +249,8 @@ say ($x == 10 ? "ok 12 - Scoping" : "not ok 12 - Scoping");
 # Test 13: Array/GC
 my Any $arr = [1, 2, 3];
 say ("ok 13 - Array allocation");
+
+say '$u->get_id() = ' . $u->get_id();
 
 exit $u->get_id();
 BROCKEN
@@ -340,14 +341,15 @@ my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => 
 $lowering->lower_program($ast);
 my $optimizer = Brocken::Compiler::Optimizer->new();
 $optimizer->optimize( $lowering->builder );
-#~ $lowering->builder->dump_ir("FINAL IR");
+$lowering->builder->dump_ir("FINAL IR");
 my $est_text = scalar( $lowering->builder->instructions ) * 32 + 4096;
 my $est_data = length( $ds->get_raw_data() ) + 4096;
 $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
 $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
- if ( $p->debug >= 1 ) {
+
+if ( $p->debug >= 1 ) {
     say "\n--- DEBUG SOURCE LOCATIONS ---";
     my @sls = $p->source_locs;
     for my $sl (@sls) {
@@ -406,7 +408,6 @@ $p->as->resolve();
         $s->{size} = length( $p->format->debug_section( $s->{name} ) );
     }
     $p->format->layout->calculate(0x1000);
-    
     if ( $p->debug >= 2 ) {
         say "\n--- .debug_info HEX DUMP ---";
         my $di = $p->format->debug_section('.debug_info');
@@ -425,31 +426,30 @@ $p->as->resolve();
 my $ext = $p->os eq 'win64' ? '.exe' : '';
 my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
 say "Executing Native Binary...";
-my $run = $^O eq 'MSWin32' ? $exe : "./$exe";
-if ( $p->debug >= 1 ) {
-    my $tb  = $p->format->image_base + $p->format->rva_for('.text');
-    my @sls = $p->source_locs;
-    my $bo  = do {
-        my $o;
-        for my $s (@sls) {
-            if ( $s->{line} == 9 ) { $o = $s->{offset}; last }
-        }
-        $o // 0;
-    };
-    
-    my $fp_reg = $p->arch eq 'arm64' ? '$x29' : '$rbp';
-    my $pc_reg = $p->arch eq 'arm64' ? 'pc' : 'rip';
-    
-    # Use sprintf and single quotes to prevent Bash variable expansion of $x29 / $rbp
-    my $gdb_cmd = sprintf(
-        "gdb --batch -ex 'break *%d' -ex 'run' -ex 'bt' -ex 'info args' -ex 'p val' -ex 'p factor' -ex 'x/gx %s - 8' -ex 'x/gx %s - 16' -ex 'p/x %s' -ex 'info registers %s' -ex 'quit' --args %s",
-        $tb + $bo, $fp_reg, $fp_reg, $fp_reg, $pc_reg, $run
-    );
-    system($gdb_cmd);
+my $run = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
+if ( $^O eq 'darwin' ) {
+
+    # macOS / LLDB path
+    my @args
+        = $p->debug >= 1 ?
+        ( "-o", "breakpoint set -a " . ( $p->format->image_base + $p->format->rva_for('.text') + 0x1160 ), "-o", "run", "-o", "bt", "-o", "quit" ) :
+        ( "-o", "run", "-o", "bt", "-o", "quit" );
+    system( "lldb", "-b", @args, "--", $run );
 }
 else {
-    my $pc_reg = $p->arch eq 'arm64' ? 'pc' : 'rip';
-    system( "gdb --batch -ex 'run' -ex 'bt' -ex 'info registers' -ex 'x/20i \$" . $pc_reg . "-40' -ex 'quit \$_exitcode' --args " . $run );
+    # Windows/Linux / GDB path
+    # Build a clean array of arguments to avoid empty strings
+    my @cmd = ( "gdb", "--batch", "--quiet" );
+    if ( $p->debug >= 1 ) {
+        my $tb = $p->format->image_base + $p->format->rva_for('.text');
+        my $fp = $p->arch eq 'arm64' ? '$x29' : '$rbp';
+        push @cmd, "-ex", "break *" . ( $tb + 0x1160 );
+        push @cmd, "-ex", "p val", "-ex", "x/gx $fp-8";
+    }
+    push @cmd, "-ex", "run", "-ex", "bt", "-ex", "quit \$_exitcode", "--args", $run;
+
+    # Use the list form of system() to bypass shell parsing issues entirely
+    system(@cmd);
 }
 say "Exit code: " . ( $? >> 8 );
 

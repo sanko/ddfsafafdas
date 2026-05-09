@@ -53,10 +53,10 @@ package Brocken::Compiler {
                 $format   = Brocken::Format::ELF->new();
             }
             elsif ( $os eq 'macos' ) {
-
-                # require Brocken::Platform::Darwin;
-                # require Brocken::Format::MachO;
-                die "Platform MacOS support pending refactor";
+                require Brocken::Platform::Darwin;
+                require Brocken::Format::MachO;
+                $platform = Brocken::Platform::Darwin->new( os => $os );
+                $format   = Brocken::Format::MachO->new();
             }
             else {
                 die "Unsupported OS: $os";

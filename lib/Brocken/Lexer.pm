@@ -60,6 +60,17 @@ class Brocken::Lexer {
                 $self->_advance( length($full_match) );
                 next;
             }
+            if ( $remaining =~ /^'((?:[^'\\]|\\.)*)'/s ) {
+                my $full_match = $&;
+                my $content    = $1;
+
+                # Only handle simple escape sequences like \' and \\
+                $content =~ s/\\'/'/g;
+                $content =~ s/\\\\/\\/g;
+                push @tokens, $self->_make_token( 'STRING', $content );
+                $self->_advance( length($full_match) );
+                next;
+            }
             if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\||\/\/)/ ) {
                 push @tokens, $self->_make_token( 'OP', $1 );
                 $self->_advance( length($1) );

@@ -1,30 +1,30 @@
-package Brocken::Format {
-    use v5.40;
-    use feature 'class';
-    no warnings 'experimental::class';
+use v5.40;
+use feature 'class';
+no warnings 'experimental::class';
 
-    class Brocken::Format {
-        field $_layout     : reader(layout);
-        field $debug_data  : reader = {};
-        field $func_ranges : reader = [];
-        method set_debug_data($d)   { $debug_data = $d; }
-        method debug_section($name) { return $self->debug_data->{$name} // ''; }
-        method set_func_ranges($r)  { $func_ranges = $r; }
+class Brocken::Format {
+    field $_layout     : reader(layout);
+    field $debug_data  : reader = {};
+    field $func_ranges : reader = [];
+    method set_debug_data($d)   { $debug_data = $d; }
+    method debug_section($name) { return $self->debug_data->{$name} // ''; }
+    method set_func_ranges($r)  { $func_ranges = $r; }
 
-        method rva_for($name) {
-            return $self->layout->get($name)->{rva};
-        }
-
-        method pre_layout( $text_size, $data_size, $arch, $os, $debug = 0 ) {
-            require Brocken::Format::Layout;
-            $_layout = Brocken::Format::Layout->new( file_align => ( $os eq 'win64' ? 0x200 : 0x1000 ), section_align => 0x1000 );
-            $self->_setup_layout( $_layout, $text_size, $data_size, $arch, $os, $debug );
-            $_layout->calculate(0x1000);
-        }
-        method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 )    { die "Abstract" }
-        method write_bin( $filename, $text, $data, $arch, $os ) { die "Abstract" }
-        method import_rva($name)                                { die "Imports not supported by this format" }
+    method rva_for($name) {
+        return $self->layout->get($name)->{rva};
     }
+
+    method pre_layout( $text_size, $data_size, $arch, $os, $debug = 0 ) {
+        require Brocken::Format::Layout;
+        my $fa = $os eq 'macos' ? 0x4000 : ( $os eq 'win64' ? 0x200 : 0x1000 );
+        my $sa = $os eq 'macos' ? 0x4000 : 0x1000;
+        $_layout = Brocken::Format::Layout->new( file_align => $fa, section_align => $sa );
+        $self->_setup_layout( $_layout, $text_size, $data_size, $arch, $os, $debug );
+        $_layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
+    }
+    method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 )    { die "Abstract" }
+    method write_bin( $filename, $text, $data, $arch, $os ) { die "Abstract" }
+    method import_rva($name)                                { die "Imports not supported by this format" }
 }
 1;
 __END__

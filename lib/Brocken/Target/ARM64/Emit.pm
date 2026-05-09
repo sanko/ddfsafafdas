@@ -43,8 +43,8 @@ package Brocken::Target::ARM64::Emit {
         field $code : reader = '';
         field %labels;
         field @fixups;
-        method reg($r)                { $REG{ lc $r } // die 'Unknown ARM64 register: ' . $r }
-        method append_code($bin)      { $code .= $bin }
+        method reg($r)           { $REG{ lc $r } // die 'Unknown ARM64 register: ' . $r }
+        method append_code($bin) { $code .= $bin }
 
         method push_reg($reg) {
             my $r = $self->reg($reg);
@@ -59,7 +59,6 @@ package Brocken::Target::ARM64::Emit {
             # LDR Rt, [SP], #16    (Post-indexed)
             $code .= pack( 'L<', 0xF84107E0 | $r );
         }
-
         method push_imm($imm) { $self->mov_imm( 'x16', $imm ); $self->push_reg('x16'); }
 
         method mov_imm( $r, $imm ) {
@@ -87,7 +86,6 @@ package Brocken::Target::ARM64::Emit {
         method mov_reg( $dest, $src ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
-
             if ( $dest eq 'sp' || $src eq 'sp' ) {
                 $code .= pack( 'L<', 0x91000000 | ( $s << 5 ) | $d );
             }
@@ -205,7 +203,7 @@ package Brocken::Target::ARM64::Emit {
         }
 
         method setcc( $cc, $r ) {
-            my $ri = $self->reg($r);
+            my $ri     = $self->reg($r);
             my $inv_cc = $cc ^ 1;
             $code .= pack( 'L<', 0x9A9F07E0 | ( $inv_cc << 12 ) | $ri );
         }
@@ -278,7 +276,6 @@ package Brocken::Target::ARM64::Emit {
                 $code .= pack( 'L<', 0x10000000 | ( $lo << 29 ) | ( $hi << 5 ) | $r );
             }
         }
-
         method call_label($l)    { push @fixups, { offset => length($code), target => $l, type => 'call' }; $code .= pack( 'L<', 0x94000000 ) }
         method syscall( $m = 0 ) { $code .= pack( 'L<', $m ? 0xD4001001 : 0xD4000001 ) }
 
@@ -286,9 +283,7 @@ package Brocken::Target::ARM64::Emit {
             push @fixups, { offset => length($code), target => $l, type => 'cond', cc => $cc };
             $code .= pack( 'L<', 0x54000000 | $cc );
         }
-
-        method jmp($l) { push @fixups, { offset => length($code), target => $l, type => 'uncond' }; $code .= pack( 'L<', 0x14000000 ) }
-
+        method jmp($l)        { push @fixups, { offset => length($code), target => $l, type => 'uncond' }; $code .= pack( 'L<', 0x14000000 ) }
         method mark_label($n) { $labels{$n} = length $code }
 
         method resolve {
