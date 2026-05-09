@@ -4,6 +4,8 @@ package Brocken::AST::Node {
     no warnings 'experimental::class';
     #
     class Brocken::AST::Node {
+        field $line : param : reader = 0;
+        field $col  : param : reader = 0;
         method dump { ( ref $self ) =~ s/.*:://r }
     }
 }

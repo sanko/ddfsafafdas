@@ -7,7 +7,8 @@ package Brocken::AST::Expr {
 
     class Brocken::AST::Expr::Var : isa(Brocken::AST::Node) { field $name : param : reader; }
 
-    class Brocken::AST::Expr::BinOp : isa(Brocken::AST::Node) { field $op : param : reader; field $left : param : reader; field $right : param : reader; }
+    class Brocken::AST::Expr::BinOp : isa(Brocken::AST::Node)
+    { field $op : param : reader; field $left : param : reader; field $right : param : reader; }
 
     class Brocken::AST::Expr::UnaryOp : isa(Brocken::AST::Node) { field $op : param : reader; field $expr : param : reader; }
 

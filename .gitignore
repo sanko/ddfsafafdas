@@ -2,3 +2,4 @@
 *.exe
 brocken_out
 SciTE.session
+.tidyall.d/

@@ -88,6 +88,9 @@ package Brocken::Compiler::Lowering {
         method lower_block($statements) {
             my ( $reg, $type );
             for my $stmt ( grep {defined} @$statements ) {
+                if ( $driver->debug >= 1 ) {
+                    $builder->emit( 'source_loc', 'void', [ $stmt->line, $stmt->col ] );
+                }
                 ( $reg, $type ) = $self->lower($stmt);
             }
             return ( $reg, $type );

@@ -18,13 +18,12 @@ package Brocken::Compiler::DataSegment {
             # HEADER: Bit 61 (Leaf) | Byte Length
             # This tells the GC "I am live, but I contain no pointers"
             my $header = $byte_len | 0x2000000000000000;
-
-            $raw_data .= pack( 'Q<', $header );
-            $raw_data .= pack( 'Q< Q<', $byte_len, length($str) ); # Metadata
+            $raw_data .= pack( 'Q<',    $header );
+            $raw_data .= pack( 'Q< Q<', $byte_len, length($str) );    # Metadata
             $raw_data .= $utf8_bytes;
 
             # Padding to 8-byte alignment
-            my $pad = (8 - (length($raw_data) % 8)) % 8;
+            my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;
             $raw_data .= "\0" x $pad;
 
             # Return pointer to the Metadata (skip the 8-byte GC header)

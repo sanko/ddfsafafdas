@@ -24,6 +24,6 @@ package Brocken::AST::Stmt {
 
     class Brocken::AST::Stmt::Map : isa(Brocken::AST::Node) { field $expr : param : reader; field $source : param : reader; }
 
-    class Brocken::AST::Stmt::Defer : isa(Brocken::AST::Node) { field $block : param : reader;  }
+    class Brocken::AST::Stmt::Defer : isa(Brocken::AST::Node) { field $block : param : reader; }
 }
 1;

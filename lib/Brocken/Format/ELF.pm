@@ -6,12 +6,13 @@ package Brocken::Format::ELF {
     class Brocken::Format::ELF : isa(Brocken::Format) {
 
         method _setup_layout( $l, $t, $d, $a, $o ) {
-            $l->add_section( '.text', $t, 5 );    # RX
-            $l->add_section( '.data', $d, 6 );    # RW
+            $l->add_section( '.text',  $t,   5 );    # RX
+            $l->add_section( '.data',  $d,   6 );    # RW
+            $l->add_section( '.debug', 4096, 0 );
         }
 
         method write_bin( $f, $text, $data, $arch, $os ) {
-            my $l    = $self->layout;             # Access via reader
+            my $l    = $self->layout;                # Access via reader
             my $base = 0x400000;
             my $ehdr = pack(
                 'A4 C C C C C x7 S S L Q Q Q L S S S S S S',
@@ -38,7 +39,8 @@ package Brocken::Format::ELF {
             print $fh $ehdr, $ph_t, $ph_d;
 
             for my $s ( $l->sections ) {
-                my $payload = ( $s->{name} eq '.text' ? $text : ( $data || "\0" ) );
+                my $dd      = $self->debug_data;
+                my $payload = $s->{name} eq '.text' ? $text : ( $s->{name} eq '.debug' ? ( $dd || "\0" ) : ( $data || "\0" ) );
                 $payload .= ( "\0" x ( $s->{size} - length($payload) ) ) if length($payload) < $s->{size};
                 seek( $fh, $s->{off}, 0 );
                 print $fh $payload;
