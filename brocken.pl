@@ -347,8 +347,7 @@ $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
 $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
-
-if ( $p->debug >= 1 ) {
+ if ( $p->debug >= 1 ) {
     say "\n--- DEBUG SOURCE LOCATIONS ---";
     my @sls = $p->source_locs;
     for my $sl (@sls) {
@@ -363,13 +362,15 @@ if ( $p->debug >= 1 ) {
     $p->format->set_func_ranges( \@funcs );
     my %class_info = $lowering->class_info;
     my $dw         = Brocken::Format::DWARF->new(
-        source_locs   => \@sls,
-        text_base     => $text_base,
-        eh_frame_base => $eh_frame_base,
-        func_ranges   => \@funcs,
-        context_size  => $p->context_size,
-        class_info    => \%class_info,
-        debug         => $p->debug
+        source_locs    => \@sls,
+        text_base      => $text_base,
+        eh_frame_base  => $eh_frame_base,
+        func_ranges    => \@funcs,
+        context_size   => $p->context_size,
+        class_info     => \%class_info,
+        debug          => $p->debug,
+        arch           => $p->arch,
+        preserved_regs => $p->preserved_regs
     );
     my $dwarf = $dw->build_all;
     say "DWARF: line=" .
@@ -405,29 +406,20 @@ if ( $p->debug >= 1 ) {
         $s->{size} = length( $p->format->debug_section( $s->{name} ) );
     }
     $p->format->layout->calculate(0x1000);
-    say "\n--- .debug_info HEX DUMP ---";
-    my $di = $p->format->debug_section('.debug_info');
-    for ( my $i = 0; $i < length($di); $i += 16 ) {
-        my $chunk = substr( $di, $i, 16 );
-        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
-    }
-    say "\n--- .debug_abbrev HEX DUMP ---";
-    my $da = $p->format->debug_section('.debug_abbrev');
-    for ( my $i = 0; $i < length($da); $i += 16 ) {
-        my $chunk = substr( $da, $i, 16 );
-        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
-    }
-    say "\n--- .debug_aranges HEX DUMP ---";
-    my $ar = $p->format->debug_section('.debug_aranges');
-    for ( my $i = 0; $i < length($ar); $i += 16 ) {
-        my $chunk = substr( $ar, $i, 16 );
-        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
-    }
-    say "\n--- .debug_pubnames HEX DUMP ---";
-    my $pn = $p->format->debug_section('.debug_pubnames');
-    for ( my $i = 0; $i < length($pn); $i += 16 ) {
-        my $chunk = substr( $pn, $i, 16 );
-        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+    
+    if ( $p->debug >= 2 ) {
+        say "\n--- .debug_info HEX DUMP ---";
+        my $di = $p->format->debug_section('.debug_info');
+        for ( my $i = 0; $i < length($di); $i += 16 ) {
+            my $chunk = substr( $di, $i, 16 );
+            printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+        }
+        say "\n--- .debug_abbrev HEX DUMP ---";
+        my $da = $p->format->debug_section('.debug_abbrev');
+        for ( my $i = 0; $i < length($da); $i += 16 ) {
+            my $chunk = substr( $da, $i, 16 );
+            printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+        }
     }
 }
 my $ext = $p->os eq 'win64' ? '.exe' : '';
@@ -444,13 +436,20 @@ if ( $p->debug >= 1 ) {
         }
         $o // 0;
     };
-    system( 'gdb --batch -ex "break *' .
-            ( $tb + $bo ) .
-            '" -ex "run" -ex "bt" -ex "info args" -ex "p val" -ex "p factor" -ex "x/gx $rbp - 8" -ex "x/gx $rbp - 16" -ex "p/x $rbp" -ex "info registers rip" -ex "quit" --args '
-            . $run );
+    
+    my $fp_reg = $p->arch eq 'arm64' ? '$x29' : '$rbp';
+    my $pc_reg = $p->arch eq 'arm64' ? 'pc' : 'rip';
+    
+    # Use sprintf and single quotes to prevent Bash variable expansion of $x29 / $rbp
+    my $gdb_cmd = sprintf(
+        "gdb --batch -ex 'break *%d' -ex 'run' -ex 'bt' -ex 'info args' -ex 'p val' -ex 'p factor' -ex 'x/gx %s - 8' -ex 'x/gx %s - 16' -ex 'p/x %s' -ex 'info registers %s' -ex 'quit' --args %s",
+        $tb + $bo, $fp_reg, $fp_reg, $fp_reg, $pc_reg, $run
+    );
+    system($gdb_cmd);
 }
 else {
-    system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" -ex "quit $_exitcode" --args ' . $run );
+    my $pc_reg = $p->arch eq 'arm64' ? 'pc' : 'rip';
+    system( "gdb --batch -ex 'run' -ex 'bt' -ex 'info registers' -ex 'x/20i \$" . $pc_reg . "-40' -ex 'quit \$_exitcode' --args " . $run );
 }
 say "Exit code: " . ( $? >> 8 );
 
