@@ -458,18 +458,27 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'call_func',  'void', ['M_gc_sweep'] );
                 $builder->emit( 'leave_func', 'void', [0] );
             }
-
-            # --- [4] Immix Allocator ---
+# --- [4] Immix Allocator ---
             {
                 $driver->reset_locals();
                 $builder->emit_label('M_gc_alloc');
-                $builder->emit( 'enter_func', 'void', [] );
+                $builder->emit( 'enter_func', 'void',[] );
                 my $psz = $builder->emit( 'get_arg',       'i64', [0] );
-                my $rsz = $builder->emit( 'and',           'i64', [ $psz, $builder->emit( 'constant', 'i64', [ hex("1FFFFFFFFFFFFFFF") ] ) ] );
-                my $sz  = $builder->emit( 'add',           'i64', [ $rsz, 8 ] );
-                my $ap  = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] );
+                
+                # Strip the tag
+                my $rsz = $builder->emit( 'and',           'i64',[ $psz, $builder->emit( 'constant', 'i64', [ hex("1FFFFFFFFFFFFFFF") ] ) ] );
+                
+                # Raw size: requested size + 8 byte header
+                my $sz_raw = $builder->emit( 'add', 'i64',[ $rsz, 8 ] );
+                
+                # Align allocation to 8 bytes: sz = (sz_raw + 7) & -8
+                my $sz_plus7 = $builder->emit( 'add', 'i64', [ $sz_raw, 7 ] );
+                my $sz = $builder->emit( 'and', 'i64',[ $sz_plus7, $builder->emit( 'constant', 'i64', [ -8 ] ) ] );
+
+                my $ap  = $builder->emit( 'load_iso_disp', 'ptr',[ $driver->iso_offset('heap_ptr') ] );
                 my $lp  = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] );
-                my $l_f = $builder->new_label();
+                
+		my $l_f = $builder->new_label();
                 my $l_s = $builder->new_label();
                 $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $builder->emit( 'add', 'ptr', [ $ap, $sz ] ), $lp ] ), $l_f, $l_s );
                 $builder->emit_label($l_f);

@@ -214,7 +214,9 @@ sub test_defer() {
      return $x; # Should be 0
  }
 #~ # Note: Defer runs on return.
-say "# " .test_defer();
+say "# " .
+
+test_defer();
 say "ok 6 - Defer structure (Manual inspection required)";
 
 # Test 7: Unless
@@ -338,7 +340,7 @@ my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => 
 $lowering->lower_program($ast);
 my $optimizer = Brocken::Compiler::Optimizer->new();
 $optimizer->optimize( $lowering->builder );
-$lowering->builder->dump_ir("FINAL IR");
+#~ $lowering->builder->dump_ir("FINAL IR");
 my $est_text = scalar( $lowering->builder->instructions ) * 32 + 4096;
 my $est_data = length( $ds->get_raw_data() ) + 4096;
 $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
