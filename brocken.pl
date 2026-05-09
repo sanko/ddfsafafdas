@@ -185,7 +185,6 @@ sub multiply(Int $val, Int $factor) { return $val * $factor; }
 my $res2 = multiply(10, 2);
 say ($res2 == 20 ? "ok 2 - Subroutine call" : "not ok 2 - Subroutine call");
 say "# $res2";
-say $res2;
 
 # Test 3: Loops & Variables
 my Int $c = 0;
@@ -215,8 +214,8 @@ sub test_defer() {
      return $x; # Should be 0
  }
 #~ # Note: Defer runs on return.
-#~ # We need to verify if the return value captures state correctly.
- say "ok 6 - Defer structure (Manual inspection required)";
+say "# " .test_defer();
+say "ok 6 - Defer structure (Manual inspection required)";
 
 # Test 7: Unless
 my Bool $bad = false;

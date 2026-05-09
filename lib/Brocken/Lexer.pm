@@ -52,6 +52,9 @@ class Brocken::Lexer {
                     push @tokens, $self->_make_token( 'INTERP_STRING', \@parts );
                 }
                 else {
+                    $content =~ s/\\n/\n/g;
+                    $content =~ s/\\"/"/g;
+                    $content =~ s/\\\\/\\/g;
                     push @tokens, $self->_make_token( 'STRING', $content );
                 }
                 $self->_advance( length($full_match) );
