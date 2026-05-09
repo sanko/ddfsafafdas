@@ -31,13 +31,29 @@ class Brocken::Lexer {
             if ( $remaining =~ /^(\d+)/ ) { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
 
             # Robust String Lexing: Handles \" and \n and UTF-8 correctly
-            if ( $remaining =~ /^"((?:[^"\\]|\\.)*)"/s ) {
+            if ( $remaining =~ /^"((?:[^"\\\$]|\\.|\$[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)*)"/s ) {
                 my $full_match = $&;
-                my $val        = $1;
-                $val =~ s/\\n/\n/g;
-                $val =~ s/\\"/"/g;
-                $val =~ s/\\\\/\\/g;
-                push @tokens, $self->_make_token( 'STRING', $val );
+                my $content    = $1;
+                my @parts;
+                my $interp = 0;
+                while ( $content =~ /((?:[^"\\\$]|\\.)*)(\$[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)?/g ) {
+                    my $lit = $1;
+                    my $var = $2;
+                    $lit =~ s/\\n/\n/g;
+                    $lit =~ s/\\"/"/g;
+                    $lit =~ s/\\\\/\\/g;
+                    push @parts, [ STRING => $lit ] if length $lit;
+                    if ( defined $var ) {
+                        push @parts, [ VAR => $var ];
+                        $interp = 1;
+                    }
+                }
+                if ($interp) {
+                    push @tokens, $self->_make_token( 'INTERP_STRING', \@parts );
+                }
+                else {
+                    push @tokens, $self->_make_token( 'STRING', $content );
+                }
                 $self->_advance( length($full_match) );
                 next;
             }

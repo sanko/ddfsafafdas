@@ -571,6 +571,142 @@ package Brocken::Compiler::Lowering {
 
             # --- [6] Fiber New ---
             $self->_lower_fiber_new_runtime();
+
+            # --- [7] Concat ---
+            {
+                $driver->reset_locals();
+                $builder->emit_label('M_concat');
+                $builder->emit( 'enter_func', 'void', [] );
+                my $s1 = $builder->emit( 'get_arg', 'ptr', [0] );
+                my $s1s = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $s1s, $s1 ] );
+                my $s2 = $builder->emit( 'get_arg', 'ptr', [1] );
+                my $s2s = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $s2s, $s2 ] );
+                my $l1 = $builder->emit( 'load_mem_disp', 'i64', [ $s1, 0 ] );
+                my $l1s = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $l1s, $l1 ] );
+                my $l2 = $builder->emit( 'load_mem_disp', 'i64', [ $s2, 0 ] );
+                my $l2s = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $l2s, $l2 ] );
+                my $total = $builder->emit( 'add', 'i64', [ $l1, $l2 ] );
+                my $ts = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $ts, $total ] );
+                my $tag = $builder->emit( 'constant', 'i64', [ hex("2000000000000000") ] );
+                my $hdr = $builder->emit( 'constant', 'i64', [16] );
+                my $alloc_size = $builder->emit( 'add', 'i64', [ $total, $hdr ] );
+                my $tagged = $builder->emit( 'or', 'i64', [ $alloc_size, $tag ] );
+                my $new = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $tagged ] );
+                my $ns = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $ns, $new ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $new, 0, $total ] );
+
+                my $cl1 = $builder->new_label();
+                my $cl1b = $builder->new_label();
+                my $cl1d = $builder->new_label();
+                my $is = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $is, $builder->emit( 'constant', 'i64', [0] ) ] );
+                $builder->emit_label($cl1);
+                my $ci = $builder->emit( 'local_load', 'i64', [$is] );
+                my $cl1v = $builder->emit( 'local_load', 'i64', [$l1s] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $ci, $cl1v ] ), $cl1b, $cl1d );
+                $builder->emit_label($cl1b);
+                my $cs1 = $builder->emit( 'local_load', 'ptr', [$s1s] );
+                my $co1 = $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$is] ), 16 ] );
+                my $cb = $builder->emit( 'load_mem_byte', 'Int', [ $cs1, $co1 ] );
+                $builder->emit( 'store_mem_byte', 'void', [ $builder->emit( 'local_load', 'ptr', [$ns] ), $co1, $cb ] );
+                $builder->emit( 'local_store', 'void', [ $is, $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$is] ), 1 ] ) ] );
+                $builder->emit_jump($cl1);
+                $builder->emit_label($cl1d);
+
+                my $cl2 = $builder->new_label();
+                my $cl2b = $builder->new_label();
+                my $cl2d = $builder->new_label();
+                my $js = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $js, $builder->emit( 'constant', 'i64', [0] ) ] );
+                $builder->emit_label($cl2);
+                my $cj = $builder->emit( 'local_load', 'i64', [$js] );
+                my $cl2v = $builder->emit( 'local_load', 'i64', [$l2s] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $cj, $cl2v ] ), $cl2b, $cl2d );
+                $builder->emit_label($cl2b);
+                my $cs2 = $builder->emit( 'local_load', 'ptr', [$s2s] );
+                my $co2 = $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$js] ), 16 ] );
+                my $cb2 = $builder->emit( 'load_mem_byte', 'Int', [ $cs2, $co2 ] );
+                my $dl = $builder->emit( 'add', 'i64', [ $co2, $builder->emit( 'local_load', 'i64', [$l1s] ) ] );
+                $builder->emit( 'store_mem_byte', 'void', [ $builder->emit( 'local_load', 'ptr', [$ns] ), $dl, $cb2 ] );
+                $builder->emit( 'local_store', 'void', [ $js, $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$js] ), 1 ] ) ] );
+                $builder->emit_jump($cl2);
+                $builder->emit_label($cl2d);
+
+                $builder->emit( 'leave_func', 'void', [ $builder->emit( 'local_load', 'ptr', [$ns] ) ] );
+            }
+
+            # --- [8] Any to String ---
+            {
+                $driver->reset_locals();
+                $builder->emit_label('M_any_to_str');
+                $builder->emit( 'enter_func', 'void', [] );
+                my $v = $builder->emit( 'get_arg', 'i64', [0] );
+                my $is_int = $builder->emit( 'and', 'i64', [ $v, 1 ] );
+                my $l_str = $builder->new_label();
+                my $l_int = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $is_int, 0 ] ), $l_str, $l_int );
+                $builder->emit_label($l_str);
+                $builder->emit( 'leave_func', 'void', [$v] );
+                $builder->emit_label($l_int);
+                my $n = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $v, 1 ] ), 2 ] );
+                my $l_z = $builder->new_label();
+                my $l_nz = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $n, 0 ] ), $l_z, $l_nz );
+                $builder->emit_label($l_z);
+                $builder->emit( 'leave_func', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("0") ] ) ] );
+                $builder->emit_label($l_nz);
+                my $bf = $builder->emit( 'intrinsic_alloc', 'ptr', [32] );
+                my $bs = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $bs, $bf ] );
+                my $is = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $is, $builder->emit( 'constant', 'i64', [0] ) ] );
+                my $ns = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $ns, $n ] );
+                my $l1 = $builder->new_label();
+                my $l2 = $builder->new_label();
+                $builder->emit_label($l1);
+                my $cn = $builder->emit( 'local_load', 'i64', [$ns] );
+                my $rm = $builder->emit( 'mod', 'i64', [ $cn, 10 ] );
+                $builder->emit( 'store_mem_byte', 'void',
+                    [ $builder->emit( 'local_load', 'ptr', [$bs] ),
+                      $builder->emit( 'local_load', 'i64', [$is] ),
+                      $builder->emit( 'add', 'i64', [ $rm, 48 ] ) ] );
+                $builder->emit( 'local_store', 'void', [ $is, $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$is] ), 1 ] ) ] );
+                $builder->emit( 'local_store', 'void', [ $ns, $builder->emit( 'div', 'i64', [ $cn, 10 ] ) ] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $builder->emit( 'local_load', 'i64', [$ns] ), 0 ] ), $l1, $l2 );
+                $builder->emit_label($l2);
+                my $len = $builder->emit( 'local_load', 'i64', [$is] );
+                my $hdr = $builder->emit( 'constant', 'i64', [16] );
+                my $data_size = $builder->emit( 'add', 'i64', [ $len, $hdr ] );
+                my $tag = $builder->emit( 'constant', 'i64', [ hex("2000000000000000") ] );
+                my $alloc_size = $builder->emit( 'or', 'i64', [ $data_size, $tag ] );
+                my $new_str = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $alloc_size ] );
+                my $ns_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $ns_slot, $new_str ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $new_str, 0, $len ] );
+                my $ds = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $ds, $builder->emit( 'constant', 'i64', [0] ) ] );
+                my $l3 = $builder->new_label();
+                my $l4 = $builder->new_label();
+                $builder->emit_label($l3);
+                my $ci = $builder->emit( 'sub', 'i64', [ $builder->emit( 'local_load', 'i64', [$is] ), 1 ] );
+                $builder->emit( 'local_store', 'void', [ $is, $ci ] );
+                my $di = $builder->emit( 'local_load', 'i64', [$ds] );
+                $builder->emit( 'store_mem_byte', 'void',
+                    [ $builder->emit( 'local_load', 'ptr', [$ns_slot] ),
+                      $builder->emit( 'add', 'i64', [ $di, 16 ] ),
+                      $builder->emit( 'load_mem_byte', 'Int', [ $builder->emit( 'local_load', 'ptr', [$bs] ), $ci ] ) ] );
+                $builder->emit( 'local_store', 'void', [ $ds, $builder->emit( 'add', 'i64', [ $di, 1 ] ) ] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $ci, 0 ] ), $l3, $l4 );
+                $builder->emit_label($l4);
+                $builder->emit( 'leave_func', 'void', [ $builder->emit( 'local_load', 'ptr', [$ns_slot] ) ] );
+            }
         }
 
         # --- AST Visitor ---
@@ -650,6 +786,11 @@ package Brocken::Compiler::Lowering {
             if ( $node->op eq '&&' || $node->op eq '||' || $node->op eq '//' ) { return $self->_lower_logical($node); }
             my ( $lr, $lt ) = $self->lower( $node->left );
             my ( $rr, $rt ) = $self->lower( $node->right );
+            if ( $node->op eq '.' ) {
+                my $lc = $lt eq 'String' ? $lr : $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $lr ] );
+                my $rc = $rt eq 'String' ? $rr : $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $rr ] );
+                return ( $builder->emit( 'call_func', 'ptr', [ 'M_concat', $lc, $rc ] ), 'String' );
+            }
             my $cm = { '==' => 'cmp_eq', '!=' => 'cmp_ne', '<' => 'cmp_lt', '>' => 'cmp_gt', '<=' => 'cmp_le', '>=' => 'cmp_ge' };
             if ( exists $cm->{ $node->op } ) {
                 my $raw = $builder->emit( $cm->{ $node->op }, 'i64', [ $lr, $rr ] );

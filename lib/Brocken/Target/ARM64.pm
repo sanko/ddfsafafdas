@@ -87,8 +87,9 @@ package Brocken::Target::ARM64 {
                     $as->sdiv_reg( $d_reg, $ln, $rs );
                 }
                 else {
-                    $as->sdiv_reg( 'x17', $ln, $rs ); # reusing x17 is risky if $rs was x17
-                    $as->msub_reg( $d_reg, 'x17', $rs, $ln );
+                    $as->mov_reg( 'x15', $ln );
+                    $as->sdiv_reg( 'x16', $ln, $rs );
+                    $as->msub_reg( $d_reg, 'x16', $rs, 'x15' );
                 }
             }
             elsif ( $op =~ /^(and|or|xor)$/ ) {

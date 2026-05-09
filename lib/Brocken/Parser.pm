@@ -15,7 +15,7 @@ class Brocken::Parser {
         '||' => 12, '//' => 12,                                                  #
         '&&' => 13,                                                              #
         '==' => 15, '!=' => 15, '<' => 15, '>' => 15, '<=' => 15, '>=' => 15,    #
-        '+'  => 20, '-'  => 20,                                                  #
+        '+'  => 20, '-'  => 20, '.' => 20,                                       #
         '*'  => 30, '/'  => 30,                                                  #
         '['  => 50,                                                              #
         '->' => 60,                                                              #
@@ -44,6 +44,7 @@ class Brocken::Parser {
     my %PREFIX_HANDLERS = (
         'NUM'    => '_parse_num_literal',
         'STRING' => '_parse_string_literal',
+        'INTERP_STRING' => '_parse_interpolated_string',
         'VAR'    => '_parse_var_ref',
         'IDENT'  => '_parse_ident_or_call',
         '['      => '_parse_array_literal',
@@ -64,6 +65,7 @@ class Brocken::Parser {
         '-'  => '_parse_bin_op',
         '*'  => '_parse_bin_op',
         '/'  => '_parse_bin_op',
+        '.'  => '_parse_bin_op',
         '==' => '_parse_bin_op',
         '!=' => '_parse_bin_op',
         '<'  => '_parse_bin_op',
@@ -315,6 +317,28 @@ class Brocken::Parser {
     method _parse_string_literal($tok) {
         $self->advance();
         Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'String', line => $tok->{line}, col => $tok->{col} );
+    }
+
+    method _parse_interpolated_string($tok) {
+        $self->advance();
+        my $parts = $tok->{value};
+        my $expr;
+        for my $part (@$parts) {
+            my $node;
+            if ( $part->[0] eq 'STRING' ) {
+                $node = Brocken::AST::Expr::Const->new( value => $part->[1], type => 'String', line => $tok->{line}, col => $tok->{col} );
+            }
+            else {
+                $node = Brocken::AST::Expr::Var->new( name => $part->[1], line => $tok->{line}, col => $tok->{col} );
+            }
+            if ( defined $expr ) {
+                $expr = Brocken::AST::Expr::BinOp->new( op => '.', left => $expr, right => $node, line => $tok->{line}, col => $tok->{col} );
+            }
+            else {
+                $expr = $node;
+            }
+        }
+        return $expr // Brocken::AST::Expr::Const->new( value => '', type => 'String', line => $tok->{line}, col => $tok->{col} );
     }
 
     method _parse_bool_literal($tok) {

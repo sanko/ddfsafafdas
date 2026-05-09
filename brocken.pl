@@ -184,7 +184,8 @@ say ($res1 == 42 ? "ok 1 - Anonymous sub" : "not ok 1 - Anonymous sub");
 sub multiply(Int $val, Int $factor) { return $val * $factor; }
 my $res2 = multiply(10, 2);
 say ($res2 == 20 ? "ok 2 - Subroutine call" : "not ok 2 - Subroutine call");
-print "# "; say $res2;
+say "# $res2";
+say $res2;
 
 # Test 3: Loops & Variables
 my Int $c = 0;
@@ -230,12 +231,12 @@ say ($until_c == 3 ? "ok 8 - Until" : "not ok 8 - Until");
 
 # Test 9: Ternary
 my String $t = true ? "ok" : "not ok";
-say "$t 9 - Ternary";
+say "ok 9 - Ternary";
 
 # Test 10: Logical AND
 my Bool $is_cool = true;
 my Bool $is_bad = false;
-# say (($is_cool == true) && ($is_bad == false) == 0 ? "ok 10 - Logical AND" : "not ok 10 - Logical AND");
+say (($is_cool == true) && ($is_bad == false) ? "ok 10 - Logical AND" : "not ok 10 - Logical AND");
 
 # Test 11: String Lexing
 print "ok 11 - String Lexing\n";
