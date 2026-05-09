@@ -20,6 +20,9 @@ package Brocken::Compiler {
         # State management
         field $local_ptr = 0;
         field @source_locs;
+        field @func_ranges;
+        field %debug_func_params;
+        field %debug_func_locals;
         ADJUST {
             # 1. Platform Detection
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
@@ -127,10 +130,29 @@ package Brocken::Compiler {
             push @source_locs, { offset => $offset, line => $line, col => $col };
         }
 
+        # --- Function Ranges (for DWARF .debug_frame) ---
+        method func_ranges ()       { return @func_ranges; }
+        method push_func_range ($r) { push @func_ranges, $r; }
+        method clear_func_ranges () { @func_ranges = (); }
+        method set_debug_func_params ( $name, $params ) { $debug_func_params{$name} = $params; }
+        method get_debug_func_params ($name)            { return $debug_func_params{$name} // []; }
+        method set_debug_func_locals ( $name, $locals ) { $debug_func_locals{$name} = $locals; }
+        method get_debug_func_locals ($name)            { return $debug_func_locals{$name} // []; }
+
+        method close_last_func_range ($end_offset) {
+            if ( @func_ranges && !defined $func_ranges[-1]{end} ) {
+                $func_ranges[-1]{end} = $end_offset;
+            }
+        }
+
         # --- Stack Management ---
         method local_ptr ()       { return $local_ptr; }
         method set_local_ptr ($v) { $local_ptr = $v; }
         method reset_locals ()    { $local_ptr = 0; }
+
+        method dwarf_local_offset ($slot) {
+            return -( $slot + $self->context_size + 8 );
+        }
 
         method alloc_local_slot () {
             $local_ptr += 8;
@@ -173,3 +195,80 @@ package Brocken::Compiler {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Compiler - Platform detection and ABI driver
+
+=head1 DESCRIPTION
+
+Detects the host OS and CPU architecture at construction time (ADJUST), then loads the appropriate Platform, Format,
+Target, and Emitter modules.
+
+Provides ABI proxy methods used by Lowering and Codegen: preserved register lists, frame layout, Isolate and Fiber
+control block offsets, condition code mappings.
+
+=head1 CONSTRUCTOR
+
+    my $p = Brocken::Compiler->new(
+        debug => 2,        # optional, default 0
+        arch => 'x64',     # optional, auto-detected
+        os   => 'linux'    # optional, auto-detected
+    );
+
+=head2 Parameters
+
+=over
+
+=item debug (optional, default 0)
+
+Controls emission of debug information sections in the output binary.
+
+=over
+
+=item B<0> - No debug sections. Lean binary, no source mapping.
+
+=item B<1> - Emit all DWARF debug sections (C<.debug_line>, C<.debug_info>, C<.debug_abbrev>, C<.debug_frame>, C<.debug_aranges>, C<.debug_pubnames>). On win64, also emit SEH C<.pdata> / C<.xdata> unwind tables. On ELF, also emit C<.eh_frame> section. Launch GDB after compilation.
+
+=item B<2> - Same as level 1, plus hex dumps of C<.debug_info>, C<.debug_abbrev>, C<.debug_aranges>, C<.debug_pubnames>.
+
+=item B<4> - Include class/struct type DIEs (C<DW_TAG_structure_type>, C<DW_TAG_member>) in C<.debug_info>.
+
+=back
+
+See L<Brocken::Format::DWARF> and L<docs/debugging.md> for details on each debug section's format and purpose.
+
+=item arch (optional, auto-detected)
+
+Target CPU architecture. Currently only C<'x64'> is supported. C<'arm64'> detection is implemented but the codegen
+backend is not yet wired in.
+
+=item os (optional, auto-detected)
+
+Target operating system. One of C<'win64'>, C<'linux'>, or C<'macos'>. C<'macos'> is detected but dies with a "support
+pending" message.
+
+=back
+
+=head1 METHODS
+
+=head2 preserved_regs
+
+Returns callee-saved register names for the current OS/arch.
+
+=head2 frame_local_size
+
+Total frame size including context save, return address, shadow space, and local variables, aligned to 16 bytes.
+
+=head2 iso_offset($name) / fcb_offset($name)
+
+Field offsets within the Isolate control block and Fiber Control Block.
+
+=head2 cc($name)
+
+Condition code mapping for branch instructions.
+
+=cut

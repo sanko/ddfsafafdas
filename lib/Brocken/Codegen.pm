@@ -12,13 +12,28 @@ package Brocken::Codegen {
             my $target  = $driver->target;
             my $as      = $driver->as;
             my %reg_map = $self->_allocate_registers( $instructions, $driver );
-            for my $inst (@$instructions) {
-                my $op = $inst->{op};
-                if    ( $op eq 'source_loc' )  { $driver->push_source_loc( length( $as->code ), $inst->{args}[0], $inst->{args}[1] ); }
-                elsif ( $op eq 'label' )       { $as->mark_label( $inst->{name} ); }
+            $driver->clear_func_ranges;
+            for my $i ( 0 .. $#$instructions ) {
+                my $inst = $instructions->[$i];
+                my $op   = $inst->{op};
+                if ( $op eq 'label' ) {
+                    my $is_func = $i + 1 < @$instructions && $instructions->[ $i + 1 ]{op} eq 'enter_func';
+                    if ($is_func) {
+                        $driver->close_last_func_range( length( $as->code ) );
+                        my $fr     = { name => $inst->{name}, start => length( $as->code ), ctx_size => $driver->context_size };
+                        my $params = $driver->get_debug_func_params( $inst->{name} );
+                        $fr->{params} = $params if @$params;
+                        my $locals = $driver->get_debug_func_locals( $inst->{name} );
+                        $fr->{locals} = $locals if @$locals;
+                        $driver->push_func_range($fr);
+                    }
+                    $as->mark_label( $inst->{name} );
+                }
+                elsif ( $op eq 'source_loc' )  { $driver->push_source_loc( length( $as->code ), $inst->{args}[0], $inst->{args}[1] ); }
                 elsif ( $op =~ /^intrinsic_/ ) { $target->compile_intrinsic( $as, $inst, \%reg_map, $driver ); }
                 else                           { $target->emit_op( $as, $inst, \%reg_map, $driver ); }
             }
+            $driver->close_last_func_range( length( $as->code ) );
         }
 
         method _analyze_liveness($insts) {
@@ -92,5 +107,33 @@ package Brocken::Codegen {
             return %rmap;
         }
     }
+}
+1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Codegen - Linear scan register allocator and instruction dispatcher
+
+=head1 DESCRIPTION
+
+Performs liveness analysis on the IR instruction sequence, then runs linear scan register allocation. Spills to local
+stack slots when the register pool is exhausted. Iterates until convergence (typically 2-3 rounds).
+
+After allocation, dispatches each instruction to the target backend's C<emit_op> (or C<compile_intrinsic> for
+OS-specific ops).
+
+=head1 METHODS
+
+=head2 compile($instructions, $driver)
+
+  my $codegen = Brocken::Codegen->new( arch => $arch );
+  $codegen->compile( \@instructions, $driver );
+
+Allocates registers and emits machine code via the driver's target emitter.
+
+=cut
 }
 1;

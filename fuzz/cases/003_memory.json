@@ -1,0 +1,10 @@
+[
+  {"op": "enter_func", "args": []},
+  {"op": "constant", "dest": "%1", "args": [100]},
+  {"op": "local_store", "args": [8, "%1"]},
+  {"op": "local_load", "dest": "%2", "args": [8]},
+  {"op": "constant", "dest": "%3", "args": [42]},
+  {"op": "store_mem_disp", "args": ["%2", 0, "%3"]},
+  {"op": "load_mem_disp", "dest": "%4", "args": ["%2", 0]},
+  {"op": "leave_func", "args": ["%4"]}
+]

@@ -65,3 +65,25 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Platform::Linux - Linux OS intrinsics
+
+=head1 DESCRIPTION
+
+Implements Linux syscall-based intrinsics: mmap (syscall 9), write (syscall 1), exit (syscall 60). Also emits the fiber
+context switcher (M_fiber_switch).
+
+Uses SysV AMD64 calling convention: RDI, RSI, RDX, RCX, R8, R9. Syscall clobbers RCX and R11.
+
+=head1 METHODS
+
+=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
+
+Dispatches intrinsic_* IR opcodes.
+
+=cut

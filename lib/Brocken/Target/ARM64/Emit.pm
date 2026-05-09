@@ -148,3 +148,37 @@ package Brocken::Target::ARM64::Emit {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Target::ARM64::Emit - ARM64 (AArch64) machine code encoder
+
+=head1 DESCRIPTION
+
+Low-level encoder for A64 instructions. This is... on my todo list.
+
+Provides basic instruction encoding: register moves, arithmetic (add, sub, mul), memory operations (LDR, STR), branches
+(B, BL), ADRP-based addressing, and label fixups.
+
+=head1 METHODS
+
+=head2 mov_reg($d, $s) / mov_imm($r, $imm)
+
+Register and immediate moves (MOVZ/MOVK sequence for large immediates).
+
+=head2 push_reg($r) / pop_reg($r)
+
+Push/pop encoded as STR/LDR with pre/post-index.
+
+=head2 load_reg_mem / store_mem_disp_reg
+
+Scaled 12-bit unsigned offset loads and stores.
+
+=head2 mark_label($name) / resolve()
+
+Label management and fixup patching.
+
+=cut

@@ -1,0 +1,58 @@
+use v5.40;
+use feature 'class';
+no warnings 'portable', 'experimental::class';
+use Test2::V0;
+use lib 'lib';
+require Brocken::Compiler;
+subtest 'source location tracking' => sub {
+    my $p = Brocken::Compiler->new( debug => 1 );
+    is scalar( $p->source_locs ), 0, 'no source locations initially';
+    $p->push_source_loc( 0x100, 5,  1 );
+    $p->push_source_loc( 0x200, 10, 4 );
+    $p->push_source_loc( 0x300, 15, 8 );
+    my @sls = $p->source_locs;
+    is scalar(@sls),    3,     'three source locations';
+    is $sls[0]{offset}, 0x100, 'first offset';
+    is $sls[0]{line},   5,     'first line';
+    is $sls[0]{col},    1,     'first col';
+    is $sls[1]{offset}, 0x200, 'second offset';
+    is $sls[2]{offset}, 0x300, 'third offset';
+};
+subtest 'function range tracking' => sub {
+    my $p = Brocken::Compiler->new( debug => 1 );
+    is scalar( $p->func_ranges ), 0, 'no func ranges initially';
+    $p->push_func_range( { name => 'main',   start => 0 } );
+    $p->push_func_range( { name => 'helper', start => 256 } );
+    $p->close_last_func_range(384);
+    $p->push_func_range( { name => 'other', start => 512 } );
+    $p->close_last_func_range(640);
+    my @ranges = $p->func_ranges;
+    is scalar(@ranges),  3,      'three func ranges';
+    is $ranges[0]{name}, 'main', 'first func name';
+    ok !defined( $ranges[0]{end} ), 'main end not closed';
+    is $ranges[1]{name}, 'helper', 'second func name';
+    is $ranges[1]{end},  384,      'helper end set';
+    is $ranges[2]{name}, 'other',  'third func name';
+    is $ranges[2]{end},  640,      'other end set';
+};
+subtest 'clear func ranges' => sub {
+    my $p = Brocken::Compiler->new( debug => 1 );
+    $p->push_func_range( { name => 'a', start => 0 } );
+    is scalar( $p->func_ranges ), 1, 'one range before clear';
+    $p->clear_func_ranges;
+    is scalar( $p->func_ranges ), 0, 'zero ranges after clear';
+};
+subtest 'debug func params and locals' => sub {
+    my $p = Brocken::Compiler->new( debug => 1 );
+    $p->set_debug_func_params( 'test', [ { name => '$x', type => 'Int', slot => 16 } ] );
+    $p->set_debug_func_locals( 'test', [ { name => '$y', type => 'Int', slot => 24 } ] );
+    my $params = $p->get_debug_func_params('test');
+    is scalar(@$params),   1,    'one param';
+    is $params->[0]{name}, '$x', 'param name';
+    my $locals = $p->get_debug_func_locals('test');
+    is scalar(@$locals),   1,    'one local';
+    is $locals->[0]{name}, '$y', 'local name';
+    my $empty_params = $p->get_debug_func_params('nope');
+    is scalar(@$empty_params), 0, 'unknown func returns empty params';
+};
+done_testing;

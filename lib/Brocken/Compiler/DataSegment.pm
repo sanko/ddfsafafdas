@@ -33,3 +33,32 @@ package Brocken::Compiler::DataSegment {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Compiler::DataSegment - String constant storage with GC headers
+
+=head1 DESCRIPTION
+
+Holds all Brocken string constants in a flat byte buffer. Each string is preceded by a GC-compatible header:
+
+  [1 byte flags][4 bytes byte_len][4 bytes char_len][data...]
+
+Bit 0 of flags is the leaf bit (1 = no pointers inside).
+
+=head1 METHODS
+
+=head2 add_string($string)
+
+Enrolls a Perl string as a UTF-8 encoded constant. Returns the byte offset into the data segment (suitable for
+C<load_data_addr> IR instructions).
+
+=head2 get_raw_data
+
+Returns the complete byte buffer for writing into the binary's .data section.
+
+=cut
+1;

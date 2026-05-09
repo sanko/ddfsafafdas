@@ -10,15 +10,18 @@ package Brocken::Compiler::Lowering {
         field $builder      : reader : param = Brocken::IR::Builder->new();
         field $driver       : param;
         field $data_segment : param;
-        field $current_scope = Brocken::Scope->new();
-        field $state_count   = 0;
-        field $routine_depth = 0;
+        field $current_scope     = Brocken::Scope->new();
+        field $state_count       = 0;
+        field $routine_depth     = 0;
+        field $current_func_name = undef;
+        field @func_locals;
         field @routine_types = ('main');
         field %class_info;
         field %global_methods;
         field $global_method_count = 0;
         field $class_id_counter    = 0;
-        field $anon_counter        = 0;
+        method class_info () { return %class_info }
+        field $anon_counter = 0;
         field @fragments;
         field @defer_stack;               # Stack of [ \@instructions ]
         field $defer_active_depth = 0;    # Helper to prevent return inside of defer block
@@ -32,6 +35,20 @@ package Brocken::Compiler::Lowering {
             return $builder->emit( 'cmp_ne', 'Int', [ $reg, $builder->emit( 'constant', 'i64', [1] ) ] );
         }
 
+        method _collect_local ( $name, $type, $slot ) {
+            if ( defined $current_func_name && $driver->debug >= 3 ) {
+                push @func_locals, { name => $name, type => $type, slot => $slot };
+            }
+        }
+
+        method _flush_func_locals () {
+            if ( defined $current_func_name && $driver->debug >= 3 ) {
+                $driver->set_debug_func_locals( $current_func_name, [@func_locals] );
+                $current_func_name = undef;
+                @func_locals       = ();
+            }
+        }
+
         method _emit_all_defers() {
 
             # LIFO: Reverse the stack of currently deferred actions
@@ -43,27 +60,35 @@ package Brocken::Compiler::Lowering {
         }
 
         method _lower_logical($node) {
-            my $is_and   = $node->op eq '&&';
+            my $op       = $node->op;
             my $res_slot = $driver->alloc_local_slot();
-            my $l_short  = $builder->new_label();
             my $l_end    = $builder->new_label();
             my ( $l_reg, $l_typ ) = $self->lower( $node->left );
-            if ($is_and) {
-                $builder->emit_cond_br( $l_reg, $builder->new_label(), $l_short );
+            $builder->emit( 'local_store', 'void', [ $res_slot, $l_reg ] );
+            my $cond_reg;
+            if ( $op eq '//' ) {
+
+                # Defined-OR: short-circuit if LEFT is NOT 0 (undef)
+                $cond_reg = $builder->emit( 'cmp_ne', 'Int', [ $l_reg, 0 ] );
             }
             else {
-                $builder->emit_cond_br( $l_reg, $l_short, $builder->new_label() );
+                # Logical OR/AND: uses _emit_bool_test (Smi false = 1, pointers/other = true)
+                $cond_reg = $self->_emit_bool_test($l_reg);
             }
-            $builder->emit_label( $builder->last_instruction->{ ( $is_and ? 'true_l' : 'false_l' ) } );
+            if ( $op eq '&&' ) {
+
+                # AND: short-circuit to end if FALSE (result is left value)
+                $builder->emit_cond_br( $cond_reg, $builder->new_label(), $l_end );
+            }
+            else {
+                # OR / Defined-OR: short-circuit to end if TRUE (result is left value)
+                $builder->emit_cond_br( $cond_reg, $l_end, $builder->new_label() );
+            }
+            $builder->emit_label( $builder->last_instruction->{ ( $op eq '&&' ? 'true_l' : 'false_l' ) } );
             my ( $r_reg, $r_typ ) = $self->lower( $node->right );
-            my $bool_r = $builder->emit( 'cmp_ne', 'Int', [ $r_reg, 0 ] );
-            $builder->emit( 'local_store', 'void', [ $res_slot, $bool_r ] );
-            $builder->emit_jump($l_end);
-            $builder->emit_label($l_short);
-            my $short_val = $builder->emit( 'constant', 'i64', [ $is_and ? 0 : 1 ] );
-            $builder->emit( 'local_store', 'void', [ $res_slot, $short_val ] );
+            $builder->emit( 'local_store', 'void', [ $res_slot, $r_reg ] );
             $builder->emit_label($l_end);
-            return ( $builder->emit( 'local_load', 'Int', [$res_slot] ), 'Int' );
+            return ( $builder->emit( 'local_load', 'Any', [$res_slot] ), 'Any' );
         }
 
         method capture_fragment( $label, $logic_sub ) {
@@ -205,7 +230,10 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('next'),   $builder->emit( 'constant', 'i64', [0] ) ] );
             $builder->emit( 'store_mem_disp', 'void',
                 [ $builder->emit( 'get_isolate_ctx', 'ptr', [] ), $driver->iso_offset('fiber_head'), $main_fcb ] );
+            $current_func_name = 'L_MAIN_START';
+            @func_locals       = ();
             $self->lower_block( \@main_stmts );
+            $self->_flush_func_locals();
             $self->_emit_all_defers();    # Support top-level defer
             $builder->emit( 'intrinsic_exit', 'void', [0] );
 
@@ -564,10 +592,13 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_VarDecl($node) {
+            my $saved_fn = $current_func_name;
             my ( $vr, $vt ) = $self->lower( $node->value );
             my $sl = $driver->alloc_local_slot();
             $current_scope->define( $node->name, $node->type eq 'Any' ? $vt : $node->type, 0, undef, $sl );
             $builder->emit( 'local_store', 'void', [ $sl, $vr ] );
+            $current_func_name = $saved_fn;
+            $self->_collect_local( $node->name, $node->type eq 'Any' ? $vt : $node->type, $sl );
             return ( undef, 'void' );
         }
 
@@ -612,7 +643,7 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_BinOp($node) {
-            if ( $node->op eq '&&' || $node->op eq '||' ) { return $self->_lower_logical($node); }
+            if ( $node->op eq '&&' || $node->op eq '||' || $node->op eq '//' ) { return $self->_lower_logical($node); }
             my ( $lr, $lt ) = $self->lower( $node->left );
             my ( $rr, $rt ) = $self->lower( $node->right );
             my $cm = { '==' => 'cmp_eq', '!=' => 'cmp_ne', '<' => 'cmp_lt', '>' => 'cmp_gt', '<=' => 'cmp_le', '>=' => 'cmp_ge' };
@@ -789,10 +820,13 @@ package Brocken::Compiler::Lowering {
                 $driver->reset_locals();
                 my @old_defers = @defer_stack;
                 @defer_stack = ();
-                $builder->emit_label( 'M_' . $node->name . '::' . $m->name );
+                my $func_name = 'M_' . $node->name . '::' . $m->name;
+                $builder->emit_label($func_name);
                 $builder->emit( 'enter_func', 'void', [] );
                 $current_scope = Brocken::Scope->new( parent => $current_scope );
                 $routine_depth++;
+                $current_func_name = $func_name;
+                @func_locals       = ();
                 my $ss = $driver->alloc_local_slot();
                 $current_scope->define( '$self', 'ptr', 0, undef, $ss );
                 $builder->emit( 'local_store', 'void', [ $ss, $builder->emit( 'get_arg', 'ptr', [0] ) ] );
@@ -804,8 +838,17 @@ package Brocken::Compiler::Lowering {
                     $current_scope->define( $p->{name}, $p->{type}, 0, undef, $sl );
                     $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
                 }
+                if ( $driver->debug >= 2 ) {
+                    my @params = ( { name => '$self', type => 'ptr', slot => $ss } );
+                    for my $p ( @{ $m->params } ) {
+                        my $sym = $current_scope->resolve( $p->{name} );
+                        push @params, { name => $p->{name}, type => $p->{type}, slot => $sym->stack_offset };
+                    }
+                    $driver->set_debug_func_params( $func_name, \@params );
+                }
                 $self->lower_block( $m->body->statements );
                 $self->_emit_all_defers();
+                $self->_flush_func_locals();
                 $builder->emit( 'leave_func', 'void', [0] );
                 $routine_depth--;
                 $current_scope = $current_scope->parent;
@@ -820,10 +863,13 @@ package Brocken::Compiler::Lowering {
             my @old_defers = @defer_stack;
             @defer_stack = ();
             $driver->reset_locals();
-            $builder->emit_label( 'M_' . $node->name );
+            my $func_name = 'M_' . $node->name;
+            $builder->emit_label($func_name);
             $builder->emit( 'enter_func', 'void', [] );
             $current_scope = Brocken::Scope->new( parent => $current_scope );
             $routine_depth++;
+            $current_func_name = $func_name;
+            @func_locals       = ();
             my $ai = 0;
 
             for my $p ( @{ $node->params } ) {
@@ -831,8 +877,17 @@ package Brocken::Compiler::Lowering {
                 $current_scope->define( $p->{name}, $p->{type}, 0, undef, $sl );
                 $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
             }
+            if ( $driver->debug >= 2 ) {
+                my @params;
+                for my $p ( @{ $node->params } ) {
+                    my $sym = $current_scope->resolve( $p->{name} );
+                    push @params, { name => $p->{name}, type => $p->{type}, slot => $sym->stack_offset };
+                }
+                $driver->set_debug_func_params( $func_name, \@params );
+            }
             $self->lower_block( $node->body->statements );
             $self->_emit_all_defers();
+            $self->_flush_func_locals();
             $builder->emit( 'leave_func', 'void', [0] );
             $routine_depth--;
             $current_scope = $current_scope->parent;
@@ -867,16 +922,25 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             my @old_defers = @defer_stack;
             @defer_stack = ();
+            my $saved_func_name   = $current_func_name;
+            my @saved_func_locals = @func_locals;
             $builder->emit_label($l1);
             $builder->emit( 'enter_func', 'void', [] );
             $current_scope = Brocken::Scope->new( parent => $current_scope );
             $routine_depth++;
+            $current_func_name = $l1;
+            @func_locals       = ();
             push @routine_types, 'fiber';
 
             if ( scalar @{ $node->params } > 0 ) {
                 my $sl = $driver->alloc_local_slot();
                 $current_scope->define( $node->params->[0]{name}, $node->params->[0]{type}, 0, undef, $sl );
                 $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'mov', 'Any', ['rax'] ) ] );
+                if ( $driver->debug >= 2 ) {
+                    my $sym = $current_scope->resolve( $node->params->[0]{name} );
+                    $driver->set_debug_func_params( $l1,
+                        [ { name => $node->params->[0]{name}, type => $node->params->[0]{type}, slot => $sym->stack_offset } ] );
+                }
             }
             my ( $res, $ty ) = $self->lower_block( $node->body->statements );
             $self->_emit_all_defers();
@@ -884,10 +948,13 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'call_func', 'Any',
                 [ 'M_fiber_switch', $builder->emit( 'load_mem_disp', 'ptr', [ $fcb, $driver->fcb_offset('caller') ] ), $res // 3 ] );
             $builder->emit( 'intrinsic_exit', 'void', [0] );
+            $self->_flush_func_locals();
             pop @routine_types;
             $routine_depth--;
-            $current_scope = $current_scope->parent;
-            @defer_stack   = @old_defers;              # Restore caller's defers
+            $current_scope     = $current_scope->parent;
+            @defer_stack       = @old_defers;              # Restore caller's defers
+            $current_func_name = $saved_func_name;
+            @func_locals       = @saved_func_locals;
             my @ir = $builder->instructions;
             $builder->set_instructions( @saved, @ir );
             $builder->emit_label($l2);
@@ -937,6 +1004,8 @@ package Brocken::Compiler::Lowering {
                     $builder->emit( 'enter_func', 'void', [] );
                     $current_scope = Brocken::Scope->new( parent => $current_scope );
                     $routine_depth++;
+                    $current_func_name = $lb;
+                    @func_locals       = ();
                     my $ai = 0;
 
                     for my $p ( @{ $node->params } ) {
@@ -944,8 +1013,17 @@ package Brocken::Compiler::Lowering {
                         $current_scope->define( $p->{name}, $p->{type}, 0, undef, $sl );
                         $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
                     }
+                    if ( $driver->debug >= 2 ) {
+                        my @params;
+                        for my $p ( @{ $node->params } ) {
+                            my $sym = $current_scope->resolve( $p->{name} );
+                            push @params, { name => $p->{name}, type => $p->{type}, slot => $sym->stack_offset };
+                        }
+                        $driver->set_debug_func_params( $lb, \@params );
+                    }
                     $self->lower_block( $node->body->statements );
                     $self->_emit_all_defers();
+                    $self->_flush_func_locals();
                     $builder->emit( 'leave_func', 'void', [0] );
                     $routine_depth--;
                     $current_scope = $current_scope->parent;
@@ -962,5 +1040,53 @@ package Brocken::Compiler::Lowering {
                 'Any' );
         }
     }
+}
+1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Compiler::Lowering - AST-to-IR lowering and runtime injection
+
+=head1 DESCRIPTION
+
+The central module of the compiler (~963 lines). Walks every AST node type and emits linear IR instructions. Also
+injects the entire runtime inline:
+
+=over
+
+=item M_gc_alloc - Immix bump-pointer allocator
+
+=item M_gc_collect - Root-walking mark-region collector
+
+=item M_gc_mark_obj - Object marking (arrays, class instances)
+
+=item M_print_int - Integer printing (divide-by-10 loop)
+
+=item M_print_any - Tagged variant printer
+
+=item M_fiber_new - Fiber Control Block allocation and stack setup
+
+=item M_fiber_switch - Context switching (save/restore registers, RSP)
+
+=item M_veh_handler - Windows VEH for stack overflow recovery
+
+=back
+
+Each C<lower_*> method returns C<($virtual_register, $type)>.
+
+=head1 METHODS
+
+=head2 lower_program($ast)
+
+Entry point. Lowers the entire AST program and injects runtime routines.
+
+=head2 lower($node)
+
+Dispatcher: reflects on the node class name and calls C<lower_$type>.
+
+=cut
 }
 1;

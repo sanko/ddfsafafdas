@@ -1,0 +1,9 @@
+[
+  {"op": "label", "name": "L_entry"},
+  {"op": "constant", "dest": "%1", "args": [1]},
+  {"op": "cond_br", "reg": "%1", "true_l": "L_true", "false_l": "L_false"},
+  {"op": "label", "name": "L_true"},
+  {"op": "jmp", "target": "L_end"},
+  {"op": "label", "name": "L_false"},
+  {"op": "label", "name": "L_end"}
+]

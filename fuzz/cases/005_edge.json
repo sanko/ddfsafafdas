@@ -1,0 +1,18 @@
+[
+  {"op": "label", "name": "L_start"},
+  {"op": "enter_func", "args": []},
+  {"op": "constant", "dest": "%1", "args": [0]},
+  {"op": "constant", "dest": "%2", "args": [-1]},
+  {"op": "constant", "dest": "%3", "args": [65535]},
+  {"op": "add", "dest": "%4", "args": ["%1", "%2"]},
+  {"op": "sub", "dest": "%5", "args": ["%3", "%4"]},
+  {"op": "mul", "dest": "%6", "args": ["%5", "%5"]},
+  {"op": "div", "dest": "%7", "args": ["%6", "%2"]},
+  {"op": "mod", "dest": "%8", "args": ["%7", "%3"]},
+  {"op": "cmp_eq", "dest": "%9", "args": ["%8", "%1"]},
+  {"op": "cmp_lt", "dest": "%10", "args": ["%9", "%4"]},
+  {"op": "shadow_push", "args": ["%8"]},
+  {"op": "shadow_push", "args": ["%10"]},
+  {"op": "shadow_get", "dest": "%11", "args": []},
+  {"op": "leave_func", "args": ["%11"]}
+]

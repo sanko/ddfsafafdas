@@ -18,5 +18,41 @@ package Brocken::Target {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Target - Abstract base class for CPU target code generation
+
+=head1 DESCRIPTION
+
+Defines the interface for CPU-specific target modules (X64, ARM64). Subclasses implement C<emit_op> for
+IR-to-machine-code mapping and C<registers> for the allocatable register pool.
+
+Provides a C<val> helper for resolving virtual register names to physical registers via the register map.
+
+=head1 METHODS
+
+=head2 registers
+
+Abstract. Returns the list of allocatable callee-saved physical registers.
+
+=head2 emit_op($as, $inst, $reg_map, $driver)
+
+Abstract. Emits machine code for a single non-intrinsic IR instruction.
+
+=head2 compile_intrinsic($as, $inst, $reg_map, $driver)
+
+Abstract. Emits machine code for intrinsic_* IR instructions.
+
+=head2 val($reg_map, $arg)
+
+If C<$arg> is a virtual register (starts with C<%>), resolves it to a physical register via C<$reg_map>. Otherwise
+returns C<$arg> as-is (an immediate value).
+
+=cut
+}
 
 1;

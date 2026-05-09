@@ -55,3 +55,37 @@ package Brocken::Compiler::Optimizer {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Compiler::Optimizer - IR optimizer
+
+=head1 DESCRIPTION
+
+Transforms the IR instruction sequence. Currently implements:
+
+=over
+
+=item Loop fusion (Futhark-style) - merges chained C<map { ... } map { ... }>
+calls into a single loop pass.
+
+=item Dead instruction elimination - removes instructions whose result is
+never read.
+
+=back
+
+=head1 METHODS
+
+=head2 optimize($builder)
+
+  my $optimizer = Brocken::Compiler::Optimizer->new();
+  $optimizer->optimize( $lowering->builder );
+
+Modifies the builder's instruction list in place.
+
+=cut
+}
+1;

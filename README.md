@@ -110,7 +110,54 @@ my Int $res2 = transfer($gen, 0); # 200
 *   **Reproducible Builds:** Global cache with project-local `brocken.lock` files.
 *   **Sandboxed Build Scripts:** If a C library must be compiled, `build.bkn` executes within the restricted Wasm capability sandbox to prevent supply-chain attacks.
 
-# Notes
+## Debugging
+
+Brocken emits two independent debug information systems, selected by target OS:
+
+| System                | Target       | Purpose                        |
+|-----------------------|--------------|--------------------------------|
+| DWARF (`.debug_*`)    | PE + ELF     | Source-level debugging with GDB |
+| SEH (`.pdata`/`.xdata`) | PE (win64) | Stack unwinding with GDB/WinDbg |
+| `.eh_frame`           | ELF (linux)  | Position-independent unwinding  |
+
+### Debug Levels
+
+Pass `--debug=N` to `brocken.pl`:
+
+| Level | Effect |
+|-------|--------|
+| **0** | No debug information. Lean binary. |
+| **1** | Emit all DWARF sections + SEH (win64) + `.eh_frame` (linux). Launch GDB. |
+| **2** | Same as 1, plus hex dumps of debug sections. (Default) |
+| **4** | Include class/struct types in `.debug_info`. |
+
+```bash
+perl brocken.pl               # debug=2 (default)
+perl brocken.pl --debug=1     # less verbose
+perl brocken.pl --debug=0     # no debug info at all
+```
+
+### GDB
+
+```bash
+# Linux — source-level breakpoints via .debug_line + .eh_frame
+gdb --batch \
+  -ex "break source.brocken:9" \
+  -ex "run" \
+  -ex "bt" \
+  --args ./brocken_out
+
+# Windows — break by address, unwind via SEH .pdata/.xdata
+gdb --batch \
+  -ex "break *0x140001000" \
+  -ex "run" \
+  -ex "bt" \
+  --args brocken_out.exe
+```
+
+For full details on every debug section, see [`docs/debugging.md`](docs/debugging.md).
+
+## Notes
 
 This is just a collection of links I'm using to help define what this language is:
 

@@ -12,7 +12,7 @@ class Brocken::Parser {
     my %PRECEDENCE = (
         '='  => 10,                                                              #
         '?'  => 11,                                                              #
-        '||' => 12,                                                              #
+        '||' => 12, '//' => 12,                                                  #
         '&&' => 13,                                                              #
         '==' => 15, '!=' => 15, '<' => 15, '>' => 15, '<=' => 15, '>=' => 15,    #
         '+'  => 20, '-'  => 20,                                                  #
@@ -51,6 +51,7 @@ class Brocken::Parser {
         '!'      => '_parse_unary_op',
         'true'   => '_parse_bool_literal',
         'false'  => '_parse_bool_literal',
+        'undef'  => '_parse_undef_literal',
         'sub'    => '_parse_anon_sub',
         'fiber'  => '_parse_fiber',
         'yield'  => '_parse_yield',
@@ -71,6 +72,7 @@ class Brocken::Parser {
         '>=' => '_parse_bin_op',
         '&&' => '_parse_bin_op',
         '||' => '_parse_bin_op',
+        '//' => '_parse_bin_op',
         '='  => '_parse_bin_op',
         '->' => '_parse_deref',
         '?'  => '_parse_ternary',
@@ -319,6 +321,11 @@ class Brocken::Parser {
         $self->advance();
         Brocken::AST::Expr::Const->new( value => ( $tok->{value} eq 'true' ? 1 : 0 ), type => 'Int', line => $tok->{line}, col => $tok->{col} );
     }
+
+    method _parse_undef_literal($tok) {
+        $self->advance();
+        Brocken::AST::Expr::Const->new( value => 0, type => 'Any', line => $tok->{line}, col => $tok->{col} );
+    }
     method _parse_var_ref($tok) { $self->advance(); Brocken::AST::Expr::Var->new( name => $tok->{value}, line => $tok->{line}, col => $tok->{col} ) }
 
     method _parse_ident_or_call($tok) {
@@ -464,4 +471,49 @@ class Brocken::Parser {
         return 'Any';
     }
 }
+1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Parser - Pratt parser for Brocken
+
+=head1 DESCRIPTION
+
+Top-down operator precedence (Pratt) parser. Uses three registries:
+
+=over
+
+=item C<%STMT_HANDLERS>
+
+Maps keyword strings to parsing methods for statements (C<if>, C<while>, C<class>, C<sub>, C<return>, C<defer>, etc.).
+
+=item C<%PREFIX_HANDLERS>
+
+Handles tokens that start expressions: literals, variables, identifiers, unary ops, grouping, and expression-level
+keywords (C<sub>, C<fiber>, C<yield>, C<map>).
+
+=item C<%INFIX_HANDLERS>
+
+Handles binary operators between expressions: arithmetic, comparison, logical, assignment, dereference, ternary.
+
+=back
+
+Returns an arrayref of AST nodes from C<parse()>.
+
+=head1 METHODS
+
+=head2 parse
+
+  my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+
+Returns an arrayref of AST::Node objects.
+
+=head2 parse_expression($precedence)
+
+Parse an expression starting at the current token position.
+
+=cut
 1;

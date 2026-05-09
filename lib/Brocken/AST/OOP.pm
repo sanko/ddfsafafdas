@@ -17,3 +17,33 @@ package Brocken::AST::OOP {
     class Brocken::AST::OOP::AnonSub : isa(Brocken::AST::Node) { field $params : param : reader; field $body : param : reader; }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::AST::OOP - OOP AST node classes
+
+=head1 DESCRIPTION
+
+Defines OOP node types:
+
+=over
+
+=item ClassDecl - class declarations with fields and methods
+
+=item FieldDecl - field declarations within a class
+
+=item Method - method / sub declarations with params and body
+
+=item MethodCall - $obj->method(...)
+
+=item AnonSub - sub (...) { ... }
+
+=back
+
+All classes inherit from Brocken::AST::Node.
+
+=cut
+1;

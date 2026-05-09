@@ -1,0 +1,13 @@
+[
+  {"op": "label", "name": "L_entry"},
+  {"op": "enter_func", "args": []},
+  {"op": "constant", "dest": "%1", "args": [1]},
+  {"op": "constant", "dest": "%2", "args": [1]},
+  {"op": "add", "dest": "%3", "args": ["%1", "%2"]},
+  {"op": "constant", "dest": "%4", "args": [42]},
+  {"op": "call_func", "dest": "%5", "args": ["M_helper", "%4"]},
+  {"op": "constant", "dest": "%6", "args": [1]},
+  {"op": "local_store", "args": [8, "%6"]},
+  {"op": "local_load", "dest": "%7", "args": [8]},
+  {"op": "leave_func", "args": ["%7"]}
+]

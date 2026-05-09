@@ -24,3 +24,41 @@ package Brocken::AST::Expr {
     class Brocken::AST::Expr::IndexExpr : isa(Brocken::AST::Node) { field $source : param : reader; field $index : param : reader; }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::AST::Expr - Expression AST node classes
+
+=head1 DESCRIPTION
+
+Defines expression node types:
+
+=over
+
+=item Const - literal values (Int, String, Class)
+
+=item Var - variable references
+
+=item BinOp - binary operators (+, ==, &&, etc.)
+
+=item UnaryOp - unary operators (!)
+
+=item Ternary - cond ? then : else
+
+=item Call - function calls (say, print, user functions)
+
+=item AnonCall - anonymous sub invocation ($f->())
+
+=item ArrayLiteral - array constructors ([1, 2, 3])
+
+=item IndexExpr - array indexing (@arr[0])
+
+=back
+
+All classes inherit from Brocken::AST::Node.
+
+=cut
+1;

@@ -145,9 +145,108 @@ if ($is_cool && !$is_bad) {
 my String $t_res = $is_cool ? "   Ternary works!" : "   Ternary Failed!";
 say $t_res;
 
+say "\n[6] Testing Milestone 2 features (undef, //, value-returning logicals)...";
+my Any $u_val = undef;
+my Any $d_val = $u_val // 42;
+if ($d_val == 42) {
+    say "   Defined-OR (//) with undef works!";
+}
+
+my Any $v_val = 10;
+my Any $d_val2 = $v_val // 20;
+if ($d_val2 == 10) {
+    say "   Defined-OR (//) with value works!";
+}
+
+my Any $alt = 0 || "OR-Value";
+if ($alt == "OR-Value") {
+    say "   Logical OR returns value works!";
+}
+
+my Any $both = 42 && "AND-Value";
+if ($both == "AND-Value") {
+    say "   Logical AND returns value works!";
+}
+
 say "\n🎉 ALL TESTS PASSED SUCCESSFULLY! 🎉";
 
 exit $u->get_id();
+BROCKEN
+$source_code = <<'BROCKEN' if 1;
+say "1..13"; # Total test count
+
+# Test 1: Anonymous Subs
+my $add_one = sub (Int $n) { return $n + 1; };
+my $res1 = $add_one->(41);
+say ($res1 == 42 ? "ok 1 - Anonymous sub" : "not ok 1 - Anonymous sub");
+
+# Test 2: Subroutines
+sub multiply(Int $val, Int $factor) { return $val * $factor; }
+my $res2 = multiply(10, 2);
+say ($res2 == 20 ? "ok 2 - Subroutine call" : "not ok 2 - Subroutine call");
+
+# Test 3: Loops & Variables
+my Int $c = 0;
+while ($c < 3) { $c = $c + 1; }
+say ($c == 3 ? "ok 3 - While loop" : "not ok 3 - While loop");
+
+# Test 4: Fibers
+my Any $f = fiber { yield 42; return 99; };
+my Int $f1 = transfer($f, 0);
+say ($f1 == 42 ? "ok 5 - Fiber yield" : "not ok 5 - Fiber yield");
+
+# Test 5: Classes & Methods
+class User {
+    field $id;
+    method set_id(Int $val) { $id = $val; }
+    method get_id() { return $id; }
+}
+#~ my Any $u = User->new();
+#~ $u->set_id(42);
+#~ say ($u->get_id() == 42 ? "ok 4 - Class/Method" : "not ok 4 - Class/Method");
+
+#~ # Test 6: Defer (LIFO)
+#~ sub test_defer() {
+    #~ my Int $x = 0;
+    #~ defer { $x = $x + 10; }
+    #~ defer { $x = $x + 5; }
+    #~ return $x; # Should be 0
+#~ }
+#~ # Note: Defer runs on return.
+#~ # We need to verify if the return value captures state correctly.
+#~ say "ok 6 - Defer structure (Manual inspection required)";
+
+#~ # Test 7: Unless
+#~ my Bool $bad = false;
+#~ my Int $unless_res = 0;
+#~ unless ($bad) { $unless_res = 1; }
+#~ say ($unless_res == 1 ? "ok 7 - Unless" : "not ok 7 - Unless");
+
+#~ # Test 8: Until
+#~ my Int $until_c = 0;
+#~ until ($until_c == 3) { $until_c = $until_c + 1; }
+#~ say ($until_c == 3 ? "ok 8 - Until" : "not ok 8 - Until");
+
+#~ # Test 9: Ternary
+#~ my String $t = true ? "ok" : "not ok";
+#~ say "$t 9 - Ternary";
+
+#~ # Test 10: Logical AND
+#~ say (($is_cool = true) && ($is_bad = false) == 0 ? "ok 10 - Logical AND" : "not ok 10 - Logical AND");
+
+#~ # Test 11: String Lexing
+#~ print "ok 11 - String Lexing\n";
+
+#~ # Test 12: Scoping
+#~ my Int $x = 10;
+#~ { my Int $x = 20; }
+#~ say ($x == 10 ? "ok 12 - Scoping" : "not ok 12 - Scoping");
+
+#~ # Test 13: Array/GC
+#~ my Any $arr = [1, 2, 3];
+#~ say ("ok 13 - Array allocation");
+
+#~ exit $u->get_id();
 BROCKEN
 $source_code = 'sub testing() {return "Hi";} say testing(); my Any $f = fiber ($i) { say $i; yield "hi 10"; }; say transfer($f, "10 arg");' if 0;
 $source_code = <<'BROCKEN'                                                                                                                  if 0;
@@ -215,8 +314,20 @@ sub do_nothing() {
 
 END
 say "Bootstrapping Brocken...";
-my $p = Brocken::Compiler->new();
+my $dbg = 0;
+my $os;
+
+for ( my $i = 0; $i < @ARGV; $i++ ) {
+    if ( $ARGV[$i] =~ /^--debug(?:=(\d+))?$/ ) {
+        $dbg = defined $1 ? $1 : ( $ARGV[ ++$i ] // 0 );
+    }
+    elsif ( $ARGV[$i] =~ /^--os(?:=(.+))?$/ ) {
+        $os = defined $1 ? $1 : ( $ARGV[ ++$i ] );
+    }
+}
+my $p = Brocken::Compiler->new( debug => $dbg, ( $os ? ( os => $os ) : () ) );
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
+say "Debug: " . $p->debug;
 my $tokens   = Brocken::Lexer->new( source => $source_code )->lex();
 my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
 my $ds       = Brocken::Compiler::DataSegment->new();
@@ -227,15 +338,115 @@ $optimizer->optimize( $lowering->builder );
 $lowering->builder->dump_ir("FINAL IR");
 my $est_text = scalar( $lowering->builder->instructions ) * 32 + 4096;
 my $est_data = length( $ds->get_raw_data() ) + 4096;
-$p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os );
+$p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
 $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
+
+if ( $p->debug >= 1 ) {
+    say "\n--- DEBUG SOURCE LOCATIONS ---";
+    my @sls = $p->source_locs;
+    for my $sl (@sls) {
+        printf "  offset=0x%04X  line=%-4d col=%d\n", $sl->{offset}, $sl->{line}, $sl->{col};
+    }
+    say scalar(@sls) . " source location entries\n";
+    require Brocken::Format::DWARF;
+    my $text_base     = $p->format->image_base + $p->format->rva_for('.text');
+    my $eh_frame_base = 0;
+    eval { $eh_frame_base = $p->format->image_base + $p->format->rva_for('.eh_frame'); };
+    my @funcs = $p->func_ranges;
+    $p->format->set_func_ranges( \@funcs );
+    my %class_info = $lowering->class_info;
+    my $dw         = Brocken::Format::DWARF->new(
+        source_locs   => \@sls,
+        text_base     => $text_base,
+        eh_frame_base => $eh_frame_base,
+        func_ranges   => \@funcs,
+        context_size  => $p->context_size,
+        class_info    => \%class_info,
+        debug         => $p->debug
+    );
+    my $dwarf = $dw->build_all;
+    say "DWARF: line=" .
+        length( $dwarf->{'.debug_line'} ) .
+        " info=" .
+        length( $dwarf->{'.debug_info'} ) .
+        " abbrev=" .
+        length( $dwarf->{'.debug_abbrev'} ) .
+        " frame=" .
+        length( $dwarf->{'.debug_frame'} // '' ) .
+        " eh_frame=" .
+        length( $dwarf->{'.eh_frame'} // '' ) .
+        " aranges=" .
+        length( $dwarf->{'.debug_aranges'} // '' ) .
+        " pubnames=" .
+        length( $dwarf->{'.debug_pubnames'} // '' );
+    say "SEH: pdata=" . ( scalar(@funcs) * 12 ) . " xdata=28" if $p->os eq 'win64';
+    say sprintf ".debug_frame: %d FDEs, %d bytes", scalar(@funcs), length( $dwarf->{'.debug_frame'} // '' );
+
+    for my $fn (@funcs) {
+        printf "  %-20s start=0x%04X end=0x%04X ctx=%d", $fn->{name}, $fn->{start}, ( $fn->{end} // 0 ), $fn->{ctx_size};
+        if ( $fn->{params} && @{ $fn->{params} } ) {
+            printf " params=%s", join ',', map {"$_->{name}:$_->{type}"} @{ $fn->{params} };
+        }
+        if ( $fn->{locals} && @{ $fn->{locals} } ) {
+            printf " locals=%s", join ',', map {"$_->{name}:$_->{type}"} @{ $fn->{locals} };
+        }
+        print "\n";
+    }
+    $p->format->set_debug_data($dwarf);
+    for my $s ( $p->format->layout->sections ) {
+        next if $s->{name} !~ /^\.(debug|eh_frame)/;
+        $s->{size} = length( $p->format->debug_section( $s->{name} ) );
+    }
+    $p->format->layout->calculate(0x1000);
+    say "\n--- .debug_info HEX DUMP ---";
+    my $di = $p->format->debug_section('.debug_info');
+    for ( my $i = 0; $i < length($di); $i += 16 ) {
+        my $chunk = substr( $di, $i, 16 );
+        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+    }
+    say "\n--- .debug_abbrev HEX DUMP ---";
+    my $da = $p->format->debug_section('.debug_abbrev');
+    for ( my $i = 0; $i < length($da); $i += 16 ) {
+        my $chunk = substr( $da, $i, 16 );
+        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+    }
+    say "\n--- .debug_aranges HEX DUMP ---";
+    my $ar = $p->format->debug_section('.debug_aranges');
+    for ( my $i = 0; $i < length($ar); $i += 16 ) {
+        my $chunk = substr( $ar, $i, 16 );
+        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+    }
+    say "\n--- .debug_pubnames HEX DUMP ---";
+    my $pn = $p->format->debug_section('.debug_pubnames');
+    for ( my $i = 0; $i < length($pn); $i += 16 ) {
+        my $chunk = substr( $pn, $i, 16 );
+        printf "%04X: %s\n", $i, unpack( "H*", $chunk );
+    }
+}
 my $ext = $p->os eq 'win64' ? '.exe' : '';
 my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
 say "Executing Native Binary...";
 my $run = $^O eq 'MSWin32' ? $exe : "./$exe";
-system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" -ex "quit $_exitcode" --args ' . $run );
+if ( $p->debug >= 1 ) {
+    my $tb  = $p->format->image_base + $p->format->rva_for('.text');
+    my @sls = $p->source_locs;
+    my $bo  = do {
+        my $o;
+        for my $s (@sls) {
+            if ( $s->{line} == 9 ) { $o = $s->{offset}; last }
+        }
+        $o // 0;
+    };
+    system( 'gdb --batch -ex "break *' .
+            ( $tb + $bo ) .
+            '" -ex "run" -ex "bt" -ex "info args" -ex "p val" -ex "p factor" -ex "x/gx $rbp - 8" -ex "x/gx $rbp - 16" -ex "p/x $rbp" -ex "info registers rip" -ex "quit" --args '
+            . $run );
+}
+else {
+    system( 'gdb --batch -ex "run" -ex "bt" -ex "info registers" -ex "x/20i $pc-40" -ex "quit $_exitcode" --args ' . $run );
+}
 say "Exit code: " . ( $? >> 8 );
 
 #~ say "\n--- MACHINE CODE HEX DUMP ---";

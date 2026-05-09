@@ -10,3 +10,18 @@ package Brocken::AST::Node {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::AST::Node - Base class for all AST nodes
+
+=head1 DESCRIPTION
+
+Provides a C<dump> method that returns the short class name (stripping the package prefix). All AST expression,
+statement, OOP, and async nodes inherit from this class.
+
+=cut
+1;

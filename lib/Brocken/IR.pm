@@ -10,8 +10,7 @@ class Brocken::IR::Builder {
     method new_reg()               { return '%' . ++$reg_count; }
     method new_label()             { return 'L' . ++$label_count; }
     method set_instructions(@inst) { @instructions = @inst }
-    method push_instruction($inst)  { push @instructions, $inst }
-
+    method push_instruction($inst) { push @instructions, $inst }
     method last_instruction()      { $instructions[-1] }
 
     method emit( $op, $type, $args, $dest = undef ) {
@@ -40,3 +39,45 @@ class Brocken::IR::Builder {
     }
 };
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::IR::Builder - Linear intermediate representation builder
+
+=head1 DESCRIPTION
+
+Manages a linear sequence of IR instruction hashes. Each instruction:
+
+  { op => 'add', type => 'Int', dest => '%5', args => ['%3', '%4'] }
+
+Special instruction forms: C<label> (code location), C<jmp> (unconditional jump), C<cond_br> (conditional branch with
+true/false labels).
+
+Provides virtual register allocation (C<new_reg>), label generation (C<new_label>), and IR dump (C<dump_ir>).
+
+=head1 METHODS
+
+=head2 emit($op, $type, $args, $dest?)
+
+Appends an instruction. Auto-generates a destination vreg if C<$type> is not C<void> and C<$dest> is undef.
+
+=head2 emit_label($name)
+
+TODO
+
+=head2 emit_jump($label)
+
+TODO
+
+=head2 emit_cond_br($reg, $true_label, $false_label)
+
+TODO
+
+=head2 dump_ir($title?)
+
+Prints every instruction to stdout for debugging.
+
+=cut

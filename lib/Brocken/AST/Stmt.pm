@@ -27,3 +27,43 @@ package Brocken::AST::Stmt {
     class Brocken::AST::Stmt::Defer : isa(Brocken::AST::Node) { field $block : param : reader; }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::AST::Stmt - Statement AST node classes
+
+=head1 DESCRIPTION
+
+Defines statement node types:
+
+=over
+
+=item Block - { ... } with statement list
+
+=item VarDecl - my declarations
+
+=item StateDecl - state declarations
+
+=item Assignment - variable assignment
+
+=item If - if/elsif/else
+
+=item While - while loops
+
+=item Return - return statements
+
+=item Exit - exit statements
+
+=item Map - map { ... } source
+
+=item Defer - defer { ... }
+
+=back
+
+All classes inherit from Brocken::AST::Node.
+
+=cut
+1;

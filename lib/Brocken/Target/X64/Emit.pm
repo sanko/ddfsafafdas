@@ -216,3 +216,54 @@ package Brocken::Target::X64::Emit {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Target::X64::Emit - Low-level x64 machine code encoder
+
+=head1 DESCRIPTION
+
+Encodes raw x64 instructions: REX prefixes, ModR/M bytes, SIB bytes, immediates, and label fixups. Maintains a code
+byte buffer, label table, and fixup list.
+
+=head1 METHODS
+
+=head2 mov_reg($d, $s) / mov_imm($r, $imm)
+
+Register and immediate moves.
+
+=head2 push_reg($r) / pop_reg($r)
+
+Push/pop with REX prefix for extended registers.
+
+=head2 add_reg / sub_reg / mul_reg / and_reg / or_reg / xor_reg
+
+Register arithmetic with REX prefix.
+
+=head2 jmp($label) / jcc($cc, $label) / call_label($label)
+
+Control flow with fixup entries for forward references.
+
+=head2 load_reg_mem / store_mem_disp_reg
+
+Memory loads and stores.
+
+=head2 lea_rva($d, $target, $text_base)
+
+RIP-relative LEA for position-independent addressing.
+
+=head2 mark_label($name) / resolve()
+
+Label management: mark_label records the current code offset; resolve patches all outstanding fixups with correct
+RIP-relative offsets.
+
+=head2 append_code($bin)
+
+Appends raw bytes (for manual instruction encoding).
+
+=cut
+}
+1;

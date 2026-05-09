@@ -4,10 +4,10 @@ package Brocken::Format::Layout {
     no warnings 'experimental::class';
 
     class Brocken::Format::Layout {
-        field $file_align    : param;
-        field $section_align : param;
+        field $file_align    : param : reader;
+        field $section_align : param : reader;
         field @sections;
-        field $header_size = 0;
+        field $header_size : reader = 0;
 
         method add_section( $name, $size, $flags ) {
             push @sections, { name => $name, size => ( $size || 1 ), flags => $flags, rva => 0, off => 0 };
@@ -30,8 +30,7 @@ package Brocken::Format::Layout {
             for (@sections) { return $_ if $_->{name} eq $n }
             die "Layout Error: Section $n not found";
         }
-        method sections()    {@sections}
-        method header_size() {$header_size}
+        method sections() {@sections}
     }
 }
 1;

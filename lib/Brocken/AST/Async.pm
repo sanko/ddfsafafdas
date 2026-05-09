@@ -8,3 +8,27 @@ package Brocken::AST::Async {
     class Brocken::AST::Async::Yield : isa(Brocken::AST::Node) { field $expr : param : reader; }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::AST::Async - Async/concurrency AST node classes
+
+=head1 DESCRIPTION
+
+Defines async node types:
+
+=over
+
+=item FiberBlock - fiber { ... } with optional params
+
+=item Yield - yield expr
+
+=back
+
+All classes inherit from Brocken::AST::Node.
+
+=cut
+1;

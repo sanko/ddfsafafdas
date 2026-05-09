@@ -180,6 +180,9 @@ package Brocken::Target::X64 {
             elsif ( $op =~ /^call_(func|reg)$/ ) {
                 my @args   = @{ $inst->{args} };
                 my $target = ( $op eq 'call_func' ) ? shift @args : $reg_map->{ shift @args };
+
+                # If calling through a register, move it to r11 NOW before arg setup clobbers it
+                $as->mov_reg( 'r11', $target ) if $op eq 'call_reg';
                 for my $i ( 0 .. $#args ) {
                     my $arg = $args[$i];
                     my $dst = $self->_abi_arg_reg($i);
@@ -188,18 +191,18 @@ package Brocken::Target::X64 {
                     else                         { $as->mov_imm( $dst, $arg ); }
                 }
                 if   ( $op eq 'call_func' ) { $as->call_label($target); }
-                else                        { $as->mov_reg( 'r11', $target ); $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xD3 ) ); }
+                else                        { $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xD3 ) ); }    # call r11
                 $as->mov_reg( $d_reg, 'rax' ) if defined $d_reg;
             }
             elsif ( $op eq 'shadow_push' ) {
                 my $val = $v->( $inst->{args}[0] );
                 $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
-                $as->load_reg_mem( 'rax', 'r11', $driver->fcb_offset('shadow_ptr') );
-                if ( $inst->{args}[0] =~ /^%/ ) { $as->store_mem_disp_reg( 'rax', 0, $reg_map->{ $inst->{args}[0] } ); }
-                else                            { $as->mov_imm( 'r11', $val ); $as->store_mem_disp_reg( 'rax', 0, 'r11' ); }
-                $as->add_imm( 'rax', 8 );
+                $as->load_reg_mem( 'r10', 'r11', $driver->fcb_offset('shadow_ptr') );
+                if ( $inst->{args}[0] =~ /^%/ ) { $as->store_mem_disp_reg( 'r10', 0, $reg_map->{ $inst->{args}[0] } ); }
+                else                            { $as->mov_imm( 'r11', $val ); $as->store_mem_disp_reg( 'r10', 0, 'r11' ); }
+                $as->add_imm( 'r10', 8 );
                 $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
-                $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), 'rax' );
+                $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), 'r10' );
             }
             elsif ( $op eq 'shadow_get' ) {    # Get the current shadown stack height
                 $as->load_reg_mem( 'r11',  'r14', $driver->iso_offset('current_fcb') );

@@ -19,7 +19,7 @@ class Brocken::Lexer {
         while for map
         say print
         Int String Any Bool
-        true false
+        true false undef
     ];
 
     method lex() {
@@ -41,16 +41,20 @@ class Brocken::Lexer {
                 $self->_advance( length($full_match) );
                 next;
             }
-            if ( $remaining =~ /^([\$@%]?[a-zA-Z_]\w*)/ ) {
+            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\||\/\/)/ ) {
+                push @tokens, $self->_make_token( 'OP', $1 );
+                $self->_advance( length($1) );
+                next;
+            }
+            if ( $remaining =~ /^([+\-*\/=<>\[\].:!?])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1); next; }
+            if ( $remaining =~ /^([\$@%]?[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)/ ) {
                 my $val  = $1;
                 my $type = $KEYWORDS{$val} ? 'KEYWORD' : ( $val =~ /^[\$@%]/ ? 'VAR' : 'IDENT' );
                 push @tokens, $self->_make_token( $type, $val );
                 $self->_advance( length($val) );
                 next;
             }
-            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\|)/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance( length($1) ); next; }
-            if ( $remaining =~ /^([+\-*\/=<>\[\].:!?])/ )       { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1);            next; }
-            if ( $remaining =~ /^([{};(),])/ )                  { push @tokens, $self->_make_token( $1,   $1 ); $self->_advance(1);            next; }
+            if ( $remaining =~ /^([{};(),])/ ) { push @tokens, $self->_make_token( $1, $1 ); $self->_advance(1); next; }
             die sprintf( "Lexer Error at L:%d C:%d: Unrecognized char '%s'\n", $line, $col, substr( $remaining, 0, 1 ) );
         }
         push @tokens, $self->_make_token( 'EOF', 'EOF' );
@@ -66,3 +70,27 @@ class Brocken::Lexer {
     method _make_token( $t, $v ) { return { type => $t, value => $v, line => $line, col => $col }; }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Lexer - Tokenizer for Brocken source code
+
+=head1 DESCRIPTION
+
+Converts Brocken source text into an array of token hashes. Each token contains C<type>, C<value>, C<line>, and C<col>.
+
+Recognized token types: NUM, STRING, KEYWORD, IDENT, VAR, OP, single-char punctuation (C<{>, C<}>, C<;>, C<(>, C<)>,
+C<,>), and EOF.
+
+=head1 METHODS
+
+=head2 lex
+
+  my $tokens = Brocken::Lexer->new( source => $source )->lex();
+
+Returns an arrayref of token hashrefs.
+
+=cut

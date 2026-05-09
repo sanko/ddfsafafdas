@@ -95,3 +95,26 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Platform::Windows - Windows OS intrinsics
+
+=head1 DESCRIPTION
+
+Implements WinAPI-based intrinsics: VirtualAlloc, WriteFile, GetStdHandle, ExitProcess, SetConsoleOutputCP,
+AddVectoredExceptionHandler. Also emits the fiber context switcher (M_fiber_switch) and VEH handler for stack overflow
+recovery.
+
+Uses Windows x64 calling convention: RCX, RDX, R8, R9, 32-byte shadow space.
+
+=head1 METHODS
+
+=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
+
+Dispatches intrinsic_* IR opcodes.
+
+=cut

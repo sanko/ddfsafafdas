@@ -1,0 +1,10 @@
+[
+  {"op": "label", "name": "L_start"},
+  {"op": "constant", "dest": "%1", "args": [42]},
+  {"op": "constant", "dest": "%2", "args": [10]},
+  {"op": "add", "dest": "%3", "args": ["%1", "%2"]},
+  {"op": "constant", "dest": "%4", "args": [5]},
+  {"op": "sub", "dest": "%5", "args": ["%3", "%4"]},
+  {"op": "constant", "dest": "%6", "args": [3]},
+  {"op": "mul", "dest": "%7", "args": ["%5", "%6"]}
+]
