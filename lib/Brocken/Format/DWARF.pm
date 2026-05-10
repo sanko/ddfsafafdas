@@ -60,6 +60,13 @@ package Brocken::Format::DWARF {
                 $prev_line = $line;
             }
             $program .= "\x00" . $self->_uleb(1) . "\x01";
+            my $max_offset = 0;
+            for my $fn (@$func_ranges) {
+                $max_offset = $fn->{end} if $fn->{end} > $max_offset;
+            }
+            my $end_addr = $text_base + $max_offset;
+            $program .= "\x00" . $self->_uleb( 1 + 8 ) . "\x02" . pack( 'Q<', $end_addr );
+            $program .= "\x00" . $self->_uleb(1) . "\x01";
             my $prologue = pack( 'C', 1 ) . pack( 'C', 1 ) . pack( 'c', -5 ) . pack( 'C', 14 ) . pack( 'C', 13 );
             $prologue .= pack( 'C*', 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1 );
             $prologue .= "\x00";
@@ -266,7 +273,7 @@ package Brocken::Format::DWARF {
             else {
                 $cie_body .= $self->_uleb(16);                               # return_address_register = 16
                 $cie_body .= "\x0C" . $self->_uleb(7) . $self->_uleb(8);     # DW_CFA_def_cfa: rsp(7), +8
-                $cie_body .= "\x02" . $self->_uleb(16) . $self->_uleb(1);    # DW_CFA_offset: ra(16), +1
+                $cie_body .= "\x05" . $self->_uleb(16) . $self->_uleb(1);    # DW_CFA_offset_extended: ra(16), +1
             }
             my $cie_len = 4 + length($cie_body);                             # includes CIE_id (4) + body
             $data .= pack( 'L<', $cie_len );                                 # CIE length
@@ -286,7 +293,7 @@ package Brocken::Format::DWARF {
                 for my $i ( 0 .. $#$regs ) {
                     my $dwarf    = $self->_dwarf_reg( $regs->[$i] );
                     my $save_off = $arch eq 'arm64' ? ( $i + 1 ) * 2 : ( $i + 2 );
-                    $instr .= "\x02" . $self->_uleb($dwarf) . $self->_uleb($save_off);
+                    $instr .= "\x05" . $self->_uleb($dwarf) . $self->_uleb($save_off);         # <--- Fix \x02 to \x05
                 }
                 my $fde_body = pack( 'Q<', $start_addr ) . pack( 'Q<', $range ) . $instr;
                 my $fde_len  = 4 + length($fde_body);                                          # CIE_ptr + body
@@ -316,15 +323,15 @@ package Brocken::Format::DWARF {
                 $cie_body .= "\x0C" . $self->_uleb(31) . $self->_uleb(0);
             }
             else {
-                $cie_body .= $self->_uleb(16);                              # return_address_register = 16
-                $cie_body .= $self->_uleb(1);                               # augmentation data length
-                $cie_body .= pack( 'C', 0x1B );                             # FDE encoding: DW_EH_PE_pcrel | DW_EH_PE_sdata4
+                $cie_body .= $self->_uleb(16);                               # return_address_register = 16
+                $cie_body .= $self->_uleb(1);                                # augmentation data length
+                $cie_body .= pack( 'C', 0x1B );                              # FDE encoding: DW_EH_PE_pcrel | DW_EH_PE_sdata4
                 $cie_body .= "\x0C" . $self->_uleb(7) . $self->_uleb(8);
-                $cie_body .= "\x02" . $self->_uleb(16) . $self->_uleb(1);
+                $cie_body .= "\x05" . $self->_uleb(16) . $self->_uleb(1);    # DW_CFA_offset_extended: ra(16), +1
             }
             my $cie_len = 4 + length($cie_body);
             $data .= pack( 'L<', $cie_len );
-            $data .= pack( 'L<', 0 );                                       # CIE_id = 0 (eh_frame)
+            $data .= pack( 'L<', 0 );                                        # CIE_id = 0 (eh_frame)
             $data .= $cie_body;
             $offset += 4 + $cie_len;
 
@@ -341,7 +348,7 @@ package Brocken::Format::DWARF {
                 for my $i ( 0 .. $#$regs ) {
                     my $dwarf    = $self->_dwarf_reg( $regs->[$i] );
                     my $save_off = $arch eq 'arm64' ? ( $i + 1 ) * 2 : ( $i + 2 );
-                    $instr .= "\x02" . $self->_uleb($dwarf) . $self->_uleb($save_off);
+                    $instr .= "\x05" . $self->_uleb($dwarf) . $self->_uleb($save_off);
                 }
                 my $fde_body = '';
                 $fde_body .= pack( 'l<', ( $text_base + $fn->{start} ) - ( $eh_base + $offset + 8 ) );

@@ -3,7 +3,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class', 'uninitialized';
 use lib 'lib';
 $|++;
-use JSON         ();
+use JSON::PP     ();
 use Time::HiRes  qw(time);
 use Getopt::Long qw(GetOptions);
 use List::Util   qw(shuffle);

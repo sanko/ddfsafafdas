@@ -235,4 +235,4 @@ sub _random_ir {
 }
 
 # --- JSON loader ---
-use JSON ();
+use JSON::PP ();

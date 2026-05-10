@@ -149,7 +149,7 @@ package Brocken::Format::PE {
         }
 
         # --- SEH .pdata / .xdata builders ---
-        method _build_xdata () {
+        method XX_build_xdata () {
             my $FRAME  = 1064;          # frame_local_size on win64
             my $scaled = $FRAME / 8;    # = 133
 
@@ -171,6 +171,27 @@ package Brocken::Format::PE {
             $codes .= pack( 'CC', 1,  0x30 );      # UWOP_PUSH_NONVOL rbx
             $codes .= pack( 'CC', 0,  0x50 );      # UWOP_PUSH_NONVOL rbp
             $codes .= pack( 'S<', 0 );             # padding to 4-byte alignment
+            return $hdr . $codes;
+        }
+
+        method _build_xdata () {
+            my $FRAME  = 1064;                     # frame_local_size on win64
+            my $scaled = $FRAME / 8;               # = 133
+
+            # UNWIND_INFO header (4 bytes)
+            # Version = 1, Flags = 0 (UNW_FLAG_NHANDLER) => 1
+            # SizeOfProlog = 17 bytes (7 for pushes, 3 for rbp, 7 for sub rsp)
+            # CountOfCodes = 6 (UWOP_ALLOC_LARGE=2 + 4 pushes)
+            # FrameReg = 0, FrameOff = 0
+            my $hdr = pack( 'C C C C', 1, 17, 6, 0 );
+
+            # Unwind codes in descending CodeOffset order
+            my $codes = pack( 'CC', 17, 0x01 );    # UWOP_ALLOC_LARGE (0), OpInfo=0
+            $codes .= pack( 'S<', $scaled );       # scaled alloc size follows
+            $codes .= pack( 'CC', 7, 0xF0 );       # UWOP_PUSH_NONVOL r15
+            $codes .= pack( 'CC', 5, 0xD0 );       # UWOP_PUSH_NONVOL r13
+            $codes .= pack( 'CC', 3, 0xC0 );       # UWOP_PUSH_NONVOL r12
+            $codes .= pack( 'CC', 1, 0x30 );       # UWOP_PUSH_NONVOL rbx
             return $hdr . $codes;
         }
 

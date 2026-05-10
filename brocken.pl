@@ -319,10 +319,31 @@ sub do_nothing() {
 }
 
 END
+$source_code = <<'END';
+my Int $done = 0;
+my Int $i = 0;
+while ($i < 452) {
+    my Any $a = [1];
+    my Any $b = [2];
+    my Any $c = [3];
+    $done = $i;
+    $i = $i + 1;
+}
+say "Reached: " . $done;
+exit 0;
+END
+
+# Allow reading source from a file argument
+if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
+    open my $fh, '<', $ARGV[0] or die "Cannot read $ARGV[0]: $!";
+    $source_code = do { local $/; <$fh> };
+    close $fh;
+    say "Reading source from: $ARGV[0]";
+    shift @ARGV;    # Remove file arg so it doesn't interfere with other options
+}
 say "Bootstrapping Brocken...";
 my $dbg = 0;
 my $os;
-
 for ( my $i = 0; $i < @ARGV; $i++ ) {
     if ( $ARGV[$i] =~ /^--debug(?:=(\d+))?$/ ) {
         $dbg = defined $1 ? $1 : ( $ARGV[ ++$i ] // 0 );
@@ -443,7 +464,8 @@ else {
     if ( $p->debug >= 1 ) {
         my $tb = $p->format->image_base + $p->format->rva_for('.text');
         my $fp = $p->arch eq 'arm64' ? '$x29' : '$rbp';
-        push @cmd, "-ex", "break *" . ( $tb + 0x1160 );
+
+        #~ push @cmd, "-ex", "break *" . ( $tb + 0x1160 );
         push @cmd, "-ex", "p val", "-ex", "x/gx $fp-8";
     }
     push @cmd, "-ex", "run", "-ex", "bt", "-ex", "quit \$_exitcode", "--args", $run;
@@ -452,10 +474,10 @@ else {
     system(@cmd);
 }
 say "Exit code: " . ( $? >> 8 );
-
-#~ say "\n--- MACHINE CODE HEX DUMP ---";
-#~ my $code_bytes = $p->as->code;
-#~ for (my $i=0; $i < length($code_bytes); $i += 16) {
-#~ my $chunk = substr($code_bytes, $i, 16);
-#~ printf("%04X: %-40s\n", $i, unpack("H*", $chunk));
-#~ }
+my $code_bytes = $p->as->code;
+say "Generated machine code size: " . length($code_bytes) . " bytes";
+say "\n--- MACHINE CODE HEX DUMP ---";
+for ( my $i = 0; $i < length($code_bytes); $i += 16 ) {
+    my $chunk = substr( $code_bytes, $i, 16 );
+    printf( "%04X: %-40s\n", $i, unpack( "H*", $chunk ) );
+}

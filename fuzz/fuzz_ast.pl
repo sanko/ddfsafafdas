@@ -1,6 +1,7 @@
 use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class', 'uninitialized';
+use lib '../lib';
 use lib 'lib';
 use lib 'fuzz/lib';
 $|++;
@@ -22,6 +23,7 @@ my $start_time = time();
 
 for my $iter ( 1 .. $ITERATIONS ) {
     $stats{iterations}++;
+    warn $stats{iterations};
     my $ast;
     my $result = eval {
         local $SIG{ALRM}     = sub { die "FUZZ_TIMEOUT\n" };
