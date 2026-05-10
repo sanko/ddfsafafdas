@@ -282,6 +282,12 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_smi, 0 ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
 
+                # Minimum Address Check - reject obviously invalid pointers (below 64KB)
+                my $min_addr = $builder->emit( 'constant', 'i64', [65536] );
+                my $above_min = $builder->emit( 'cmp_lt', 'Int', [ $obj, $min_addr ] );
+                $builder->emit_cond_br( $above_min, $l_end, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+
                 # Retrieve GC Cycle from bits 32-55 in header
                 my $header    = $builder->emit( 'load_mem_disp', 'i64', [ $obj, -8 ] );
                 my $cycle     = $builder->emit( 'load_iso_disp', 'i64', [80] );
@@ -384,7 +390,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_cond_br( $cmp_block_end, $l_bend, $l_bcont );
                 $builder->emit_label($l_bcont);
                 my $line_idx_slot = $driver->alloc_local_slot();
-                $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'constant', 'i64', [0] ) ] );
+                $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'constant', 'i64', [2] ) ] );
                 my $l_lloop = $builder->new_label();
                 my $l_lend  = $builder->new_label();
                 $builder->emit_label($l_lloop);
@@ -394,6 +400,12 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_cond_br( $cmp_256, $l_lcont, $l_lend );
                 $builder->emit_label($l_lcont);
                 my $line_addr  = $builder->emit( 'add',           'ptr', [ $curr_bh,   $builder->emit( 'mul', 'i64', [ $line_idx, $LINE_SIZE ] ) ] );
+                my $heap_ptr   = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] );
+                my $line_end   = $builder->emit( 'add',           'ptr', [ $line_addr, 8 ] );
+                my $cmp_past   = $builder->emit( 'cmp_ge',        'Int', [ $line_end, $heap_ptr ] );
+                my $l_skip     = $builder->new_label();
+                $builder->emit_cond_br( $cmp_past, $l_skip, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
                 my $line_mark  = $builder->emit( 'load_mem_byte', 'Int', [ $curr_bh,   $line_idx ] );
                 my $cmp_mark   = $builder->emit( 'cmp_ne',        'Int', [ $line_mark, 0 ] );
                 my $l_no_mark  = $builder->new_label();
@@ -423,6 +435,9 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'store_mem_byte', 'void', [ $curr_bh, $line_idx, $builder->emit( 'constant', 'i64', [0] ) ] );
                 $builder->emit_jump($l_lloop);
                 $builder->emit_label($l_live);
+                $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'add', 'i64', [ $line_idx, 1 ] ) ] );
+                $builder->emit_jump($l_lloop);
+                $builder->emit_label($l_skip);
                 $builder->emit( 'local_store', 'void', [ $line_idx_slot, $builder->emit( 'add', 'i64', [ $line_idx, 1 ] ) ] );
                 $builder->emit_jump($l_lloop);
                 $builder->emit_label($l_lend);
@@ -505,7 +520,7 @@ package Brocken::Compiler::Lowering {
                 # Raw size: requested size + 8 byte header
                 my $sz_raw = $builder->emit( 'add', 'i64', [ $rsz, 8 ] );
 
-                # Align allocation to 8 bytes: sz = (sz_raw + 7) & -8
+                # Align allocation to 8 bytes
                 my $sz_plus7 = $builder->emit( 'add',           'i64', [ $sz_raw,   7 ] );
                 my $sz       = $builder->emit( 'and',           'i64', [ $sz_plus7, $builder->emit( 'constant', 'i64', [-8] ) ] );
                 my $ap       = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] );

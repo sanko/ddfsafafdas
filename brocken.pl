@@ -322,7 +322,7 @@ END
 $source_code = <<'END';
 my Int $done = 0;
 my Int $i = 0;
-while ($i < 452) {
+while ($i < 10000000) {
     my Any $a = [1];
     my Any $b = [2];
     my Any $c = [3];
