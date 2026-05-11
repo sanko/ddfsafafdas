@@ -148,50 +148,38 @@ package Brocken::Format::PE {
             return $block . ( "\0" x ( 2048 - length($block) ) );
         }
 
-        # --- SEH .pdata / .xdata builders ---
-        method XX_build_xdata () {
-            my $FRAME  = 1064;          # frame_local_size on win64
-            my $scaled = $FRAME / 8;    # = 133
-
-            # UNWIND_INFO header (4 bytes)
-            my $hdr = pack( 'v', (1) | ( 0 << 3 ) | ( 22 << 6 ) );
-            $hdr .= pack( 'C', 11 );    # CountOfCodes
-            $hdr .= pack( 'C', 0 );     # FrameRegister=0, FrameOffset=0
-
-            # Unwind codes in descending CodeOffset order + padding
-            my $codes = pack( 'CC', 15, 0x01 );    # UWOP_ALLOC_LARGE, OpInfo=0
-            $codes .= pack( 'S<', $scaled );       # scaled alloc size follows
-            $codes .= pack( 'CC', 12, 0x30 );      # UWOP_SET_FPREG
-            $codes .= pack( 'CC', 10, 0xF0 );      # UWOP_PUSH_NONVOL r15
-            $codes .= pack( 'CC', 8,  0xE0 );      # UWOP_PUSH_NONVOL r14
-            $codes .= pack( 'CC', 6,  0xD0 );      # UWOP_PUSH_NONVOL r13
-            $codes .= pack( 'CC', 4,  0xC0 );      # UWOP_PUSH_NONVOL r12
-            $codes .= pack( 'CC', 3,  0x60 );      # UWOP_PUSH_NONVOL rsi
-            $codes .= pack( 'CC', 2,  0x70 );      # UWOP_PUSH_NONVOL rdi
-            $codes .= pack( 'CC', 1,  0x30 );      # UWOP_PUSH_NONVOL rbx
-            $codes .= pack( 'CC', 0,  0x50 );      # UWOP_PUSH_NONVOL rbp
-            $codes .= pack( 'S<', 0 );             # padding to 4-byte alignment
-            return $hdr . $codes;
-        }
-
         method _build_xdata () {
-            my $FRAME  = 1064;                     # frame_local_size on win64
-            my $scaled = $FRAME / 8;               # = 133
+
+            # Dynamically compute the frame size using the exact same formula
+            my $locals      = 1024;
+            my $ctx         = 64;                          # 8 preserved regs on Win64
+            my $shadow      = 32;
+            my $target_size = $locals + $shadow;
+            my $rem         = ( 8 - $ctx ) % 16;
+            $rem += 16 if $rem < 0;
+            my $align_padding = ( $rem - ( $target_size % 16 ) ) % 16;
+            $align_padding += 16 if $align_padding < 0;
+            my $FRAME  = $target_size + $align_padding;    # Should be 1064
+            my $scaled = $FRAME / 8;
 
             # UNWIND_INFO header (4 bytes)
             # Version = 1, Flags = 0 (UNW_FLAG_NHANDLER) => 1
-            # SizeOfProlog = 17 bytes (7 for pushes, 3 for rbp, 7 for sub rsp)
-            # CountOfCodes = 6 (UWOP_ALLOC_LARGE=2 + 4 pushes)
-            # FrameReg = 0, FrameOff = 0
-            my $hdr = pack( 'C C C C', 1, 17, 6, 0 );
+            # SizeOfProlog = 22
+            # CountOfCodes = 10 (UWOP_ALLOC_LARGE=2 + 8 pushes)
+            # FrameRegister = 0, FrameOffset = 0
+            my $hdr = pack( 'C C C C', 1, 22, 10, 0 );
 
             # Unwind codes in descending CodeOffset order
-            my $codes = pack( 'CC', 17, 0x01 );    # UWOP_ALLOC_LARGE (0), OpInfo=0
+            my $codes = pack( 'CC', 22, 0x01 );    # UWOP_ALLOC_LARGE (0), OpInfo=0
             $codes .= pack( 'S<', $scaled );       # scaled alloc size follows
-            $codes .= pack( 'CC', 7, 0xF0 );       # UWOP_PUSH_NONVOL r15
-            $codes .= pack( 'CC', 5, 0xD0 );       # UWOP_PUSH_NONVOL r13
-            $codes .= pack( 'CC', 3, 0xC0 );       # UWOP_PUSH_NONVOL r12
-            $codes .= pack( 'CC', 1, 0x30 );       # UWOP_PUSH_NONVOL rbx
+            $codes .= pack( 'CC', 12, 0xF0 );      # UWOP_PUSH_NONVOL r15
+            $codes .= pack( 'CC', 10, 0xE0 );      # UWOP_PUSH_NONVOL r14
+            $codes .= pack( 'CC', 8,  0xD0 );      # UWOP_PUSH_NONVOL r13
+            $codes .= pack( 'CC', 6,  0xC0 );      # UWOP_PUSH_NONVOL r12
+            $codes .= pack( 'CC', 4,  0x60 );      # UWOP_PUSH_NONVOL rsi
+            $codes .= pack( 'CC', 3,  0x70 );      # UWOP_PUSH_NONVOL rdi
+            $codes .= pack( 'CC', 2,  0x30 );      # UWOP_PUSH_NONVOL rbx
+            $codes .= pack( 'CC', 1,  0x50 );      # UWOP_PUSH_NONVOL rbp
             return $hdr . $codes;
         }
 

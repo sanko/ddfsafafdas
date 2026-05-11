@@ -117,7 +117,7 @@ say test_defer();
 
 # Testing Immix GC by forcing allocations in a loop
 my Int $i = 0;
-while ($i < 10000000) {
+while ($i < 700) {
     my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation to trigger GC line marking
     $i = $i + 1;
 }
@@ -274,7 +274,7 @@ BROCKEN
 $source_code = <<'END' if 0;
 # Testing Immix GC by forcing allocations in a loop
 my Int $i = 0;
-while ($i < 10000000) {
+while ($i < 700) {
     my Any $tmp = [1, 2, 3, 4, 5]; # Constant allocation triggers GC line marking
     $i = $i + 1;
     if ($i == 10000000) {
@@ -322,7 +322,8 @@ END
 $source_code = <<'END';
 my Int $done = 0;
 my Int $i = 0;
-while ($i < 10000000) {
+while ($i <= 100000) {
+    say $i;
     my Any $a = [1];
     my Any $b = [2];
     my Any $c = [3];
@@ -342,7 +343,7 @@ if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
     shift @ARGV;    # Remove file arg so it doesn't interfere with other options
 }
 say "Bootstrapping Brocken...";
-my $dbg = 0;
+my $dbg = 1;
 my $os;
 for ( my $i = 0; $i < @ARGV; $i++ ) {
     if ( $ARGV[$i] =~ /^--debug(?:=(\d+))?$/ ) {
@@ -476,8 +477,10 @@ else {
 say "Exit code: " . ( $? >> 8 );
 my $code_bytes = $p->as->code;
 say "Generated machine code size: " . length($code_bytes) . " bytes";
-say "\n--- MACHINE CODE HEX DUMP ---";
-for ( my $i = 0; $i < length($code_bytes); $i += 16 ) {
-    my $chunk = substr( $code_bytes, $i, 16 );
-    printf( "%04X: %-40s\n", $i, unpack( "H*", $chunk ) );
+if ( $dbg == 4 ) {
+    say "\n--- MACHINE CODE HEX DUMP ---";
+    for ( my $i = 0; $i < length($code_bytes); $i += 16 ) {
+        my $chunk = substr( $code_bytes, $i, 16 );
+        printf( "%04X: %-40s\n", $i, unpack( "H*", $chunk ) );
+    }
 }

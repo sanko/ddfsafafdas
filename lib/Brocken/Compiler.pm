@@ -112,12 +112,23 @@ package Brocken::Compiler {
         }
 
         method frame_local_size() {
+            my $locals      = 1024;
+            my $ctx         = $self->context_size();
+            my $shadow      = $platform->shadow_space();
+            my $target_size = $locals + $shadow;
 
-            # (Context + RetAddr + Shadow + Locals) aligned to 16
-            my $locals  = 1024;
-            my $needed  = ( $self->context_size() + 8 + $platform->shadow_space() + $locals );
-            my $padding = ( 16 - ( $needed % 16 ) ) % 16;
-            return $locals + $padding + $platform->shadow_space();
+            # RSP is 8 mod 16 on entry.
+            # After pushing ctx bytes, RSP is (8 - ctx) mod 16.
+            # We subtract size, so RSP becomes (8 - ctx - size) mod 16.
+            # We want (8 - ctx - size) ≡ 0 mod 16, which means size ≡ 8 - ctx mod 16.
+            my $rem = ( 8 - $ctx ) % 16;
+            $rem += 16 if $rem < 0;
+            my $align_padding = ( $rem - ( $target_size % 16 ) ) % 16;
+            $align_padding += 16 if $align_padding < 0;
+            my $size = $target_size + $align_padding;
+
+            # warn "DEBUG frame_local_size: ctx=$ctx shadow=$shadow locals=$locals target=$target_size rem=$rem padding=$align_padding -> size=$size";
+            return $size;
         }
 
         # --- Format RVAs ---

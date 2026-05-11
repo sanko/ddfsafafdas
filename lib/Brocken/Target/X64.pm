@@ -164,15 +164,19 @@ package Brocken::Target::X64 {
             elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( 'r14',  $reg_map->{ $inst->{args}[0] } ); }
             elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $d_reg, 'r14' ); }
             elsif ( $op eq 'enter_func' ) {
+                my $size = $driver->frame_local_size;
+                warn "DEBUG enter_func: frame_local_size=$size\n";
                 my $regs = $driver->preserved_regs();
                 for my $r (@$regs) { $as->push_reg($r); }
                 $as->mov_reg( 'rbp', 'rsp' );
-                $as->sub_imm( 'rsp', $driver->frame_local_size );
+                $as->sub_imm( 'rsp', $size );
             }
             elsif ( $op eq 'leave_func' ) {
-                my $rv = $v->( $inst->{args}[0] );
+                my $rv   = $v->( $inst->{args}[0] );
+                my $size = $driver->frame_local_size;
+                warn "DEBUG leave_func: rv=" . ( defined $rv ? $rv : 'undef' ) . " frame_local_size=$size\n";
                 if ( defined $rv ) { $inst->{args}[0] =~ /^%/ ? $as->mov_reg( 'rax', $reg_map->{ $inst->{args}[0] } ) : $as->mov_imm( 'rax', $rv ); }
-                $as->add_imm( 'rsp', $driver->frame_local_size );
+                $as->add_imm( 'rsp', $size );
                 my $regs = $driver->preserved_regs();
                 for my $r ( reverse @$regs ) { $as->pop_reg($r); }
                 $as->append_code( pack( 'C', 0xC3 ) );
