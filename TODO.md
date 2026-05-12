@@ -49,7 +49,8 @@
 
 ## Milestone 6: Ecosystem & Interop
 - [ ] FFI (`Affix`): Declarative C-ABI bindings using opaque pointers.
+  - *Note: Windows x64 requires arguments 5+ to be homed in the caller's pre-allocated shadow space `[rsp+32]`, while SysV uses `[rsp]`. We also must use `rcx`/`rdx` for args 1 & 2 on Win64 vs `rdi`/`rsi` on SysV. Shadow space must be maintained for SEH unwinding.*
 - [ ] Regex Engine: PCRE-compatible engine compiled directly to machine code.
 - [ ] Sandboxed `eval`: Embedded Wasm engine for capability-based security.
 - [ ] Self-hosting!
-- [ ] The `bkn` CLI: TOML manifests, Git dependencies, and reproducible builds.
+- [ ] The `bkn` (bacon) CLI: TOML manifests, Git dependencies, and reproducible builds.

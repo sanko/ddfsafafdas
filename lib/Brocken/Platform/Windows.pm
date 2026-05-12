@@ -37,11 +37,25 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
             $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
         }
+        elsif ( $op eq 'intrinsic_sleep' ) {
+            my $val = $v->( $inst->{args}[0] );
+
+            # 1. Untag: (val >> 1)
+            $as->mov_reg( 'rcx', $val );
+            $as->shr_imm( 'rcx', 1 );
+
+            # 2. Convert to Milliseconds: val * 1000
+            $as->mov_imm( 'rax', 1000 );
+            $as->mul_reg( 'rcx', 'rax' );
+
+            # 3. Call Kernel32
+            $as->call_rva( $driver->import_rva('Sleep'), $driver->text_rva );
+        }
         elsif ( $op eq 'intrinsic_exit' ) {
             my $val = $v->( $inst->{args}[0] );
             if ( $inst->{args}[0] =~ /^%/ ) {
                 $as->mov_reg( 'rcx', $val );
-                $as->shr_imm( 'rcx', 1 );
+                $as->shr_imm( 'rcx', 1 );    # Untag: (N * 2 + 1) >> 1 == N
             }
             else {
                 my $untagged = ( defined $val && $val =~ /^\d+$/ ) ? ( $val >> 1 ) : ( $val // 0 );

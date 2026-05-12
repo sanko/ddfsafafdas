@@ -37,7 +37,8 @@ class Brocken::Parser {
         'exit'   => '_parse_exit',
         'say'    => '_parse_builtin_call',
         'print'  => '_parse_builtin_call',
-        '{'      => '_parse_block_stmt',
+        'sleep'  => '_parse_builtin_call',
+        '{'      => '_parse_block_stmt'
     );
 
     # Expression Prefix Registry (Starts an expression)

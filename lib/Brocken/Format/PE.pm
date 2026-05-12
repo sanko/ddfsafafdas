@@ -11,7 +11,8 @@ package Brocken::Format::PE {
             WriteFile                   => 16,
             VirtualAlloc                => 24,
             SetConsoleOutputCP          => 32,
-            AddVectoredExceptionHandler => 40
+            AddVectoredExceptionHandler => 40,
+            Sleep                       => 48
         );
 
         method import_rva($n) {
@@ -131,7 +132,9 @@ package Brocken::Format::PE {
         }
 
         method _build_idata_raw($base_rva) {
-            my @funcs = qw[ExitProcess GetStdHandle WriteFile VirtualAlloc SetConsoleOutputCP AddVectoredExceptionHandler];
+
+            # Standardize: Use the keys from the %IMPORTS map so they stay in sync automatically
+            my @funcs = sort { $IMPORTS{$a} <=> $IMPORTS{$b} } keys %IMPORTS;
             my ( $iat, $hints ) = ( '', '' );
             my $hints_rva = $base_rva + 320;
             for my $f (@funcs) {

@@ -27,29 +27,27 @@ package Brocken::Target::X64::Emit {
                 r14 => 14,
                 r15 => 15
             };
-            return $r if defined($r) && $r =~ /^\d+$/;
             my $name = lc( $r // '' );
             $name =~ s/^\s+|\s+$//g;
-            die "Unknown X64 register: '$r'" unless exists $MAP->{$name};
+            die "Logic Error: Expected X64 register name, got '$r'" unless exists $MAP->{$name};
             return $MAP->{$name};
         }
 
-        method _rex( $w, $r, $x, $b ) {
-            my $ri  = $self->reg($r);
-            my $xi  = $self->reg($x);
-            my $bi  = $self->reg($b);
+        method _rex( $w, $ri, $xi, $bi ) {
             my $rex = 0x40;
             $rex |= 0x08 if $w;
-            $rex |= 0x04 if $ri >= 8;
-            $rex |= 0x02 if $xi >= 8;
-            $rex |= 0x01 if $bi >= 8;
-            if ( !$w && ( ( $ri >= 4 && $ri <= 7 ) || ( $bi >= 4 && $bi <= 7 ) ) ) { return pack( 'C', $rex ); }
+            $rex |= 0x04 if ( $ri // 0 ) >= 8;
+            $rex |= 0x02 if ( $xi // 0 ) >= 8;
+            $rex |= 0x01 if ( $bi // 0 ) >= 8;
+            if ( !$w && ( ( ( $ri // 0 ) >= 4 && ( $ri // 0 ) <= 7 ) || ( ( $bi // 0 ) >= 4 && ( $bi // 0 ) <= 7 ) ) ) {
+                return pack( 'C', $rex );
+            }
             return ( $rex == 0x40 && !$w ) ? '' : pack( 'C', $rex );
         }
 
-        method _emit_modrm( $opcode, $reg, $base, $disp, $w = 1, $prefix = '' ) {
-            my $ri  = $self->reg($reg);
-            my $bi  = $self->reg($base);
+        method _emit_modrm( $opcode, $reg_name, $base_name, $disp, $w = 1, $prefix = '' ) {
+            my $ri  = $self->reg($reg_name);
+            my $bi  = $self->reg($base_name);
             my $mod = ( $disp == 0 && ( $bi & 7 ) != 5 ) ? 0 : ( $disp >= -128 && $disp <= 127 ? 1 : 2 );
             $code
                 .= $self->_rex( $w, $ri, 0, $bi ) . $prefix . pack( 'C', $opcode ) . pack( 'C', ( $mod << 6 ) | ( ( $ri & 7 ) << 3 ) | ( $bi & 7 ) );
@@ -84,49 +82,9 @@ package Brocken::Target::X64::Emit {
         }
         method add_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xC0 | ( $ri & 7 ), $i ); }
         method sub_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xE8 | ( $ri & 7 ), $i ); }
-
-        method and_reg( $d, $s ) {
-            $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
-                pack( 'CC', 0x21, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
-        }
-
-        method or_reg( $d, $s ) {
-            $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
-                pack( 'CC', 0x09, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
-        }
-
-        method xor_reg( $d, $s ) {
-            $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
-                pack( 'CC', 0x31, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
-        }
         method and_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xE0 | ( $ri & 7 ), $i ); }
         method or_imm( $r, $i )  { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xC8 | ( $ri & 7 ), $i ); }
         method xor_imm( $r, $i ) { my $ri = $self->reg($r); $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xF0 | ( $ri & 7 ), $i ); }
-
-        method shl_cl($r) {
-            my $ri = $self->reg($r);
-
-            # Opcode D3 /4: SHL r/m64, CL
-            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CC', 0xD3, 0xE0 | ( $ri & 7 ) );
-        }
-
-        method shr_cl($r) {
-            my $ri = $self->reg($r);
-
-            # Opcode D3 /5: SHR r/m64, CL
-            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CC', 0xD3, 0xE8 | ( $ri & 7 ) );
-        }
-
-        # Ensure you also have the constant versions from the previous fix:
-        method shl_imm( $r, $i ) {
-            my $ri = $self->reg($r);
-            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCC', 0xC1, 0xE0 | ( $ri & 7 ), $i & 0xFF );
-        }
-
-        method shr_imm( $r, $i ) {
-            my $ri = $self->reg($r);
-            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCC', 0xC1, 0xE8 | ( $ri & 7 ), $i & 0xFF );
-        }
 
         method add_reg( $d, $s ) {
             $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
@@ -142,22 +100,44 @@ package Brocken::Target::X64::Emit {
             $code .= $self->_rex( 1, $self->reg($d), 0, $self->reg($s) ) .
                 pack( 'CCC', 0x0F, 0xAF, 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
         }
+
+        method and_reg( $d, $s ) {
+            $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x21, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method or_reg( $d, $s ) {
+            $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x09, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method xor_reg( $d, $s ) {
+            $code .= $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x31, 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
         method idiv_reg($src) { $code .= $self->_rex( 1, 0, 0, $self->reg($src) ) . pack( 'CC', 0xF7, 0xF8 | ( $self->reg($src) & 7 ) ); }
 
-        method test_reg_reg( $l, $r ) {
-            $code .= $self->_rex( 1, $self->reg($r), 0, $self->reg($l) ) .
-                pack( 'CC', 0x85, 0xC0 | ( ( $self->reg($r) & 7 ) << 3 ) | ( $self->reg($l) & 7 ) );
+        method shl_imm( $r, $i ) {
+            my $ri = $self->reg($r);
+            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCC', 0xC1, 0xE0 | ( $ri & 7 ), $i & 0xFF );
+        }
+
+        method shr_imm( $r, $i ) {
+            my $ri = $self->reg($r);
+            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCC', 0xC1, 0xE8 | ( $ri & 7 ), $i & 0xFF );
         }
 
         method cmp_reg_reg( $l, $r ) {
             $code .= $self->_rex( 1, $self->reg($r), 0, $self->reg($l) ) .
                 pack( 'CC', 0x39, 0xC0 | ( ( $self->reg($r) & 7 ) << 3 ) | ( $self->reg($l) & 7 ) );
         }
-
-        method cmp_reg_imm( $r, $imm ) {
-            $code .= $self->_rex( 1, 0, 0, $self->reg($r) ) . pack( 'CCl<', 0x81, 0xF8 | ( $self->reg($r) & 7 ), $imm );
-        }
+        method cmp_reg_imm( $r, $i )    { $code .= $self->_rex( 1, 0, 0, $self->reg($r) ) . pack( 'CCl<', 0x81, 0xF8 | ( $self->reg($r) & 7 ), $i ); }
         method cmp_reg_imm_32( $r, $i ) { $code .= $self->_rex( 0, 0, 0, $self->reg($r) ) . pack( 'CCl<', 0x81, 0xF8 | ( $self->reg($r) & 7 ), $i ); }
+
+        method test_reg_reg( $l, $r ) {
+            $code .= $self->_rex( 1, $self->reg($r), 0, $self->reg($l) ) .
+                pack( 'CC', 0x85, 0xC0 | ( ( $self->reg($r) & 7 ) << 3 ) | ( $self->reg($l) & 7 ) );
+        }
 
         method setcc( $cc, $r ) {
             my $ri = $self->reg($r);
@@ -186,18 +166,8 @@ package Brocken::Target::X64::Emit {
             my $next = $txtrva + length($code) + 6;
             $code .= pack( 'CC l<', 0xFF, 0x15, $trva - $next );
         }
-
-        method call_label($l) {
-            $code .= pack( 'C', 0xE8 );
-            push @fixups, { offset => length($code), target => $l };
-            $code .= pack( 'L<', 0 );
-        }
-
-        method jmp($l) {
-            $code .= pack( 'C', 0xE9 );
-            push @fixups, { offset => length($code), target => $l };
-            $code .= pack( 'L<', 0 );
-        }
+        method call_label($l) { $code .= pack( 'C', 0xE8 ); push @fixups, { offset => length($code), target => $l }; $code .= pack( 'L<', 0 ); }
+        method jmp($l)        { $code .= pack( 'C', 0xE9 ); push @fixups, { offset => length($code), target => $l }; $code .= pack( 'L<', 0 ); }
 
         method jcc( $cc, $l ) {
             $code .= pack( 'CC', 0x0F, 0x80 + $cc );
@@ -214,56 +184,5 @@ package Brocken::Target::X64::Emit {
             }
         }
     }
-}
-1;
-__END__
-
-=pod
-
-=head1 NAME
-
-Brocken::Target::X64::Emit - Low-level x64 machine code encoder
-
-=head1 DESCRIPTION
-
-Encodes raw x64 instructions: REX prefixes, ModR/M bytes, SIB bytes, immediates, and label fixups. Maintains a code
-byte buffer, label table, and fixup list.
-
-=head1 METHODS
-
-=head2 mov_reg($d, $s) / mov_imm($r, $imm)
-
-Register and immediate moves.
-
-=head2 push_reg($r) / pop_reg($r)
-
-Push/pop with REX prefix for extended registers.
-
-=head2 add_reg / sub_reg / mul_reg / and_reg / or_reg / xor_reg
-
-Register arithmetic with REX prefix.
-
-=head2 jmp($label) / jcc($cc, $label) / call_label($label)
-
-Control flow with fixup entries for forward references.
-
-=head2 load_reg_mem / store_mem_disp_reg
-
-Memory loads and stores.
-
-=head2 lea_rva($d, $target, $text_base)
-
-RIP-relative LEA for position-independent addressing.
-
-=head2 mark_label($name) / resolve()
-
-Label management: mark_label records the current code offset; resolve patches all outstanding fixups with correct
-RIP-relative offsets.
-
-=head2 append_code($bin)
-
-Appends raw bytes (for manual instruction encoding).
-
-=cut
 }
 1;

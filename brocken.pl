@@ -323,14 +323,15 @@ $source_code = <<'END';
 my Int $done = 0;
 my Int $i = 0;
 while ($i <= 100000) {
-    say $i;
+    #~ say $i;
     my Any $a = [1];
     my Any $b = [2];
     my Any $c = [3];
     $done = $i;
     $i = $i + 1;
+
 }
-say "Reached: " . $done;
+say "Reached: " . $done;sleep 5;
 exit 0;
 END
 

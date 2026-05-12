@@ -81,6 +81,28 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
             }
         }
+        elsif ( $op eq 'intrinsic_sleep' ) {
+            my $val = $v->( $inst->{args}[0] );
+
+            # 1. Untag value into RAX
+            $as->mov_reg( 'rax', $val );
+            $as->shr_imm( 'rax', 1 );
+
+            # 2. Build struct timespec { long tv_sec, long tv_nsec } on stack
+            # Use the 32-byte shadow-like space we have or just push
+            $as->mov_imm( 'r11', 0 );    # 0 nanoseconds
+            $as->push_reg('r11');        # tv_nsec
+            $as->push_reg('rax');        # tv_sec
+
+            # 3. nanosleep(struct timespec *req, struct timespec *rem)
+            $as->mov_reg( 'rdi', 'rsp' );    # Pointer to our struct
+            $as->mov_imm( 'rsi', 0 );        # rem = NULL
+            $as->mov_imm( 'rax', 35 );       # sys_nanosleep
+            $as->syscall();
+
+            # 4. Clean up stack
+            $as->add_imm( 'rsp', 16 );
+        }
         elsif ( $op eq 'intrinsic_exit' ) {
             my $val = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {
