@@ -242,11 +242,27 @@ class Brocken::Parser {
     }
 
     method _parse_builtin_call() {
-        my $tok  = $self->advance();
+        my $tok  = $self->advance();    # consume the keyword (print, say, open, etc)
         my $name = $tok->{value};
-        my $expr = $self->parse_expression(0);
+        my @args;
+
+        # Only try to parse arguments if the next token isn't a statement terminator
+        if ( $self->current->{value} ne ';' && $self->current->{value} ne '}' && $self->current->{type} ne 'EOF' ) {
+            while (1) {
+                push @args, $self->parse_expression(0);
+
+                # If we see a comma, consume it and continue to the next argument
+                if ( $self->current->{value} eq ',' ) {
+                    $self->advance();
+                    next;
+                }
+
+                # No comma? We are done with the argument list
+                last;
+            }
+        }
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Expr::Call->new( name => $name, args => [$expr], line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Call->new( name => $name, args => \@args, line => $tok->{line}, col => $tok->{col} );
     }
 
     method _parse_sub_stmt() {

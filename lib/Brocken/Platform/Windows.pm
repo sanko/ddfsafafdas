@@ -37,6 +37,72 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
             $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
         }
+        elsif ( $op eq 'intrinsic_open' ) {
+            my ( $path, $mode ) = ( $reg_map->{ $inst->{args}[0] }, $reg_map->{ $inst->{args}[1] } );
+            state $open_id = 0;
+            my $l_write = "intr_open_write_" . ++$open_id;
+            my $l_call  = "intr_open_call_" . $open_id;
+            $as->mov_reg( 'rcx', $path );
+            $as->add_imm( 'rcx', 16 );    # Skip Brocken string header
+            $as->load_reg_mem_byte( 'rax', $mode, 16 );
+            $as->cmp_reg_imm( 'rax', ord('r') );
+            $as->jcc( $driver->cc('ne'), $l_write );
+
+            # Read Mode
+            $as->mov_imm( 'rdx', 0x80000000 );    # GENERIC_READ
+            $as->mov_imm( 'r8',  1 );             # FILE_SHARE_READ
+            $as->mov_imm( 'r9',  0 );             # Security
+            $as->mov_imm( 'rax', 3 );             # OPEN_EXISTING
+            $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
+            $as->mov_imm( 'rax', 0x80 );          # NORMAL
+            $as->store_mem_disp_reg( 'rsp', 40, 'rax' );
+            $as->mov_imm( 'rax', 0 );
+            $as->store_mem_disp_reg( 'rsp', 48, 'rax' );
+            $as->jmp($l_call);
+            $as->mark_label($l_write);
+
+            # Write Mode
+            $as->mov_imm( 'rdx', 0x40000000 );    # GENERIC_WRITE
+            $as->mov_imm( 'r8',  0 );
+            $as->mov_imm( 'r9',  0 );
+            $as->mov_imm( 'rax', 2 );             # CREATE_ALWAYS
+            $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
+            $as->mov_imm( 'rax', 0x80 );
+            $as->store_mem_disp_reg( 'rsp', 40, 'rax' );
+            $as->mov_imm( 'rax', 0 );
+            $as->store_mem_disp_reg( 'rsp', 48, 'rax' );
+            $as->mark_label($l_call);
+            $as->call_rva( $driver->import_rva('CreateFileA'), $driver->text_rva );
+            $as->mov_reg( $reg_map->{ $inst->{dest} }, 'rax' );
+        }
+        elsif ( $op eq 'intrinsic_get_size' ) {
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
+            $as->lea_reg_disp( 'rdx', 'rsp', 32 );    # Shadow space is safely unmapped by this arg
+            $as->call_rva( $driver->import_rva('GetFileSizeEx'), $driver->text_rva );
+            $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 32 );
+        }
+        elsif ( $op eq 'intrinsic_read' ) {
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
+            $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[1] } );
+            $as->mov_reg( 'r8',  $reg_map->{ $inst->{args}[2] } );
+            $as->lea_reg_disp( 'r9', 'rsp', 40 );
+            $as->mov_imm( 'rax', 0 );
+            $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
+            $as->call_rva( $driver->import_rva('ReadFile'), $driver->text_rva );
+        }
+        elsif ( $op eq 'intrinsic_write' ) {
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
+            $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[1] } );
+            $as->mov_reg( 'r8',  $reg_map->{ $inst->{args}[2] } );
+            $as->lea_reg_disp( 'r9', 'rsp', 40 );
+            $as->mov_imm( 'rax', 0 );
+            $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
+            $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
+        }
+        elsif ( $op eq 'intrinsic_close' ) {
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
+            $as->call_rva( $driver->import_rva('CloseHandle'), $driver->text_rva );
+        }
         elsif ( $op eq 'intrinsic_create_wait_handle' ) {
             $as->mov_imm( 'rcx', 0 );    # Attributes
             $as->mov_imm( 'rdx', 0 );    # Manual Reset = False
@@ -132,26 +198,3 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
     }
 }
 1;
-__END__
-
-=pod
-
-=head1 NAME
-
-Brocken::Platform::Windows - Windows OS intrinsics
-
-=head1 DESCRIPTION
-
-Implements WinAPI-based intrinsics: VirtualAlloc, WriteFile, GetStdHandle, ExitProcess, SetConsoleOutputCP,
-AddVectoredExceptionHandler. Also emits the fiber context switcher (M_fiber_switch) and VEH handler for stack overflow
-recovery.
-
-Uses Windows x64 calling convention: RCX, RDX, R8, R9, 32-byte shadow space.
-
-=head1 METHODS
-
-=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
-
-Dispatches intrinsic_* IR opcodes.
-
-=cut

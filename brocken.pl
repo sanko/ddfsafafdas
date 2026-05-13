@@ -320,21 +320,35 @@ sub do_nothing() {
 
 END
 $source_code = <<'END';
-my Int $done = 0;
-my Int $i = 0;
-while ($i <= 100000) {
-    #~ say $i;
-    my Any $a = [1];
-    my Any $b = [2];
-    my Any $c = [3];
-    $done = $i;
-    $i = $i + 1;
+say "Testing File I/O...";
 
-}
-say "Reached: " . $done;sleep 5;
+my String $test_file = "test_output.txt";
+my String $content = "Hello, Brocken File I/O!";
+
+say "1. Testing spurt (write file)...";
+my Int $result = spurt($test_file, $content);
+say "   spurt result: " . $result;
+
+say "2. Testing slurp (read file)...";
+my String $read_content = slurp($test_file);
+say "   slurp result: " . $read_content;
+
+say "3. Testing open/close...";
+my Any $fh = open($test_file, "r");
+say "   open result: " . $fh;
+my Int $close_result = close($fh);
+say "   close result: " . $close_result;
+
+say "4. Testing read...";
+my Any $fh2 = open($test_file, "r");
+my String $line = read($fh2, 100);
+say "   read result: " . $line;
+close($fh2);
+
+say "All File I/O tests completed!";
 exit 0;
 END
-$source_code = <<'END';
+$source_code = <<'END' if 0;
 say "--- Brocken Milestone 3.5: Native Sleep & GC Check ---";
 
 # 1. GC STRESS TEST
@@ -379,6 +393,37 @@ say "Main received from fiber: " . $val;
 
 say "--- ALL TESTS PASSED ---";
 exit 0;
+END
+$source_code = <<'END';
+my Int $done = 0;
+my Int $i = 0;
+while ($i <= 100000) {
+    #~ say $i;
+    my Any $a = [1];
+    my Any $b = [2];
+    my Any $c = [3];
+    $done = $i;
+    $i = $i + 1;
+    say "Testing File I/O...";
+}
+say "Reached: " . $done;
+sleep 5;
+END
+$source_code = <<'END';
+my $filename = "hello_world.txt";
+
+# 1. Create and Write
+my $fh = open($filename, "w");
+ print $fh, "Hello from Brocken Native! 🚀\n";
+ print $fh, "This file was written via WinAPI/Linux Syscalls.\n";
+close($fh);
+
+# 2. Slurp and Display
+say "Reading file back...";
+my String $content = slurp($filename);
+say "--- FILE CONTENT ---";
+say $content;
+say "--------------------";
 END
 
 # Allow reading source from a file argument

@@ -84,6 +84,117 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->syscall(1);
             }
         }
+        elsif ( $op eq 'intrinsic_open' ) {
+            my ( $path, $mode ) = ( $reg_map->{ $inst->{args}[0] }, $reg_map->{ $inst->{args}[1] } );
+            state $open_id = 0;
+            my $l_write  = "intr_open_write_" . ++$open_id;
+            my $l_call   = "intr_open_call_" . $open_id;
+            my $SYS_open = 0x2000000 + 5;
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $path );
+                $as->add_imm( 'rdi', 16 );
+                $as->load_reg_mem_byte( 'rax', $mode, 16 );
+                $as->cmp_reg_imm( 'rax', ord('r') );
+                $as->jcc( $driver->cc('ne'), $l_write );
+                $as->mov_imm( 'rsi', 0 );    # O_RDONLY
+                $as->mov_imm( 'rdx', 0 );
+                $as->jmp($l_call);
+                $as->mark_label($l_write);
+
+                # O_WRONLY (1) | O_CREAT (0x0200) | O_TRUNC (0x0400) = 0x0601
+                $as->mov_imm( 'rsi', 0x0601 );
+                $as->mov_imm( 'rdx', 0644 );
+                $as->mark_label($l_call);
+                $as->mov_imm( 'rax', $SYS_open );
+                $as->syscall();
+                $as->mov_reg( $reg_map->{ $inst->{dest} }, 'rax' );
+            }
+            else {
+                $as->mov_reg( 'x0', $path );
+                $as->add_imm( 'x0', 16 );
+                $as->load_reg_mem_byte( 'x1', $mode, 16 );
+                $as->cmp_reg_imm( 'x1', ord('r') );
+                $as->jcc( $driver->cc('ne'), $l_write );
+                $as->mov_imm( 'x1', 0 );    # O_RDONLY
+                $as->mov_imm( 'x2', 0 );
+                $as->jmp($l_call);
+                $as->mark_label($l_write);
+                $as->mov_imm( 'x1', 0x0601 );    # O_WRONLY | O_CREAT | O_TRUNC
+                $as->mov_imm( 'x2', 0644 );
+                $as->mark_label($l_call);
+                $as->mov_imm( 'x16', $SYS_open );
+                $as->syscall(1);
+                $as->mov_reg( $reg_map->{ $inst->{dest} }, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_size' ) {
+            my $SYS_fstat = 0x2000000 + 189;    # fstat64
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->sub_imm( 'rsp', 144 );     # Space for struct stat64
+                $as->mov_reg( 'rsi', 'rsp' );
+                $as->mov_imm( 'rax', $SYS_fstat );
+                $as->syscall();
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 96 );    # st_size in macOS stat64 is at offset 96
+                $as->add_imm( 'rsp', 144 );
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->sub_imm( 'sp', 144 );
+                $as->mov_reg( 'x1', 'sp' );
+                $as->mov_imm( 'x16', $SYS_fstat );
+                $as->syscall(1);
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'sp', 96 );
+                $as->add_imm( 'sp', 144 );
+            }
+        }
+        elsif ( $op eq 'intrinsic_read' ) {
+            my $SYS_read = 0x2000000 + 3;
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'rsi', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'rax', $SYS_read );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'x2', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'x16', $SYS_read );
+                $as->syscall(1);
+            }
+        }
+        elsif ( $op eq 'intrinsic_write' ) {
+            my $SYS_write = 0x2000000 + 4;
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'rsi', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'rax', $SYS_write );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'x2', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'x16', $SYS_write );
+                $as->syscall(1);
+            }
+        }
+        elsif ( $op eq 'intrinsic_close' ) {
+            my $SYS_close = 0x2000000 + 6;
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_imm( 'rax', $SYS_close );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_imm( 'x16', $SYS_close );
+                $as->syscall(1);
+            }
+        }
         elsif ( $op eq 'intrinsic_exit' ) {
             my $val = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {

@@ -15,7 +15,10 @@ package Brocken::Format::PE {
             CreateEventA                => 48,
             SetEvent                    => 56,
             WaitForSingleObject         => 64,
-            CloseHandle                 => 72
+            CloseHandle                 => 72,
+            CreateFileA                 => 80,
+            ReadFile                    => 88,
+            GetFileSizeEx               => 96
         );
 
         method import_rva($n) {
@@ -136,7 +139,7 @@ package Brocken::Format::PE {
 
         method _build_idata_raw($base_rva) {
 
-            # Standardize: Use the keys from the %IMPORTS map so they stay in sync automatically
+            # Standardize: Use the sorted keys from the %IMPORTS map
             my @funcs = sort { $IMPORTS{$a} <=> $IMPORTS{$b} } keys %IMPORTS;
             my ( $iat, $hints ) = ( '', '' );
             my $hints_rva = $base_rva + 320;

@@ -7,8 +7,7 @@ package Brocken::Target::X64 {
 
         method registers() {
 
-            # Favor callee-saved registers to survive recursion in GC and Fibers
-            # CRITICAL: We EXCLUDE 'r14' because it is permanently reserved for the Isolate Context!
+            # Reserve R14 for Isolate and R10/R11 for internal compiler use
             return $self->os eq 'win64' ? [qw(rbx rsi rdi r12 r13 r15)] : [qw(rbx r12 r13 r15)];
         }
 
@@ -52,27 +51,12 @@ package Brocken::Target::X64 {
                     else                   { $as->mul_reg( $d_reg, $rs ) }
                 }
                 else {
-                    my $val = $v->($r_raw);
-                    if ( $val >= -2147483648 && $val <= 2147483647 ) {
-                        if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $val ) }
-                        elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $val ) }
-                        elsif ( $op eq 'and' ) { $as->and_imm( $d_reg, $val ) }
-                        elsif ( $op eq 'or' )  { $as->or_imm( $d_reg, $val ) }
-                        elsif ( $op eq 'xor' ) { $as->xor_imm( $d_reg, $val ) }
-                        else {
-                            $as->mov_imm( 'r11', $val );
-                            $as->mul_reg( $d_reg, 'r11' );
-                        }
-                    }
-                    else {
-                        $as->mov_imm( 'r11', $val );
-                        if    ( $op eq 'add' ) { $as->add_reg( $d_reg, 'r11' ) }
-                        elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, 'r11' ) }
-                        elsif ( $op eq 'and' ) { $as->and_reg( $d_reg, 'r11' ) }
-                        elsif ( $op eq 'or' )  { $as->or_reg( $d_reg, 'r11' ) }
-                        elsif ( $op eq 'xor' ) { $as->xor_reg( $d_reg, 'r11' ) }
-                        else                   { $as->mul_reg( $d_reg, 'r11' ); }
-                    }
+                    if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $v->($r_raw) ) }
+                    elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $v->($r_raw) ) }
+                    elsif ( $op eq 'and' ) { $as->and_imm( $d_reg, $v->($r_raw) ) }
+                    elsif ( $op eq 'or' )  { $as->or_imm( $d_reg, $v->($r_raw) ) }
+                    elsif ( $op eq 'xor' ) { $as->xor_imm( $d_reg, $v->($r_raw) ) }
+                    else                   { $as->mov_imm( 'r11', $v->($r_raw) ); $as->mul_reg( $d_reg, 'r11' ); }
                 }
             }
             elsif ( $op =~ /^(div|mod)$/ ) {
@@ -88,21 +72,26 @@ package Brocken::Target::X64 {
                 $as->pop_reg('rdx');
                 $as->mov_reg( $d_reg, 'r10' );
             }
+            elsif ( $op =~ /^(shl|shr)$/ ) {
+                my ( $val_raw, $amt_raw ) = @{ $inst->{args} };
+                if ( $val_raw =~ /^%/ ) { $as->mov_reg( $d_reg, $reg_map->{$val_raw} ) if $d_reg ne $reg_map->{$val_raw}; }
+                else                    { $as->mov_imm( $d_reg, $v->($val_raw) ); }
+                if ( $amt_raw =~ /^%/ ) {
+                    $as->mov_reg( 'rcx', $reg_map->{$amt_raw} );
+                    if   ( $op eq 'shl' ) { $as->shl_cl($d_reg) }
+                    else                  { $as->shr_cl($d_reg) }
+                }
+                else {
+                    if ( $op eq 'shl' ) { $as->shl_imm( $d_reg, $v->($amt_raw) ) }
+                    else                { $as->shr_imm( $d_reg, $v->($amt_raw) ) }
+                }
+            }
             elsif ( $op =~ /^cmp_/ ) {
                 my ( $l_raw, $r_raw ) = @{ $inst->{args} };
                 my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'r10';
                 $as->mov_imm( 'r10', $v->($l_raw) ) if $l_raw !~ /^%/;
                 if ( $r_raw =~ /^%/ ) { $as->cmp_reg_reg( $l_reg, $reg_map->{$r_raw} ); }
-                else {
-                    my $val = $v->($r_raw);
-                    if ( $val >= -2147483648 && $val <= 2147483647 ) {
-                        $as->cmp_reg_imm( $l_reg, $val );
-                    }
-                    else {
-                        $as->mov_imm( 'r11', $val );
-                        $as->cmp_reg_reg( $l_reg, 'r11' );
-                    }
-                }
+                else                  { $as->cmp_reg_imm( $l_reg, $v->($r_raw) ); }
                 $as->mov_imm( $d_reg, 0 );
                 my $cc = { eq => 0x94, ne => 0x95, lt => 0x9C, gt => 0x9F, le => 0x9E, ge => 0x9D }->{ substr( $op, 4 ) };
                 $as->setcc( $cc, $d_reg );
@@ -178,7 +167,6 @@ package Brocken::Target::X64 {
                 $as->mov_imm( 'r11', $v->( $inst->{args}[0] ) ) if $inst->{args}[0] !~ /^%/;
                 $as->store_mem_disp_reg( 'r10', 0, $src );
                 $as->add_imm( 'r10', 8 );
-                $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
                 $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), 'r10' );
             }
             elsif ( $op =~ /^shadow_(get|set|restore)$/ ) {
@@ -204,19 +192,7 @@ package Brocken::Target::X64 {
             elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $d_reg, 'r14' ); }
             elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( 'r14',  $reg_map->{ $inst->{args}[0] } ); }
             elsif ( $op eq 'get_arg' )         { $as->mov_reg( $d_reg, $self->_abi_arg_reg( $inst->{args}[0] ) ); }
-            elsif ( $op eq 'intrinsic_sleep' ) {
-                my $val = $v->( $inst->{args}[0] );
-                $as->mov_reg( 'rdx', ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11' );
-                $as->mov_imm( 'r11', $val ) if $inst->{args}[0] !~ /^%/;
-                $as->shr_imm( 'rdx', 1 );
-                if ( $self->os eq 'win64' ) {
-                    $as->mov_imm( 'rax', 1000 );
-                    $as->mul_reg( 'rdx', 'rax' );
-                }
-
-                # R14 is safely ignored by WinAPI/Linux calls, protecting the context!
-                $self->compile_intrinsic( $as, $inst, $reg_map, $driver );
-            }
+            elsif ( $op eq 'get_sp' )          { $as->mov_reg( $d_reg, 'rsp' ); }
         }
     }
 }

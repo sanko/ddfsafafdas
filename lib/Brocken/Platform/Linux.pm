@@ -1,7 +1,7 @@
 use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
-#
+
 class Brocken::Platform::Linux : isa(Brocken::Platform) {
     method format_name() {'ELF'}
 
@@ -78,6 +78,115 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( 'x1', 'sp' );
                 $as->add_imm( 'x1', 48 );
                 $as->mov_imm( 'x2', 1 );
+                $as->syscall();
+            }
+        }
+        elsif ( $op eq 'intrinsic_open' ) {
+            my ( $path, $mode ) = ( $reg_map->{ $inst->{args}[0] }, $reg_map->{ $inst->{args}[1] } );
+            state $open_id = 0;
+            my $l_write = "intr_open_write_" . ++$open_id;
+            my $l_call  = "intr_open_call_" . $open_id;
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $path );
+                $as->add_imm( 'rdi', 16 );
+                $as->load_reg_mem_byte( 'rax', $mode, 16 );
+                $as->cmp_reg_imm( 'rax', ord('r') );
+                $as->jcc( $driver->cc('ne'), $l_write );
+                $as->mov_imm( 'rsi', 0 );    # O_RDONLY
+                $as->mov_imm( 'rdx', 0 );
+                $as->jmp($l_call);
+                $as->mark_label($l_write);
+
+                # O_WRONLY (1) | O_CREAT (64) | O_TRUNC (512) = 577 = 0x241
+                $as->mov_imm( 'rsi', 0x241 );
+                $as->mov_imm( 'rdx', 0644 );
+                $as->mark_label($l_call);
+                $as->mov_imm( 'rax', 2 );    # sys_open
+                $as->syscall();
+                $as->mov_reg( $reg_map->{ $inst->{dest} }, 'rax' );
+            }
+            else {
+                # ARM64 sys_openat
+                $as->mov_reg( 'x1', $path );
+                $as->add_imm( 'x1', 16 );
+                $as->load_reg_mem_byte( 'x0', $mode, 16 );
+                $as->cmp_reg_imm( 'x0', ord('r') );
+                $as->jcc( $driver->cc('ne'), $l_write );
+                $as->mov_imm( 'x0', -100 );    # AT_FDCWD
+                $as->mov_imm( 'x2',  0 );      # O_RDONLY
+                $as->mov_imm( 'x3',  0 );
+                $as->jmp($l_call);
+                $as->mark_label($l_write);
+                $as->mov_imm( 'x0', -100 );     # AT_FDCWD
+                $as->mov_imm( 'x2', 0x241 );    # O_WRONLY | O_CREAT | O_TRUNC
+                $as->mov_imm( 'x3', 0644 );
+                $as->mark_label($l_call);
+                $as->mov_imm( 'x8', 56 );       # sys_openat
+                $as->syscall();
+                $as->mov_reg( $reg_map->{ $inst->{dest} }, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_size' ) {
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->sub_imm( 'rsp', 144 );     # Space for struct stat
+                $as->mov_reg( 'rsi', 'rsp' );
+                $as->mov_imm( 'rax', 5 );       # sys_fstat
+                $as->syscall();
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 48 );    # st_size is at offset 48
+                $as->add_imm( 'rsp', 144 );
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->sub_imm( 'sp', 144 );
+                $as->mov_reg( 'x1', 'sp' );
+                $as->mov_imm( 'x8', 80 );                                       # sys_fstat
+                $as->syscall();
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'sp', 48 );
+                $as->add_imm( 'sp', 144 );
+            }
+        }
+        elsif ( $op eq 'intrinsic_read' ) {
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'rsi', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'rax', 0 );                                       # sys_read
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'x2', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'x8', 63 );                                       # sys_read
+                $as->syscall();
+            }
+        }
+        elsif ( $op eq 'intrinsic_write' ) {
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'rsi', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'rax', 1 );                                       # sys_write
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'x2', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'x8', 64 );                                       # sys_write
+                $as->syscall();
+            }
+        }
+        elsif ( $op eq 'intrinsic_close' ) {
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_imm( 'rax', 3 );                                       # sys_close
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_imm( 'x8', 57 );                                       # sys_close
                 $as->syscall();
             }
         }
@@ -161,25 +270,3 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
     }
 }
 1;
-__END__
-
-=pod
-
-=head1 NAME
-
-Brocken::Platform::Linux - Linux OS intrinsics
-
-=head1 DESCRIPTION
-
-Implements Linux syscall-based intrinsics: mmap (syscall 9), write (syscall 1), exit (syscall 60). Also emits the fiber
-context switcher (M_fiber_switch).
-
-Uses SysV AMD64 calling convention: RDI, RSI, RDX, RCX, R8, R9. Syscall clobbers RCX and R11.
-
-=head1 METHODS
-
-=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
-
-Dispatches intrinsic_* IR opcodes.
-
-=cut
