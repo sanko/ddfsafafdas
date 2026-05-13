@@ -426,6 +426,18 @@ say $content;
 say "--------------------";
 END
 
+
+$source_code = <<'END';
+my Int $i = 0;
+        while ($i < 1000) {
+            my Any $a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+            my Any $b = [1, 2, 3];
+            $i = $i + 1;
+        }
+        say "Done";
+        #~ sleep 20;
+END
+
 # Allow reading source from a file argument
 if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
     open my $fh, '<', $ARGV[0] or die "Cannot read $ARGV[0]: $!";

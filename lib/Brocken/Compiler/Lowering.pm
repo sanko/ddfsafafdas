@@ -331,8 +331,6 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $obj, 1 ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
-                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $obj, 65536 ] ), $l_end, $builder->new_label() );
-                $builder->emit_label( $builder->last_instruction->{false_l} );
 
                 # Range check: Only objects in Immix blocks are marked and traced
                 my $hmin = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_min') ] );
@@ -354,8 +352,8 @@ package Brocken::Compiler::Lowering {
 
                 # Immix Bitmap Line Marking (FIXED: Loop over all lines the object occupies)
                 my $block      = $builder->emit( 'and', 'i64', [ $obj, -$BLOCK_SIZE ] );
-                my $off        = $builder->emit( 'sub', 'i64', [ $builder->emit( 'sub', 'ptr', [ $obj, 8 ] ), $block ] );
-                my $start_line = $builder->emit( 'shr', 'i64', [ $off,    7 ] );
+                my $off        = $builder->emit( 'sub', 'i64', [ $obj, $block ] );
+                my $start_line = $builder->emit( 'shr', 'i64', [ $off, 7 ] );
                 my $obj_sz     = $builder->emit( 'and', 'i64', [ $header, hex("1FFFFFFFFFFFFFFF") ] );
                 my $num_lines  = $builder->emit( 'div', 'i64', [ $builder->emit( 'add', 'i64', [ $obj_sz, 135 ] ), 128 ] );
                 my $ml_slot    = $driver->alloc_local_slot();
@@ -472,8 +470,10 @@ package Brocken::Compiler::Lowering {
                 my $l_next = $builder->new_label();
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $mark, 0 ] ), $l_next, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
+                # FIXED: Instead of breaking on first marked line, update HWM and continue
+                # to find the actual high water mark (highest line with live data)
                 $builder->emit( 'local_store', 'void', [ $hwm_slot, $builder->emit( 'add', 'i64', [ $idx, 1 ] ) ] );
-                $builder->emit_jump($l_done);
+                # Continue loop to find the true high water mark
                 $builder->emit_label($l_next);
                 $builder->emit( 'local_store', 'void', [ $idx_slot, $builder->emit( 'sub', 'i64', [ $idx, 1 ] ) ] );
                 $builder->emit_jump($l_loop);
@@ -503,6 +503,22 @@ package Brocken::Compiler::Lowering {
                 my $cbh = $builder->emit( 'local_load', 'ptr', [$bh_slot] );
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $cbh, 0 ] ), $l_c2, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
+
+                # Clear the line bitmap (bytes 8-519 = 512 lines)
+                my $bm_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $bm_slot, $builder->emit( 'constant', 'i64', [8] ) ] );
+                my $l_bm_clr = $builder->new_label();
+                my $l_bm_end = $builder->new_label();
+                $builder->emit_label($l_bm_clr);
+                my $bm_off = $builder->emit( 'local_load', 'i64', [$bm_slot] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $bm_off, 512 ] ), $builder->new_label(), $l_bm_end );
+                $builder->emit_label( $builder->last_instruction->{true_l} );
+                $builder->emit( 'store_mem_byte', 'void', [ $cbh, $bm_off, 0 ] );
+                $builder->emit( 'local_store', 'void', [ $bm_slot, $builder->emit( 'add', 'i64', [ $bm_off, 1 ] ) ] );
+                $builder->emit_jump($l_bm_clr);
+                $builder->emit_label($l_bm_end);
+
+                # Clear the header root slots (offsets 8-511, stepping by 8)
                 for ( my $off = 8; $off < 520; $off += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $cbh, $off, 0 ] ); }
                 $builder->emit( 'local_store', 'void', [ $bh_slot, $builder->emit( 'load_mem_disp', 'ptr', [ $cbh, 0 ] ) ] );
                 $builder->emit_jump($l_c1);
@@ -593,7 +609,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store',    'void', [ $ret_slot, $ap2 ] );
                 $builder->emit_jump($l_zero_and_ret);
                 $builder->emit_label($l_s2);
-                my $raw = $builder->emit( 'intrinsic_alloc', 'ptr', [ $BLOCK_SIZE * 2 ] );
+                my $raw = $builder->emit( 'intrinsic_alloc', 'ptr', [ $BLOCK_SIZE ] );
                 my $fr  = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw, $BLOCK_SIZE - 1 ] ), -$BLOCK_SIZE ] );
 
                 # Update heap_min

@@ -12,7 +12,7 @@ sub test_brocken {
     my $expected = $args{expected};        # Arrayref of lines or regex
     my $timeout  = $args{timeout} // 30;
     require Brocken;
-    require Test::More;
+    require Test2::V0;
     my $lexer    = Brocken::Lexer->new( source => $source );
     my $tokens   = $lexer->lex();
     my $parser   = Brocken::Parser->new( tokens => $tokens );
