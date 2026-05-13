@@ -76,7 +76,7 @@ class Brocken::Lexer {
                 $self->_advance( length($1) );
                 next;
             }
-            if ( $remaining =~ /^([+\-*\/=<>\[\].:!?])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1); next; }
+            if ( $remaining =~ /^([+\-*\/=<>\[\].:!?%])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1); next; }
             if ( $remaining =~ /^([\$@%]?[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)/ ) {
                 my $val  = $1;
                 my $type = $KEYWORDS{$val} ? 'KEYWORD' : ( $val =~ /^[\$@%]/ ? 'VAR' : 'IDENT' );

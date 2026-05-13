@@ -12,7 +12,10 @@ package Brocken::Format::PE {
             VirtualAlloc                => 24,
             SetConsoleOutputCP          => 32,
             AddVectoredExceptionHandler => 40,
-            Sleep                       => 48
+            CreateEventA                => 48,
+            SetEvent                    => 56,
+            WaitForSingleObject         => 64,
+            CloseHandle                 => 72
         );
 
         method import_rva($n) {

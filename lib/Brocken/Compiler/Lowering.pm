@@ -126,55 +126,73 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('M_fiber_new');
             $builder->emit( 'enter_func', 'void', [] );
-            my $fp = $builder->emit( 'get_arg', 'i64', [0] );
-            my $fs = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $fs, $fp ] );
+            my $sh_init = $builder->emit( 'shadow_get', 'ptr', [] );
 
-            # Mark as Leaf (2) and size 64
-            my $leaf_64 = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
-            my $fb      = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64 ] );
-            my $bs      = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $bs, $fb ] );
-            my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
-            $builder->emit( 'shadow_push', 'void', [$fb] );
-            my $ms = $builder->emit( 'intrinsic_alloc', 'ptr', [65536] );
-            my $cf = $builder->emit( 'local_load',      'ptr', [$bs] );
+            # Arg 0: Start Address of the fiber logic
+            my $func_ptr = $builder->emit( 'get_arg', 'i64', [0] );
+            my $fp_slot  = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $fp_slot, $func_ptr ] );
 
-            # WIN64 ABI STACK INITIALIZATION
-            my $tp = $builder->emit( 'add', 'ptr', [ $ms, 65536 ] );
+            # 1. Allocate Fiber Control Block (64 bytes, Leaf marked)
+            my $fcb_size_tagged = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
+            my $fb              = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $fcb_size_tagged ] );
+            $builder->emit( 'shadow_push', 'void', [$fb] ); # Protect it!
+            my $fb_slot         = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $fb_slot, $fb ] );
 
-            # 1. Force alignment to 16n
+            # 2. Create the OS Wait Handle (Windows Event / Linux Pipe)
+            # This is the handle sleep() will wait on and interrupt() will trigger
+            my $handle = $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fb, $driver->fcb_offset('wait_handle'), $handle ] );
+
+            # 3. Allocate the Fiber's Private Stack (64KB)
+            my $stack_mem = $builder->emit( 'intrinsic_alloc', 'ptr', [65536] );
+            my $tp        = $builder->emit( 'add',             'ptr', [ $stack_mem, 65536 ] );
+
+            # Align stack to 16 bytes (ABI requirement)
             $tp = $builder->emit( 'and', 'i64', [ $tp, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFFFFFFF0") ] ) ] );
 
-            # 2. Reserve 32 bytes Shadow Space (Home Space) + dummy return slot
-            # rl becomes 16n. After RET, RSP will be 16n + 8.
-            my $gap = ( $driver->arch eq 'x64' ) ? 48 : 0;
-            my $rl  = $builder->emit( 'sub', 'ptr', [ $tp, $gap ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $rl, 0, $builder->emit( 'local_load', 'i64', [$fs] ) ] ) if $gap > 0;
+            # 4. Prepare the initial stack frame
+            # On x64, we reserve shadow space (32) + 8 for return address
+            my $gap      = ( $driver->arch eq 'x64' ) ? 48 : 0;
+            my $rsp_init = $builder->emit( 'sub', 'ptr', [ $tp, $gap ] );
 
-            # 3. Preserved Context below the Return address
+            # Store the fiber entry point into the "Return Address" slot
+            $builder->emit( 'store_mem_disp', 'void', [ $rsp_init, 0, $builder->emit( 'local_load', 'i64', [$fp_slot] ) ] );
+
+            # 5. Save initial Context (Registers)
             my $cs = $driver->context_size();
-            my $rb = $builder->emit( 'sub', 'ptr', [ $rl, $cs ] );
-            for ( my $o = 0; $o < $cs; $o += 8 ) { $builder->emit( 'store_mem_disp', 'void', [ $rb, $o, 0 ] ); }
-            if ( $driver->arch eq 'arm64' ) {
-                $builder->emit( 'store_mem_disp', 'void', [ $rb, $driver->context_offset('x30'), $builder->emit( 'local_load', 'i64', [$fs] ) ] );
+            my $rb = $builder->emit( 'sub', 'ptr', [ $rsp_init, $cs ] );
+            for ( my $o = 0; $o < $cs; $o += 8 ) {
+                $builder->emit( 'store_mem_disp', 'void', [ $rb, $o, 0 ] );
             }
-            $builder->emit( 'store_mem_disp', 'void',
-                [ $rb, $driver->context_offset( ( $driver->arch eq 'x64' ? 'r14' : 'x28' ) ), $builder->emit( 'get_isolate_ctx', 'ptr', [] ) ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $rb, $driver->context_offset( ( $driver->arch eq 'x64' ? 'rbp' : 'x29' ) ), $rb ] );
-            my $leaf_16k = $builder->emit( 'constant',  'i64', [ 16384 | hex("2000000000000000") ] );
-            my $sh       = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_16k ] );
-            $builder->emit( 'shadow_set', 'void', [$sp_backup] );
-            $cf = $builder->emit( 'local_load', 'ptr', [$bs] );
+            # CRITICAL: New fibers MUST inherit the Isolate Context (R14/X28)!
+            my $iso_val  = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+            my $regs     = $driver->preserved_regs();
+            my @rev_regs = reverse @$regs;
+            for ( my $i = 0; $i < @rev_regs; $i++ ) {
+                if ( $rev_regs[$i] =~ /^(r14|x28)$/ ) {
+                    $builder->emit( 'store_mem_disp', 'void', [ $rb, $i * 8, $iso_val ] );
+                }
+            }
+
+            # 6. Initialize Fiber Shadow Stack (16KB) for GC
+            my $shad_size_tagged = $builder->emit( 'constant',  'i64', [ 16384 | hex("2000000000000000") ] );
+            my $sh               = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $shad_size_tagged ] );
+
+            # 7. Finalize FCB Fields
+            my $cf = $builder->emit( 'local_load', 'ptr', [$fb_slot] );
             $builder->emit( 'store_mem_disp', 'void', [ $cf, $driver->fcb_offset('shadow_base'), $sh ] );
             $builder->emit( 'store_mem_disp', 'void', [ $cf, $driver->fcb_offset('shadow_ptr'),  $sh ] );
             $builder->emit( 'store_mem_disp', 'void', [ $cf, $driver->fcb_offset('stack_base'),  $tp ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $cf, $driver->fcb_offset('stack_limit'), $ms ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $cf, $driver->fcb_offset('sp'),          $rb ] );
+
+            # Link into Isolate Fiber List
             my $is = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
             $builder->emit( 'store_mem_disp', 'void',
                 [ $cf, $driver->fcb_offset('next'), $builder->emit( 'load_mem_disp', 'ptr', [ $is, $driver->iso_offset('fiber_head') ] ) ] );
             $builder->emit( 'store_mem_disp', 'void', [ $is, $driver->iso_offset('fiber_head'), $cf ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $cf, $driver->fcb_offset('sp'),         $rb ] );
+            $builder->emit( 'shadow_set',     'void', [$sh_init] );
             $builder->emit( 'leave_func',     'void', [$cf] );
         }
 
@@ -199,9 +217,14 @@ package Brocken::Compiler::Lowering {
             # Pointer initialization (Use raw 0 for linked lists)
             $builder->emit( 'store_mem_disp', 'void', [ $iso_reg, $driver->iso_offset('fiber_head'), $builder->emit( 'constant', 'i64', [0] ) ] );
             $builder->emit( 'store_mem_disp', 'void', [ $iso_reg, 80, $builder->emit( 'constant', 'i64', [1] ) ] );    # Init GC Cycle
+            my $c128k     = $builder->emit( 'constant',        'i64', [131072] );
             my $c64k      = $builder->emit( 'constant',        'i64', [65536] );
-            my $init_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [$c64k] );
+            my $raw_heap  = $builder->emit( 'intrinsic_alloc', 'ptr', [$c128k] );
+            my $init_heap = $builder->emit( 'and', 'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, $builder->emit( 'constant', 'i64', [65535] ) ] ), $builder->emit( 'constant', 'i64', [ -65536 ] ) ] );
             $builder->emit( 'store_iso_disp', 'void', [ 40, $init_heap ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_min'), $init_heap ] );
+            my $hmax = $builder->emit( 'add', 'ptr', [ $init_heap, $c64k ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_max'), $hmax ] );
 
             # Store next link (0) at offset 0
             $builder->emit( 'store_mem_disp', 'void', [ $init_heap, 0, $builder->emit( 'constant', 'i64', [0] ) ] );
@@ -233,17 +256,29 @@ package Brocken::Compiler::Lowering {
             }
 
             # Initialize "Main" Fiber
-            my $leaf_64   = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
-            my $main_fcb  = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64 ] );
+            # --- Initialize "Main" Fiber ---
+            my $leaf_64  = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
+            my $main_fcb = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64 ] );
+
+            # Link it immediately! So it survives if next alloc triggers GC
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('current_fcb'), $main_fcb ] );
+            $builder->emit( 'store_mem_disp', 'void',
+                [ $builder->emit( 'get_isolate_ctx', 'ptr', [] ), $driver->iso_offset('fiber_head'), $main_fcb ] );
+            # Zero out fields so GC doesn't follow junk
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), 0 ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  0 ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('next'),        0 ] );
+
+            # --- START: NEW BIT FOR INTERRUPTIBLE SLEEP ---
+            my $m_handle = $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('wait_handle'), $m_handle ] );
+
+            # --- END: NEW BIT ---
             my $leaf_16k  = $builder->emit( 'constant',  'i64', [ 16384 | hex("2000000000000000") ] );
             my $main_shad = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_16k ] );
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), $main_shad ] );
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  $main_shad ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('current_fcb'), $main_fcb ] );
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('caller'), $builder->emit( 'constant', 'i64', [0] ) ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('next'),   $builder->emit( 'constant', 'i64', [0] ) ] );
-            $builder->emit( 'store_mem_disp', 'void',
-                [ $builder->emit( 'get_isolate_ctx', 'ptr', [] ), $driver->iso_offset('fiber_head'), $main_fcb ] );
             $current_func_name = 'L_MAIN_START';
             @func_locals       = ();
             $self->lower_block( \@main_stmts );
@@ -275,6 +310,8 @@ package Brocken::Compiler::Lowering {
         }
 
         method inject_runtime() {
+
+            # --- [1] M_gc_mark_obj inside inject_runtime() ---
             {
                 $driver->reset_locals();
                 $builder->emit_label('M_gc_mark_obj');
@@ -287,57 +324,146 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $obj, 65536 ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
+
+                # Range check: Only objects in Immix blocks are marked and traced
+                my $hmin = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_min') ] );
+                my $hmax = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_max') ] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $obj, $hmin ] ), $l_end, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+                $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $obj, $hmax ] ), $l_end, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+
                 my $header    = $builder->emit( 'load_mem_disp', 'i64', [ $obj, -8 ] );
                 my $cycle     = $builder->emit( 'load_iso_disp', 'i64', [80] );
                 my $obj_cycle = $builder->emit( 'and',           'i64', [ $builder->emit( 'shr', 'i64', [ $header, 32 ] ), 0xFFFFFF ] );
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $obj_cycle, $cycle ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
-                my $new_header = $builder->emit( 'or', 'i64',
+
+                # Mark header with current cycle
+                my $new_hdr = $builder->emit( 'or', 'i64',
                     [ $builder->emit( 'and', 'i64', [ $header, hex("FF000000FFFFFFFF") ] ), $builder->emit( 'shl', 'i64', [ $cycle, 32 ] ) ] );
-                $builder->emit( 'store_mem_disp', 'void', [ $obj, -8, $new_header ] );
-                my $l_trace = $builder->new_label();
-                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $obj, $builder->emit( 'load_iso_disp', 'ptr', [40] ) ] ),
-                    $l_trace, $builder->new_label() );
+                $builder->emit( 'store_mem_disp', 'void', [ $obj, -8, $new_hdr ] );
+
+                # Immix Bitmap Line Marking (FIXED: Loop over all lines the object occupies)
+                my $block      = $builder->emit( 'and', 'i64', [ $obj, -$BLOCK_SIZE ] );
+                my $off        = $builder->emit( 'sub', 'i64', [ $builder->emit( 'sub', 'ptr', [ $obj, 8 ] ), $block ] );
+                my $start_line = $builder->emit( 'div', 'i64', [ $off,    128 ] );
+                my $obj_sz     = $builder->emit( 'and', 'i64', [ $header, hex("1FFFFFFFFFFFFFFF") ] );
+                my $num_lines  = $builder->emit( 'div', 'i64', [ $builder->emit( 'add', 'i64', [ $obj_sz, 135 ] ), 128 ] );
+                my $ml_slot    = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $ml_slot, 0 ] );
+                my $l_mloop = $builder->new_label();
+                my $l_mdone = $builder->new_label();
+                $builder->emit_label($l_mloop);
+                my $mi = $builder->emit( 'local_load', 'i64', [$ml_slot] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $mi, $num_lines ] ), $builder->new_label(), $l_mdone );
+                $builder->emit_label( $builder->last_instruction->{true_l} );
+                my $line_to_mark = $builder->emit( 'add', 'i64', [ $builder->emit( 'add', 'i64', [ $start_line, $mi ] ), 8 ] );
+                $builder->emit( 'store_mem_byte', 'void', [ $block, $line_to_mark, 1 ] );
+                $builder->emit( 'local_store', 'void', [ $ml_slot, $builder->emit( 'add', 'i64', [ $mi, 1 ] ) ] );
+                $builder->emit_jump($l_mloop);
+                $builder->emit_label($l_mdone);
+
+                my $is_leaf = $builder->emit( 'and', 'i64', [ $header, hex("2000000000000000") ] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_leaf, 0 ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
 
-                # Immix Mark Bitmap logic (Simplified for safety)
-                my $block = $builder->emit( 'and', 'i64', [ $obj, -$BLOCK_SIZE ] );
-                my $off   = $builder->emit( 'sub', 'i64', [ $builder->emit( 'sub', 'ptr', [ $obj, 8 ] ), $block ] );
-                $builder->emit( 'store_mem_byte', 'void',
-                    [ $block, $builder->emit( 'add', 'i64', [ $builder->emit( 'div', 'i64', [ $off, $LINE_SIZE ] ), 8 ] ), 1 ] );
-                $builder->emit_label($l_trace);
+                # PROTECT STATE: Save object pointer to stack for recursion
+                my $obj_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $obj_slot, $obj ] );
+                my $is_arr = $builder->emit( 'and', 'i64', [ $header, hex("4000000000000000") ] );
+                my $l_obj  = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $is_arr, 0 ] ), $l_obj, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
 
-                # Tracing logic (Array/Object) omitted here for brevity—ensure you use callee-saved
-                # registers for iterating or store indices in local slots.
+                # -- Array Trace --
+                my $raw_count  = $builder->emit( 'load_mem_disp', 'i64', [ $obj, 0 ] );
+                my $count      = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $raw_count, 1 ] ), 2 ] );
+                my $count_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $count_slot, $count ] );
+                my $idx_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $idx_slot, 0 ] );
+                my $l_al = $builder->new_label();
+                my $l_ad = $builder->new_label();
+                $builder->emit_label($l_al);
+                my $idx = $builder->emit( 'local_load', 'i64', [$idx_slot] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $idx, $builder->emit( 'local_load', 'i64', [$count_slot] ) ] ),
+                    $l_ad, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+                my $curr_parent = $builder->emit( 'local_load', 'ptr', [$obj_slot] );
+                my $el          = $builder->emit(
+                    'load_mem_disp',
+                    'ptr',
+                    [   $builder->emit(
+                            'add', 'ptr', [ $curr_parent, $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $idx, 8 ] ), 8 ] ) ]
+                        ),
+                        0
+                    ]
+                );
+                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $el ] );
+                $builder->emit( 'local_store', 'void',
+                    [ $idx_slot, $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$idx_slot] ), 1 ] ) ] );
+                $builder->emit_jump($l_al);
+                $builder->emit_label($l_ad);
+                $builder->emit_jump($l_end);
+
+                # -- Object Trace --
+                $builder->emit_label($l_obj);
+                my $parent_obj = $builder->emit( 'local_load',    'ptr', [$obj_slot] );
+                my $vt         = $builder->emit( 'load_mem_disp', 'ptr', [ $parent_obj, 0 ] );
+                my $l_no_vt    = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $vt, 0 ] ), $l_no_vt, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+                my $p_count      = $builder->emit( 'load_mem_disp', 'i64', [ $vt, -8 ] );
+                my $p_count_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $p_count_slot, $p_count ] );
+                my $p_idx_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $p_idx_slot, 0 ] );
+                my $l_ol = $builder->new_label();
+                my $l_od = $builder->new_label();
+                $builder->emit_label($l_ol);
+                my $pi = $builder->emit( 'local_load', 'i64', [$p_idx_slot] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $pi, $builder->emit( 'local_load', 'i64', [$p_count_slot] ) ] ),
+                    $l_od, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+                my $f_off = $builder->emit(
+                    'load_mem_disp',
+                    'i64',
+                    [   $builder->emit( 'sub', 'ptr', [ $vt, $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $pi, 8 ] ), 16 ] ) ] ),
+                        0
+                    ]
+                );
+                my $curr_obj = $builder->emit( 'local_load',    'ptr', [$obj_slot] );
+                my $child    = $builder->emit( 'load_mem_disp', 'ptr', [ $builder->emit( 'add', 'ptr', [ $curr_obj, $f_off ] ), 0 ] );
+                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $child ] );
+                $builder->emit( 'local_store', 'void',
+                    [ $p_idx_slot, $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$p_idx_slot] ), 1 ] ) ] );
+                $builder->emit_jump($l_ol);
+                $builder->emit_label($l_od);
+                $builder->emit_label($l_no_vt);
                 $builder->emit_label($l_end);
                 $builder->emit( 'leave_func', 'void', [0] );
             }
+
+            # --- [2] GC Sweep (Reclaim Memory) ---
             {
                 $driver->reset_locals();
                 $builder->emit_label('M_gc_sweep');
                 $builder->emit( 'enter_func', 'void', [] );
-                my $curr_bh = $builder->emit( 'load_iso_disp', 'ptr', [40] );    # Current block
-
-                # Start at the top of the block and look for the highest live line
+                my $curr_bh  = $builder->emit( 'load_iso_disp', 'ptr', [40] );    # Current block
                 my $hwm_slot = $driver->alloc_local_slot();
-                $builder->emit( 'local_store', 'void', [ $hwm_slot, 8 ] );       # Default: Start of block data
+                $builder->emit( 'local_store', 'void', [ $hwm_slot, 8 ] );        # Default: Start of block data
                 my $idx_slot = $driver->alloc_local_slot();
-                $builder->emit( 'local_store', 'void', [ $idx_slot, 511 ] );     # Start from top line
+                $builder->emit( 'local_store', 'void', [ $idx_slot, 511 ] );      # Start from top line
                 my $l_loop = $builder->new_label();
                 my $l_done = $builder->new_label();
                 $builder->emit_label($l_loop);
                 my $idx = $builder->emit( 'local_load', 'i64', [$idx_slot] );
-
-                # If idx < 8, we checked all lines
                 $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $idx, 8 ] ), $l_done, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
-
-                # Is this line marked?
                 my $mark   = $builder->emit( 'load_mem_byte', 'Int', [ $curr_bh, $builder->emit( 'add', 'i64', [ $idx, 8 ] ) ] );
                 my $l_next = $builder->new_label();
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $mark, 0 ] ), $l_next, $builder->new_label() );
-
-                # Line is alive! This is our new High Water Mark.
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 $builder->emit( 'local_store', 'void', [ $hwm_slot, $builder->emit( 'add', 'i64', [ $idx, 1 ] ) ] );
                 $builder->emit_jump($l_done);
@@ -345,27 +471,24 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store', 'void', [ $idx_slot, $builder->emit( 'sub', 'i64', [ $idx, 1 ] ) ] );
                 $builder->emit_jump($l_loop);
                 $builder->emit_label($l_done);
-
-                # Update the heap_ptr: base + (HWM * 128)
                 my $new_ptr = $builder->emit( 'add', 'ptr',
                     [ $curr_bh, $builder->emit( 'mul', 'i64', [ $builder->emit( 'local_load', 'i64', [$hwm_slot] ), 128 ] ) ] );
                 $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'), $new_ptr ] );
-                $builder->emit( 'leave_func',     'void', [0] );
+
+                # FIXED: We MUST reset heap_limit to the current block bounds to prevent walking into unmapped memory
+                $builder->emit( 'store_iso_disp', 'void',
+                    [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $curr_bh, 65536 ] ) ] );
+                $builder->emit( 'leave_func', 'void', [0] );
             }
 
-            # --- [3] GC Collect (The Root Walker) ---
+            # --- [3] GC Collect (Root Walking) ---
             {
                 $driver->reset_locals();
                 $builder->emit_label('M_gc_collect');
                 $builder->emit( 'enter_func', 'void', [] );
-
-                # 1. Flip Cycle: Increment rolling cycle (stored at ISO offset 80)
                 my $cycle_reg = $builder->emit( 'load_iso_disp', 'i64', [80] );
                 $cycle_reg = $builder->emit( 'add', 'i64', [ $cycle_reg, 1 ] );
                 $builder->emit( 'store_iso_disp', 'void', [ 80, $cycle_reg ] );
-
-                # 2. Clear All Bitmaps
-                # Start at block head (ISO offset 40)
                 my $bh_slot = $driver->alloc_local_slot();
                 $builder->emit( 'local_store', 'void', [ $bh_slot, $builder->emit( 'load_iso_disp', 'ptr', [40] ) ] );
                 my $l_clear_start = $builder->new_label();
@@ -375,59 +498,41 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $curr_bh, 0 ] ), $l_clear_done, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
 
-                # Clear 512-byte bitmap (offset 8 to 520) using 8-byte stores
                 for ( my $off = 8; $off < 520; $off += 8 ) {
                     $builder->emit( 'store_mem_disp', 'void', [ $curr_bh, $off, 0 ] );
                 }
-
-                # Move to next block (stored at offset 0 of every block)
                 $builder->emit( 'local_store', 'void', [ $bh_slot, $builder->emit( 'load_mem_disp', 'ptr', [ $curr_bh, 0 ] ) ] );
                 $builder->emit_jump($l_clear_start);
                 $builder->emit_label($l_clear_done);
-
-                # 3. Trace Roots (Iterate every Fiber)
                 my $fib_slot = $driver->alloc_local_slot();
-                $builder->emit( 'local_store', 'void', [ $fib_slot, $builder->emit( 'load_iso_disp', 'ptr', [32] ) ] );    # fiber_head
+                $builder->emit( 'local_store', 'void', [ $fib_slot, $builder->emit( 'load_iso_disp', 'ptr', [32] ) ] );
                 my $l_fib_loop = $builder->new_label();
                 my $l_fib_done = $builder->new_label();
                 $builder->emit_label($l_fib_loop);
                 my $curr_fib = $builder->emit( 'local_load', 'ptr', [$fib_slot] );
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $curr_fib, 0 ] ), $l_fib_done, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
-
-                # A. Mark the Fiber Control Block itself
                 $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $curr_fib ] );
-
-                # B. Walk the Fiber's Shadow Stack
-                my $ss_base   = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 24 ] );                               # shadow_base
-                my $ss_ptr    = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 32 ] );                               # shadow_ptr
+                my $ss_base   = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 24 ] );
+                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $ss_base ] ); # Fix: Mark the shadow stack object itself!
+                my $ss_ptr    = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 32 ] );
                 my $curs_slot = $driver->alloc_local_slot();
                 $builder->emit( 'local_store', 'void', [ $curs_slot, $ss_base ] );
                 my $l_ss_loop = $builder->new_label();
                 my $l_ss_done = $builder->new_label();
                 $builder->emit_label($l_ss_loop);
                 my $curr_curs = $builder->emit( 'local_load', 'ptr', [$curs_slot] );
-
-                # If cursor >= ss_ptr, we finished this fiber
                 $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $curr_curs, $ss_ptr ] ), $l_ss_done, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
-
-                # Mark the object pointed to by this shadow stack slot
                 my $root_obj = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_curs, 0 ] );
                 $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $root_obj ] );
-
-                # Advance shadow stack cursor
                 $builder->emit( 'local_store', 'void', [ $curs_slot, $builder->emit( 'add', 'ptr', [ $curr_curs, 8 ] ) ] );
                 $builder->emit_jump($l_ss_loop);
                 $builder->emit_label($l_ss_done);
-
-                # C. Move to next Fiber in Isolate list
-                my $next_fib = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 48 ] );    # next_fiber
+                my $next_fib = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 48 ] );
                 $builder->emit( 'local_store', 'void', [ $fib_slot, $next_fib ] );
                 $builder->emit_jump($l_fib_loop);
                 $builder->emit_label($l_fib_done);
-
-                # 4. Sweep: Reclaim space using the HWM (High Water Mark) reset
                 $builder->emit( 'call_func',  'void', ['M_gc_sweep'] );
                 $builder->emit( 'leave_func', 'void', [0] );
             }
@@ -473,7 +578,26 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store',    'void', [ $ret_slot, $ap2 ] );
                 $builder->emit_jump($l_zero_and_ret);
                 $builder->emit_label($l_s2);
-                my $fr       = $builder->emit( 'intrinsic_alloc', 'ptr', [$BLOCK_SIZE] );
+                my $raw      = $builder->emit( 'intrinsic_alloc', 'ptr', [ $BLOCK_SIZE * 2 ] );
+                my $fr       = $builder->emit( 'and', 'i64', [ $builder->emit( 'add', 'ptr', [ $raw, $BLOCK_SIZE - 1 ] ), -$BLOCK_SIZE ] );
+
+                # Update heap_min
+                my $curr_min = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_min') ] );
+                my $l_not_min = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $fr, $curr_min ] ), $builder->new_label(), $l_not_min );
+                $builder->emit_label( $builder->last_instruction->{true_l} );
+                $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_min'), $fr ] );
+                $builder->emit_label($l_not_min);
+
+                # Update heap_max
+                my $fr_end   = $builder->emit( 'add', 'ptr', [ $fr, $BLOCK_SIZE ] );
+                my $curr_max = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_max') ] );
+                my $l_not_max = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $fr_end, $curr_max ] ), $builder->new_label(), $l_not_max );
+                $builder->emit_label( $builder->last_instruction->{true_l} );
+                $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_max'), $fr_end ] );
+                $builder->emit_label($l_not_max);
+
                 my $old_head = $builder->emit( 'load_iso_disp',   'ptr', [40] );
                 $builder->emit( 'store_mem_disp', 'void', [ $fr, 0, $old_head ] );
                 $builder->emit( 'store_iso_disp', 'void', [ 40, $fr ] );

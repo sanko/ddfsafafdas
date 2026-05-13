@@ -37,19 +37,36 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
             $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
         }
+        elsif ( $op eq 'intrinsic_create_wait_handle' ) {
+            $as->mov_imm( 'rcx', 0 );    # Attributes
+            $as->mov_imm( 'rdx', 0 );    # Manual Reset = False
+            $as->mov_imm( 'r8',  0 );    # Initial State = Non-signaled
+            $as->mov_imm( 'r9',  0 );    # Name
+            $as->call_rva( $driver->import_rva('CreateEventA'), $driver->text_rva );
+            $as->mov_reg( $reg_map->{ $inst->{dest} }, 'rax' );
+        }
         elsif ( $op eq 'intrinsic_sleep' ) {
             my $val = $v->( $inst->{args}[0] );
 
-            # 1. Untag: (val >> 1)
-            $as->mov_reg( 'rcx', $val );
-            $as->shr_imm( 'rcx', 1 );
+            # rcx = current_fcb->wait_handle
+            $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
+            $as->load_reg_mem( 'rcx', 'r11', $driver->fcb_offset('wait_handle') );
 
-            # 2. Convert to Milliseconds: val * 1000
+            # rdx = timeout in ms
+            $as->mov_reg( 'rdx', ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11' );
+            $as->mov_imm( 'r11', $val ) if $inst->{args}[0] !~ /^%/;
+            $as->shr_imm( 'rdx', 1 );    # Untag
             $as->mov_imm( 'rax', 1000 );
-            $as->mul_reg( 'rcx', 'rax' );
+            $as->mul_reg( 'rdx', 'rax' );
 
-            # 3. Call Kernel32
-            $as->call_rva( $driver->import_rva('Sleep'), $driver->text_rva );
+            # WaitForSingleObject(handle, timeout)
+            $as->call_rva( $driver->import_rva('WaitForSingleObject'), $driver->text_rva );
+        }
+        elsif ( $op eq 'intrinsic_interrupt' ) {
+
+            # rcx = target_fiber->wait_handle
+            $as->load_reg_mem( 'rcx', $reg_map->{ $inst->{args}[0] }, $driver->fcb_offset('wait_handle') );
+            $as->call_rva( $driver->import_rva('SetEvent'), $driver->text_rva );
         }
         elsif ( $op eq 'intrinsic_exit' ) {
             my $val = $v->( $inst->{args}[0] );

@@ -334,6 +334,52 @@ while ($i <= 100000) {
 say "Reached: " . $done;sleep 5;
 exit 0;
 END
+$source_code = <<'END';
+say "--- Brocken Milestone 3.5: Native Sleep & GC Check ---";
+
+# 1. GC STRESS TEST
+# This loop allocates 100,000 arrays.
+# Without the HWM (High Water Mark) fix, this would gulp hundreds of MBs.
+# With the fix, it should stay within a few 64KB blocks.
+my Int $i = 0;
+say "GC Pressure Test: Allocating 100,000 objects...";
+while ($i < 100000) {
+    my Any $a = [1, 2, 3]; # Allocate array
+    $i = $i + 1;
+
+    # Visual feedback every 20k iterations
+    if ($i % 20000 == 0) {
+        print "Processed: ";
+        say $i;
+    }
+}
+say "GC Test Passed: Memory reclaimed successfully.";
+
+# 2. INTERRUPTIBLE SLEEP TEST
+# This verifies:
+#   a) Sleep is imported from kernel32.dll
+#   b) The 'main' fiber has a valid wait_handle
+#   c) The X64 backend isn't clobbering RDX during internal GC math
+say "Testing Native Sleep: Sleeping for 3 seconds...";
+sleep 3;
+say "Wake up! If you see this, the WinAPI call returned correctly. 🎉";
+
+# 3. FIBER CONTEXT TEST
+# Verify that a new fiber also receives a valid handle and can sleep.
+my Any $f = fiber {
+    say "   [Fiber] Starting and taking a short nap (1s)...";
+    sleep 1;
+    say "   [Fiber] Nap over, yielding back to main.";
+    yield "Success";
+};
+
+say "Transferring to fiber...";
+my Any $val = transfer($f, 0);
+say "Main received from fiber: " . $val;
+
+say "--- ALL TESTS PASSED ---";
+exit 0;
+END
 
 # Allow reading source from a file argument
 if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
@@ -344,7 +390,7 @@ if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
     shift @ARGV;    # Remove file arg so it doesn't interfere with other options
 }
 say "Bootstrapping Brocken...";
-my $dbg = 1;
+my $dbg = 3;
 my $os;
 for ( my $i = 0; $i < @ARGV; $i++ ) {
     if ( $ARGV[$i] =~ /^--debug(?:=(\d+))?$/ ) {

@@ -186,13 +186,16 @@ package Brocken::Compiler {
                 block_limit       => 56,
                 free_blocks       => 64,
                 recyclable_blocks => 72,
-                gc_cycle          => 80
+                gc_cycle          => 80,
+                heap_min          => 88,
+                heap_max          => 96
             };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }
 
         method fcb_offset ($name) {
-            state $FCB = { sp => 0, stack_base => 8, stack_limit => 16, shadow_base => 24, shadow_ptr => 32, caller => 40, next => 48 };
+            state $FCB
+                = { sp => 0, stack_base => 8, stack_limit => 16, shadow_base => 24, shadow_ptr => 32, caller => 40, next => 48, wait_handle => 56 };
             return $FCB->{$name} // die "Unknown FCB offset: $name";
         }
 

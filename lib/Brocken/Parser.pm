@@ -16,7 +16,7 @@ class Brocken::Parser {
         '&&' => 13,                                                              #
         '==' => 15, '!=' => 15, '<' => 15, '>' => 15, '<=' => 15, '>=' => 15,    #
         '+'  => 20, '-'  => 20, '.' => 20,                                       #
-        '*'  => 30, '/'  => 30,                                                  #
+        '*'  => 30, '/'  => 30, '%' => 30,                                       #
         '['  => 50,                                                              #
         '->' => 60,                                                              #
         '('  => 70,                                                              # Expression calls
@@ -24,21 +24,22 @@ class Brocken::Parser {
 
     # Statement Registry (Keyword -> Method)
     my %STMT_HANDLERS = (
-        'my'     => '_parse_var_decl',
-        'state'  => '_parse_state_decl',
-        'if'     => '_parse_if',
-        'unless' => '_parse_unless',
-        'while'  => '_parse_while',
-        'until'  => '_parse_until',
-        'class'  => '_parse_class',
-        'sub'    => '_parse_sub_stmt',
-        'defer'  => '_parse_defer',
-        'return' => '_parse_return',
-        'exit'   => '_parse_exit',
-        'say'    => '_parse_builtin_call',
-        'print'  => '_parse_builtin_call',
-        'sleep'  => '_parse_builtin_call',
-        '{'      => '_parse_block_stmt'
+        'my'        => '_parse_var_decl',
+        'state'     => '_parse_state_decl',
+        'if'        => '_parse_if',
+        'unless'    => '_parse_unless',
+        'while'     => '_parse_while',
+        'until'     => '_parse_until',
+        'class'     => '_parse_class',
+        'sub'       => '_parse_sub_stmt',
+        'defer'     => '_parse_defer',
+        'return'    => '_parse_return',
+        'exit'      => '_parse_exit',
+        'say'       => '_parse_builtin_call',
+        'print'     => '_parse_builtin_call',
+        'sleep'     => '_parse_builtin_call',
+        'interrupt' => '_parse_builtin_call',
+        '{'         => '_parse_block_stmt'
     );
 
     # Expression Prefix Registry (Starts an expression)
@@ -66,6 +67,7 @@ class Brocken::Parser {
         '-'  => '_parse_bin_op',
         '*'  => '_parse_bin_op',
         '/'  => '_parse_bin_op',
+        '%'  => '_parse_bin_op',
         '.'  => '_parse_bin_op',
         '==' => '_parse_bin_op',
         '!=' => '_parse_bin_op',
