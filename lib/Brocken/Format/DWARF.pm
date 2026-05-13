@@ -196,10 +196,11 @@ package Brocken::Format::DWARF {
         }
 
         method _sleb ($v) {
+            require POSIX;
             my $out = '';
             while (1) {
                 my $byte = $v & 0x7f;
-                $v >>= 7;
+                $v = POSIX::floor( $v / 128 );
                 if ( ( $v == 0 && !( $byte & 0x40 ) ) || ( $v == -1 && ( $byte & 0x40 ) ) ) {
                     $out .= pack( 'C', $byte );
                     last;

@@ -136,8 +136,8 @@ package Brocken::Compiler::Lowering {
             # 1. Allocate Fiber Control Block (64 bytes, Leaf marked)
             my $fcb_size_tagged = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
             my $fb              = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $fcb_size_tagged ] );
-            $builder->emit( 'shadow_push', 'void', [$fb] ); # Protect it!
-            my $fb_slot         = $driver->alloc_local_slot();
+            $builder->emit( 'shadow_push', 'void', [$fb] );    # Protect it!
+            my $fb_slot = $driver->alloc_local_slot();
             $builder->emit( 'local_store', 'void', [ $fb_slot, $fb ] );
 
             # 2. Create the OS Wait Handle (Windows Event / Linux Pipe)
@@ -166,6 +166,7 @@ package Brocken::Compiler::Lowering {
             for ( my $o = 0; $o < $cs; $o += 8 ) {
                 $builder->emit( 'store_mem_disp', 'void', [ $rb, $o, 0 ] );
             }
+
             # CRITICAL: New fibers MUST inherit the Isolate Context (R14/X28)!
             my $iso_val  = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
             my $regs     = $driver->preserved_regs();
@@ -220,7 +221,12 @@ package Brocken::Compiler::Lowering {
             my $c128k     = $builder->emit( 'constant',        'i64', [131072] );
             my $c64k      = $builder->emit( 'constant',        'i64', [65536] );
             my $raw_heap  = $builder->emit( 'intrinsic_alloc', 'ptr', [$c128k] );
-            my $init_heap = $builder->emit( 'and', 'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, $builder->emit( 'constant', 'i64', [65535] ) ] ), $builder->emit( 'constant', 'i64', [ -65536 ] ) ] );
+            my $init_heap = $builder->emit(
+                'and', 'i64',
+                [   $builder->emit( 'add',      'ptr', [ $raw_heap, $builder->emit( 'constant', 'i64', [65535] ) ] ),
+                    $builder->emit( 'constant', 'i64', [-65536] )
+                ]
+            );
             $builder->emit( 'store_iso_disp', 'void', [ 40, $init_heap ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_min'), $init_heap ] );
             my $hmax = $builder->emit( 'add', 'ptr', [ $init_heap, $c64k ] );
@@ -264,6 +270,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('current_fcb'), $main_fcb ] );
             $builder->emit( 'store_mem_disp', 'void',
                 [ $builder->emit( 'get_isolate_ctx', 'ptr', [] ), $driver->iso_offset('fiber_head'), $main_fcb ] );
+
             # Zero out fields so GC doesn't follow junk
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), 0 ] );
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  0 ] );
@@ -278,7 +285,7 @@ package Brocken::Compiler::Lowering {
             my $main_shad = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_16k ] );
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), $main_shad ] );
             $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  $main_shad ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('caller'), $builder->emit( 'constant', 'i64', [0] ) ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('caller'),      $builder->emit( 'constant', 'i64', [0] ) ] );
             $current_func_name = 'L_MAIN_START';
             @func_locals       = ();
             $self->lower_block( \@main_stmts );
@@ -332,7 +339,6 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $obj, $hmax ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
-
                 my $header    = $builder->emit( 'load_mem_disp', 'i64', [ $obj, -8 ] );
                 my $cycle     = $builder->emit( 'load_iso_disp', 'i64', [80] );
                 my $obj_cycle = $builder->emit( 'and',           'i64', [ $builder->emit( 'shr', 'i64', [ $header, 32 ] ), 0xFFFFFF ] );
@@ -363,7 +369,6 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store', 'void', [ $ml_slot, $builder->emit( 'add', 'i64', [ $mi, 1 ] ) ] );
                 $builder->emit_jump($l_mloop);
                 $builder->emit_label($l_mdone);
-
                 my $is_leaf = $builder->emit( 'and', 'i64', [ $header, hex("2000000000000000") ] );
                 $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_leaf, 0 ] ), $l_end, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
@@ -513,8 +518,8 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $curr_fib, 0 ] ), $l_fib_done, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $curr_fib ] );
-                my $ss_base   = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 24 ] );
-                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $ss_base ] ); # Fix: Mark the shadow stack object itself!
+                my $ss_base = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 24 ] );
+                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $ss_base ] );    # Fix: Mark the shadow stack object itself!
                 my $ss_ptr    = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_fib, 32 ] );
                 my $curs_slot = $driver->alloc_local_slot();
                 $builder->emit( 'local_store', 'void', [ $curs_slot, $ss_base ] );
@@ -578,11 +583,11 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store',    'void', [ $ret_slot, $ap2 ] );
                 $builder->emit_jump($l_zero_and_ret);
                 $builder->emit_label($l_s2);
-                my $raw      = $builder->emit( 'intrinsic_alloc', 'ptr', [ $BLOCK_SIZE * 2 ] );
-                my $fr       = $builder->emit( 'and', 'i64', [ $builder->emit( 'add', 'ptr', [ $raw, $BLOCK_SIZE - 1 ] ), -$BLOCK_SIZE ] );
+                my $raw = $builder->emit( 'intrinsic_alloc', 'ptr', [ $BLOCK_SIZE * 2 ] );
+                my $fr  = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw, $BLOCK_SIZE - 1 ] ), -$BLOCK_SIZE ] );
 
                 # Update heap_min
-                my $curr_min = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_min') ] );
+                my $curr_min  = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_min') ] );
                 my $l_not_min = $builder->new_label();
                 $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $fr, $curr_min ] ), $builder->new_label(), $l_not_min );
                 $builder->emit_label( $builder->last_instruction->{true_l} );
@@ -590,15 +595,14 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_label($l_not_min);
 
                 # Update heap_max
-                my $fr_end   = $builder->emit( 'add', 'ptr', [ $fr, $BLOCK_SIZE ] );
-                my $curr_max = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_max') ] );
+                my $fr_end    = $builder->emit( 'add',           'ptr', [ $fr, $BLOCK_SIZE ] );
+                my $curr_max  = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_max') ] );
                 my $l_not_max = $builder->new_label();
                 $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $fr_end, $curr_max ] ), $builder->new_label(), $l_not_max );
                 $builder->emit_label( $builder->last_instruction->{true_l} );
                 $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_max'), $fr_end ] );
                 $builder->emit_label($l_not_max);
-
-                my $old_head = $builder->emit( 'load_iso_disp',   'ptr', [40] );
+                my $old_head = $builder->emit( 'load_iso_disp', 'ptr', [40] );
                 $builder->emit( 'store_mem_disp', 'void', [ $fr, 0, $old_head ] );
                 $builder->emit( 'store_iso_disp', 'void', [ 40, $fr ] );
 
@@ -1194,7 +1198,10 @@ package Brocken::Compiler::Lowering {
             }
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
             my ( $or, $ot ) = $self->lower( $node->invocant );
-            my @as  = map { ( $self->lower($_) )[0] } @{ $node->args };
+            my @as = map { ( $self->lower($_) )[0] } @{ $node->args };
+            if ( $ot eq 'Fiber' && $node->name eq 'switch' ) {
+                return ( $builder->emit( 'call_func', 'Any', [ 'M_fiber_switch', $or, @as ] ), 'Any' );
+            }
             my $vt  = $builder->emit( 'load_mem_disp', 'ptr', [ $or, 0 ] );
             my $fn  = $builder->emit( 'load_mem_disp', 'ptr', [ $vt, ( $global_methods{ $node->name } // die $node->name ) * 8 ] );
             my $res = $builder->emit( 'call_reg',      'i64', [ $fn, $or, @as ] );

@@ -59,6 +59,7 @@ class Brocken::Parser {
         'fiber'         => '_parse_fiber',
         'yield'         => '_parse_yield',
         'map'           => '_parse_map',
+        'sleep'         => '_parse_sleep',
     );
 
     # Expression Infix Registry (Connects two expressions)
@@ -410,6 +411,12 @@ class Brocken::Parser {
         return Brocken::AST::Async::Yield->new( expr => $expr, line => $tok->{line}, col => $tok->{col} );
     }
 
+    method _parse_sleep($tok) {
+        $self->advance();
+        my $expr = $self->parse_expression(0);
+        return Brocken::AST::Async::Sleep->new( expr => $expr, line => $tok->{line}, col => $tok->{col} );
+    }
+
     method _parse_map($tok) {
         $self->advance();
         $self->expect('{');
@@ -490,7 +497,7 @@ class Brocken::Parser {
     }
 
     method _parse_type_spec() {
-        if ( $self->current->{type} eq 'KEYWORD' && $self->current->{value} =~ /^(?:Int|String|Any|Bool|Class)$/ ) {
+        if ( $self->current->{type} eq 'KEYWORD' && $self->current->{value} =~ /^(?:Int|String|Any|Bool|Class|Fiber|Array)$/ ) {
             my $t = $self->current->{value};
             $self->advance();
             return $t;

@@ -13,12 +13,12 @@ class Brocken::Lexer {
         class method field
         return exit
         sub
-        fiber yield
+        fiber yield sleep
         defer
         if else unless
         while for map
         say print
-        Int String Any Bool
+        Int String Any Bool Class Fiber Array
         true false undef
     ];
 
