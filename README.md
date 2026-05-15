@@ -92,14 +92,14 @@ Brocken emits full DWARF debug information and SEH tables, allowing you to use s
 
 ## Debug Levels
 
-Pass `debug => N` to `Brocken::Compiler`:
+Pass `debug => N` to `Brocken::Compiler` or `--debug=N` to `brocken.pl`:
 
 | Level | Effect |
 |-------|--------|
-| **0** | No debug information. Lean binary. |
-| **1** | Emit all DWARF sections + SEH (win64) + `.eh_frame` (linux). Launch GDB. |
-| **2** | Same as 1, plus hex dumps of debug sections. (Default) |
-| **4** | Include class/struct types in `.debug_info`. |
+| **0** | No debug information. Lean binary. (Default) |
+| **1** | Emit all DWARF sections + SEH (win64) + `.eh_frame` (linux). Source location tracking. |
+| **2** | Same as 1, plus hex dumps of debug sections. |
+| **4** | Include class/struct type information in `.debug_info`. |
 
 ## GDB
 
@@ -128,6 +128,56 @@ gdb --batch -ex "break source.brocken:9" -ex "run" -ex "bt" ./brocken_out
 ```
 
 For full details on every debug section, see [`docs/debugging.md`](docs/debugging.md).
+
+## Troubleshooting
+
+### GDB shows "No symbol" or "No frame selected"
+
+Brocken emits DWARF debug info, but GDB needs correct addresses. The compiler prints source location mappings:
+
+```
+--- DEBUG SOURCE LOCATIONS ---
+  offset=0x170C  line=1    col=8
+  offset=0x171A  line=2    col=8
+  ...
+```
+
+Use `objdump --dwarf=decodedline brocken_out.exe` to get the actual runtime addresses of source lines. Set breakpoints by address:
+
+```bash
+# Linux
+gdb --batch -ex "break *0x1400018B0" -ex "run" -ex "bt" -ex "info locals" --args ./brocken_out
+
+# Windows (PE)
+gdb --batch -ex "break *0x140002889" -ex "run" -ex "bt" -ex "info locals" --args brocken_out.exe
+```
+
+### Source-level breakpoints don't work
+
+On Windows (PE), GDB may have trouble auto-discovering debug sections due to COFF truncation. Break by address using the `objdump` output above.
+
+On Linux, source-level breakpoints (`break source.brocken:N`) should work if `.debug_line` is present.
+
+### "No symbol" for variable names
+
+This means the DWARF location expressions are incorrect or the variables were optimized away. Check with `bt full` which shows all locals with values:
+
+```bash
+gdb --batch -ex "break *0x140002889" -ex "run" -ex "bt full" --args brocken_out.exe
+```
+
+### Variables show wrong values
+
+If `info locals` shows variables like `counter = 3` instead of `counter = 1`, the variables may have been modified before the breakpoint or the location expression is offset by one slot. Use `x/8xg $rbp` to inspect raw frame memory and verify offsets.
+
+### Debug info size
+
+Debug sections add significant size to binaries. For lean binaries:
+- `--debug=0` - no debug info
+- `--debug=1` - DWARF + unwind info only
+- `--debug=2` - DWARF + hex dumps (default)
+
+For full details, see [`docs/debugging.md`](docs/debugging.md).
 
 # Notes
 

@@ -25,21 +25,20 @@ It can also be set via the `--debug=N` flag when running `brocken.pl`.
 
 | Level | Effect |
 |-------|--------|
-| **0** | No debug sections. Lean binary, no source mapping. |
-| **1** | Emit all debug sections (DWARF `.debug_line`, `.debug_info`, `.debug_abbrev`, `.debug_frame`, `.debug_aranges`, `.debug_pubnames`). On win64, also emit SEH `.pdata` / `.xdata` unwind tables. On ELF, also emit `.eh_frame`. After compilation, launch GDB with a breakpoint at line 9. |
+| **0** | No debug sections. Lean binary, no source mapping. (Default) |
+| **1** | Emit all debug sections (DWARF `.debug_line`, `.debug_info`, `.debug_abbrev`, `.debug_frame`, `.debug_aranges`, `.debug_pubnames`). On win64, also emit SEH `.pdata` / `.xdata` unwind tables. On ELF, also emit `.eh_frame`. Source location tracking is active. |
 | **2** | Same as level 1, plus hex dumps of `.debug_info`, `.debug_abbrev`, `.debug_aranges`, `.debug_pubnames`. |
-| **3+** | (Reserved for future verbosity levels.) |
 | **4+** | Include class/struct type information in `.debug_info` (DWARF `DW_TAG_structure_type` and `DW_TAG_member` DIEs). |
 
 Usage:
 
 ```bash
-# Default debug level (2, since brocken.pl sets $dbg = 2)
+# Default: no debug info
 perl brocken.pl
 
 # Explicit level
 perl brocken.pl --debug=1
-perl brocken.pl --debug=0    # no debug info at all
+perl brocken.pl --debug=0    # explicit no debug info
 ```
 
 ---
@@ -449,8 +448,8 @@ perl brocken.pl --debug=2
 
 Read from `@ARGV` in `brocken.pl`:
 ```perl
-my $dbg = 2;
-for (@ARGV) { $dbg = $1 if /--debug=(\d+)/; }
+my $dbg = 3;
+for (@ARGV) { $dbg = $1 if /^--debug=(\d+)$/; }
 ```
 
 ### Format-level configuration

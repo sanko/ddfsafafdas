@@ -129,7 +129,7 @@ If compilers are new to you, read them in order:
 1. [Pipeline](pipeline.md) - The full pipeline from lexer to binary.
 2. [Runtime](runtime.md) - GC, fibers, isolates, shadow stack.
 3. [Code Generation](codegen.md) - IR set, register allocation, x64/ARM64 backends, binary formats.
-4. [Extending](extending.md) - Adding keywords, platforms, targets, optimizations.
+4. [Extending](extending.md) - Adding keywords, platforms, targets, optimizations, and runtime.
 
 ## License
 

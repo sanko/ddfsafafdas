@@ -270,6 +270,10 @@ package Brocken::Target::ARM64 {
         method compile_intrinsic( $as, $inst, $reg_map, $driver ) {
             return $driver->platform->emit_intrinsic( $self, $as, $inst, $reg_map, $driver );
         }
+
+        method new_assembler() {
+            return Brocken::Target::ARM64::Emit->new();
+        }
     }
 }
 1;

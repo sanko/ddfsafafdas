@@ -447,7 +447,7 @@ if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
     shift @ARGV;    # Remove file arg so it doesn't interfere with other options
 }
 say "Bootstrapping Brocken...";
-my $dbg = 3;
+my $dbg = 0;
 my $os;
 for ( my $i = 0; $i < @ARGV; $i++ ) {
     if ( $ARGV[$i] =~ /^--debug(?:=(\d+))?$/ ) {
@@ -575,7 +575,7 @@ else {
     }
     push @cmd, "-ex", "run", "-ex", "bt", "-ex", "quit \$_exitcode", "--args", $run;
 
-    # Use the list form of system() to bypass shell parsing issues entirely
+# Use the list form of system() to bypass shell parsing issues entirely
     system(@cmd);
 }
 say "Exit code: " . ( $? >> 8 );

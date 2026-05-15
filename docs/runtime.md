@@ -65,7 +65,7 @@ The shadow stack lives inside the fiber's stack allocation, tracked by `shadow_p
 
 ## Immix GC
 
-Brocken uses an Immix-style mark-region collector. The heap is divided into 32KB blocks, each split into 128-byte lines. This gives better fragmentation behavior than plain mark-sweep without the copying cost of a semi-space collector.
+Brocken uses an Immix-style mark-region collector. The heap is divided into 64KB blocks, each split into 128-byte lines. This gives better fragmentation behavior than plain mark-sweep without the copying cost of a semi-space collector.
 
 ### Allocation (M_gc_alloc)
 

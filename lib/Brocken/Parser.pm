@@ -33,6 +33,9 @@ class Brocken::Parser {
         'class'     => '_parse_class',
         'sub'       => '_parse_sub_stmt',
         'defer'     => '_parse_defer',
+        'use'       => '_parse_use',
+        'require'   => '_parse_require',
+        'eval'      => '_parse_eval',
         'return'    => '_parse_return',
         'exit'      => '_parse_exit',
         'say'       => '_parse_builtin_call',
@@ -281,10 +284,51 @@ class Brocken::Parser {
         return Brocken::AST::Stmt::Defer->new( block => $block, line => $tok->{line}, col => $tok->{col} );
     }
 
+    method _parse_use() {
+        my $tok = $self->current;
+        $self->advance();    # consume 'use'
+        my $package = $self->expect('IDENT')->{value};
+        # Handle nested package names like Foo::Bar
+        while ( $self->current->{value} eq '::' ) {
+            $self->advance();    # consume '::'
+            $package .= '::' . $self->expect('IDENT')->{value};
+        }
+        $self->expect(';');
+        return Brocken::AST::Stmt::Use->new( package => $package, line => $tok->{line}, col => $tok->{col} );
+    }
+
+    method _parse_require() {
+        my $tok = $self->current;
+        $self->advance();    # consume 'require'
+        my $package = $self->expect('IDENT')->{value};
+        # Handle nested package names like Foo::Bar
+        while ( $self->current->{value} eq '::' ) {
+            $self->advance();    # consume '::'
+            $package .= '::' . $self->expect('IDENT')->{value};
+        }
+        $self->expect(';');
+        return Brocken::AST::Stmt::Require->new( package => $package, line => $tok->{line}, col => $tok->{col} );
+    }
+
+    method _parse_eval() {
+        my $tok = $self->current;
+        $self->advance();    # consume 'eval'
+        my $code_expr = $self->parse_expression(0);
+        $self->expect(';');
+        return Brocken::AST::Stmt::Eval->new( code => $code_expr, line => $tok->{line}, col => $tok->{col} );
+    }
+
     method _parse_class() {
         my $tok = $self->current;
         $self->advance();    # consume 'class'
         my $name = $self->expect('IDENT')->{value};
+
+        # Handle qualified names like Math::Utils
+        while ( $self->current->{value} eq '::' ) {
+            $self->advance();    # consume '::'
+            $name .= '::' . $self->expect('IDENT')->{value};
+        }
+
         $self->expect('{');
         my ( @fields, @methods );
         while ( $self->current->{value} ne '}' ) {
@@ -375,8 +419,24 @@ class Brocken::Parser {
     method _parse_ident_or_call($tok) {
         my $name = $tok->{value};
         $self->advance();
+
+        # Handle qualified names like Math::Utils
+        while ( $self->current->{value} eq '::' ) {
+            $self->advance();    # consume '::'
+            $name .= '::' . $self->expect('IDENT')->{value};
+        }
+
         if ( $self->current->{value} eq '(' ) {
             return Brocken::AST::Expr::Call->new( name => $name, args => $self->_parse_args(), line => $tok->{line}, col => $tok->{col} );
+        }
+
+        # Method call syntax: Class->method()
+        if ( $self->current->{value} eq '->' ) {
+            $self->advance();    # consume '->'
+            my $method_name = $self->expect('IDENT')->{value};
+            my $args = $self->current->{value} eq '(' ? $self->_parse_args() : [];
+            my $class_const = Brocken::AST::Expr::Const->new( value => $name, type => 'Class', line => $tok->{line}, col => $tok->{col} );
+            return Brocken::AST::Expr::MethodCall->new( object => $class_const, method => $method_name, args => $args, line => $tok->{line}, col => $tok->{col} );
         }
 
         # Treat bare Ident as a Class reference for now

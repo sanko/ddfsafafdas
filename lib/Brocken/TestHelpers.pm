@@ -24,39 +24,56 @@ sub test_brocken {
     my $optimizer = Brocken::Compiler::Optimizer->new();
     $optimizer->optimize( $lowering->builder );
     my $p = Brocken::Compiler->new();
+    warn;
     $p->format->pre_layout( scalar( $lowering->builder->instructions ) * 32 + 8192, length( $ds->get_raw_data() ) + 8192, $p->arch, $p->os, 0 );
+    warn;
     my $codegen = Brocken::Codegen->new( arch => $p->arch );
+    warn;
     $codegen->compile( [ $lowering->builder->instructions() ], $p );
+    warn;
     $p->as->resolve();
+    warn;
     my $ext    = $p->os eq 'win64' ? '.exe' : '';
     my $exe    = $p->format->write_bin( "test_bin$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
+    warn;
     my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
+    warn;
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
+        warn;
         alarm($timeout);
-        my $out = `$run 2>&1`;
+        warn $run;
+        #~ my $out = `$run 2>&1`;
+        my $out = system $run;
+        warn;
+        warn $out;
         alarm(0);
         $out;
     };
+    warn;
     my $err = $@;
     alarm(0);
+    warn;
     unlink $exe if -e $exe;
+    warn;
     if ($err) {
-        Test::More::fail("$name - $err");
+        warn;
+        Test2::V0::fail("$name - $err");
         return;
     }
+    warn;
     if ( ref $expected eq 'ARRAY' ) {
         my @out_lines = split /\n/, $output;
 
         # Clean up output lines (remove debug etc if any)
         @out_lines = grep { !/^Debug:|^Executing/ } @out_lines;
-        Test::More::is_deeply( \@out_lines, $expected, $name );
+        Test2::V0::is_deeply( \@out_lines, $expected, $name );
     }
     elsif ( ref $expected eq 'Regexp' ) {
-        Test::More::like( $output, $expected, $name );
+        Test2::V0::like( $output, $expected, $name );
     }
     else {
-        Test::More::pass($name);
+        Test2::V0::pass($name);
     }
 }
 

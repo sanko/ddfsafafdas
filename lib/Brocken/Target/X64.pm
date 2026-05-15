@@ -20,6 +20,10 @@ package Brocken::Target::X64 {
             return $driver->platform->emit_intrinsic( $self, $as, $inst, $reg_map, $driver );
         }
 
+        method new_assembler() {
+            return Brocken::Target::X64::Emit->new();
+        }
+
         method emit_op( $as, $inst, $reg_map, $driver ) {
             my $op    = $inst->{op};
             my $v     = sub { $self->val( $reg_map, shift ) };

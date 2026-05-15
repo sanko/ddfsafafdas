@@ -18,6 +18,7 @@ class Brocken::Lexer {
         if else unless
         while for map
         say print
+        use require eval
         Int String Any Bool Class Fiber Array
         true false undef
     ];
@@ -71,7 +72,7 @@ class Brocken::Lexer {
                 $self->_advance( length($full_match) );
                 next;
             }
-            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\||\/\/)/ ) {
+            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\||::|\/\/)/ ) {
                 push @tokens, $self->_make_token( 'OP', $1 );
                 $self->_advance( length($1) );
                 next;
