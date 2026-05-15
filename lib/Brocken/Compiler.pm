@@ -45,19 +45,19 @@ package Brocken::Compiler {
                 require Brocken::Platform::Windows;
                 require Brocken::Format::PE;
                 $platform = Brocken::Platform::Windows->new( os => $os );
-                $format   = Brocken::Format::PE->new();
+                $format   = Brocken::Format::PE->new(type => $type );
             }
             elsif ( $os eq 'linux' ) {
                 require Brocken::Platform::Linux;
                 require Brocken::Format::ELF;
                 $platform = Brocken::Platform::Linux->new( os => $os );
-                $format   = Brocken::Format::ELF->new();
+                $format   = Brocken::Format::ELF->new(type => $type );
             }
             elsif ( $os eq 'macos' ) {
                 require Brocken::Platform::Darwin;
                 require Brocken::Format::MachO;
                 $platform = Brocken::Platform::Darwin->new( os => $os );
-                $format   = Brocken::Format::MachO->new();
+                $format   = Brocken::Format::MachO->new(type => $type );
             }
             else {
                 die "Unsupported OS: $os";

@@ -106,7 +106,41 @@ package Brocken::Compiler::Lowering {
             push @fragments, \@captured;
             $builder->set_instructions(@saved);
         }
+method _generate_export_thunk($node) {
+    my $internal_name = 'M_' . $node->name;
+    my $export_name   = 'E_' . $node->name; # E_ prefix for Export
 
+    $builder->emit_label($export_name);
+    $builder->emit( 'enter_func', 'void', [] );
+
+    my @boxed_args;
+    my $arg_idx = 0;
+
+    # 1. Catch standard C arguments and BOX them into Brocken types
+    for my $p ( @{ $node->params } ) {
+        my $raw_arg = $builder->emit( 'get_arg', 'i64', [$arg_idx++] );
+
+        if ($p->{type} eq 'Int') {
+            # Box: (val << 1) | 1
+            my $shifted = $builder->emit( 'shl', 'i64', [$raw_arg, 1] );
+            my $boxed   = $builder->emit( 'or',  'i64', [$shifted, 1] );
+            push @boxed_args, $boxed;
+        } else {
+            # Pointers (Strings, Objects) pass through as-is
+            push @boxed_args, $raw_arg;
+        }
+    }
+
+    # 2. Call the real internal Brocken function
+    my $result = $builder->emit( 'call_func', 'i64', [ $internal_name, @boxed_args ] );
+
+    # 3. Catch the return value and UNBOX it for C
+    # (Assuming Int return for this example. You could add a return_type to the AST node)
+    my $unboxed = $builder->emit( 'shr', 'i64', [$result, 1] );
+
+    # 4. Return standard C value
+    $builder->emit( 'leave_func', 'void', [$unboxed] );
+}
         # --- Core Dispatcher ---
         method lower($node) {
             return ( undef, 'void' ) unless defined $node;
@@ -216,8 +250,10 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('L_MAIN_START');
             $builder->emit( 'enter_func',                    'void', [] );
-            $builder->emit( 'intrinsic_setup_fault_handler', 'void', [] );
-            $builder->emit( 'intrinsic_setup_env',           'void', [] );
+                   if (!$self->skip_runtime) {
+                $builder->emit( 'intrinsic_setup_fault_handler', 'void', [] );
+                $builder->emit( 'intrinsic_setup_env',           'void', [] );
+            }
             my $iso_reg = $builder->emit( 'intrinsic_alloc', 'ptr', [1024] );
             $builder->emit( 'set_isolate_ctx', 'void', [$iso_reg] );
 
@@ -298,9 +334,14 @@ package Brocken::Compiler::Lowering {
             $self->_flush_func_locals();
             $self->_emit_all_defers();    # Support top-level defer
 
-            # EXPLICIT EXIT 0 to prevent CPU from falling through into M_fiber_switch !
-            $builder->emit( 'intrinsic_exit', 'void', [ $builder->emit( 'constant', 'i64', [1] ) ] );
-            while (@fragments) {
+            # EXPLICIT EXIT 0 to prevent CPU from falling through into M_fiber_switch!
+            if ($self->skip_runtime) {
+                # In a DLL, return 1 (TRUE) to signal successful DllMain init
+                $builder->emit( 'leave_func', 'void', [ $builder->emit( 'constant', 'i64', [1] ) ] );
+            } else {
+                # In an EXE, terminate the process
+                $builder->emit( 'intrinsic_exit', 'void', [ $builder->emit( 'constant', 'i64', [1] ) ] );
+            }            while (@fragments) {
                 my $frag = shift @fragments;
                 $builder->push_instruction($_) for @$frag;
             }
@@ -1305,6 +1346,14 @@ package Brocken::Compiler::Lowering {
             $current_scope = $current_scope->parent;
             @defer_stack   = @old_defers;
             pop @routine_types;
+
+
+             # If this is an exported method, generate the C ABI Thunk!
+        # (You could pass a list of export names down to Lowering, or add an
+        # 'is_export' boolean to your AST Node by adding an `export sub` keyword to Parser.pm)
+        #~ if ( $self->is_exported($node->name) ) {
+            $self->_generate_export_thunk($node);
+        #~ }
             return ( undef, 'void' );
         }
 

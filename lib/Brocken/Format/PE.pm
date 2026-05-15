@@ -6,8 +6,7 @@ package Brocken::Format::PE {
     use File::Basename qw(basename);
 
     class Brocken::Format::PE : isa(Brocken::Format) {
-        field $exported_funcs : reader = [];
-        our %IMPORTS = (
+         our %IMPORTS = (
             ExitProcess                 => 0,
             GetStdHandle                => 8,
             WriteFile                   => 16,
@@ -27,15 +26,16 @@ package Brocken::Format::PE {
             return $self->rva_for('.idata') + ( $IMPORTS{$n} // die "Unknown PE import: $n" );
         }
 
-        method set_exported_funcs($f) { $exported_funcs = $f }
-
-        method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 ) {
+        method _setup_layout( $l, $t, $d, $a, $o, $type, $dbg = 0 ) {
             $l->add_section( '.text',  $t,                    0x60000020 );
             $l->add_section( '.data',  ( $d > 0 ? $d : 512 ), 0xC0000040 );
             $l->add_section( '.idata', 2048,                  0xC0000040 );
+            #
             if ( $self->type eq 'shared' ) {
+                warn "PE: Adding .edata section\n" if $ENV{BROCKEN_JIT_DEBUG};
                 $l->add_section( '.edata', 2048, 0x40000040 );
             }
+
             if ( $dbg >= 1 ) {
                 $l->add_section( '.debug_line',     4096, 0x42000040 );
                 $l->add_section( '.debug_info',     8192, 0x42000040 );
@@ -68,6 +68,7 @@ package Brocken::Format::PE {
                 $edata_data = $self->_build_edata_raw($edata_rva, $filename);
                 $edata_size = length($edata_data);
                 $l->get('.edata')->{size} = $edata_size;
+                $l->calculate(0x1000); # Recalculate offsets/RVAs
                 warn "PE: edata built, size=$edata_size\n" if $ENV{BROCKEN_JIT_DEBUG};
             }
 
@@ -126,8 +127,12 @@ package Brocken::Format::PE {
             );
 
             # Data Directory Entries (16 standard entries)
-            print $fh pack( 'L< L<', $edata_rva,     $edata_size );    # 0: Export
-            print $fh pack( 'L< L<', $idata_rva + 256, 40 );             # 1: Import
+            #~ my ($edata_data, $edata_rva, $edata_size) = ('', 0, 0);
+            #~ if ($self->type eq 'shared') {
+            #~ my $edata = $l->get('.edata');
+            #~ }
+              print $fh pack( 'L< L<', $edata_rva, $edata_size );       # 0: Export
+            print $fh pack( 'L< L<', $idata_rva + 256, 40 );          # 1: Import
             print $fh pack( 'L< L<', 0,                0 );              # 2: Resource
             print $fh pack( 'L< L<', $pdata_rva,       $pdata_size );    # 3: Exception (.pdata)
             print $fh ( pack( 'L< L<', 0, 0 ) x 8 );                     # 4-11: reserved
@@ -216,42 +221,54 @@ package Brocken::Format::PE {
             return $data;
         }
 
+    my @EXPLICIT_EXPORTS;
+
+    sub set_exported_funcs {
+        my ($self, $funcs) = @_;
+        @EXPLICIT_EXPORTS = @$funcs;
+    }
         method _build_edata_raw($base_rva, $filename) {
-            my $dll_name = basename($filename);
-            my @exports = sort @{ $self->exported_funcs };
-            my $num_exports = scalar @exports;
-            my $eat_off = 40;
-            my $npt_off = $eat_off + (4 * $num_exports);
-            my $ot_off  = $npt_off + (4 * $num_exports);
-            my $name_data_off = $ot_off + (2 * $num_exports);
-            my $edat = pack('L< L< S< S< L< L< L< L< L< L< L<',
-                0, time(), 0, 0,
-                $base_rva + $name_data_off,
-                1,
-                $num_exports, $num_exports,
-                $base_rva + $eat_off,
-                $base_rva + $npt_off,
-                $base_rva + $ot_off
-            );
-            my $eat = '';
-            my $npt = '';
-            my $ot  = '';
-            my $name_data = $dll_name . "\0";
-            for my $i (0 .. $#exports) {
-                my $name = $exports[$i];
-                my $label = "M_$name";
-                my $offset = $self->labels->{$label} // 0;
-                my $rva = $self->rva_for('.text') + $offset;
-                $eat .= pack('L<', $rva);
-                $npt .= pack('L<', $base_rva + $name_data_off + length($name_data));
-                $ot  .= pack('S<', $i);
-                $name_data .= $name . "\0";
-            }
-            my $block = $edat . $eat . $npt . $ot . $name_data;
-            my $pad_len = 2048 - length($block);
-            $pad_len = 0 if $pad_len < 0;
-            return $block . ("\0" x $pad_len);
+        my @exports = @EXPLICIT_EXPORTS;
+        my $num_exports = scalar @exports;
+
+        return ("\0" x 2048) if $num_exports == 0;
+
+        my $eat_off = 40;
+        my $npt_off = $eat_off + (4 * $num_exports);
+        my $ot_off  = $npt_off + (4 * $num_exports);
+        my $name_data_off = $ot_off + (2 * $num_exports);
+
+        my $edat = pack('L< L< S< S< L< L< L< L< L< L< L<',
+            0, time(), 0, 0,
+            $base_rva + $name_data_off,
+            1,
+            $num_exports, $num_exports,
+            $base_rva + $eat_off,
+            $base_rva + $npt_off,
+            $base_rva + $ot_off
+        );
+
+        my $eat = '';
+        my $npt = '';
+        my $ot  = '';
+        my $name_data = basename($filename) . "\0";
+
+        for my $i (0 .. $#exports) {
+            my $name = $exports[$i];
+            my $target_label = "E_$name"; # Use the autoboxing thunk not the internal M_ function
+            my $offset = $self->labels->{$target_label} // 0;
+            my $rva = $self->rva_for('.text') + $offset;
+
+            $eat .= pack('L<', $rva);
+            $npt .= pack('L<', $base_rva + $name_data_off + length($name_data));
+            $ot  .= pack('S<', $i);
+            $name_data .= $name . "\0";
         }
+        my $block = $edat . $eat . $npt . $ot . $name_data;
+        my $pad_len = 2048 - length($block);
+        $pad_len = 0 if $pad_len < 0;
+        return $block . ("\0" x $pad_len);
+    };
     }
 }
 1;

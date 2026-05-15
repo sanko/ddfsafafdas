@@ -10,6 +10,7 @@ package Brocken::Format::Layout {
         field $header_size : reader = 0;
 
         method add_section( $name, $size, $flags ) {
+            warn "Layout: Adding section $name (size: $size)\n" if $ENV{BROCKEN_JIT_DEBUG};
             push @sections, { name => $name, size => ( $size || 1 ), flags => $flags, rva => 0, off => 0 };
         }
 

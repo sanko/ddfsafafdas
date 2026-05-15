@@ -3,17 +3,22 @@ use feature 'class';
 no warnings 'experimental::class';
 
 class Brocken::Format {
-    field $_layout     : reader(layout);
-    field $type        : param : reader = 'exe';
-    field $debug_data  : reader = {};
-    field $func_ranges : reader = [];
-    field $labels      : reader = {};
-    method set_debug_data($d)   { $debug_data = $d; }
-    method debug_section($name) { return $self->debug_data->{$name} // ''; }
-    method set_func_ranges($r)  { $func_ranges = $r; }
-    method set_labels($l)       { $labels = $l; }
-    method set_exported_funcs($f) { }
+    field $_layout        : reader(layout);
+    field $type           : param : reader = 'exe';
+    field $debug_data     : reader = {};
+    field $func_ranges    : reader = [];
+    field $labels         : reader = {};
+    field $exported_funcs : reader = [];
+    #
+    method set_debug_data($d)     { $debug_data = $d; }
+    method debug_section($name)   { return $self->debug_data->{$name} // ''; }
+    method set_func_ranges($r)    { $func_ranges = $r; }
+    method set_labels($l)         { $labels      = $l; }
 
+# shared lib
+
+    method set_exported_funcs($f) { $exported_funcs = $f; }
+#
     method rva_for($name) {
         return $self->layout->get($name)->{rva};
     }
@@ -26,9 +31,9 @@ class Brocken::Format {
         $self->_setup_layout( $_layout, $text_size, $data_size, $arch, $os, $debug );
         $_layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
     }
-    method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 )              { die "Abstract" }
+    method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 )           { die "Abstract" }
     method write_bin( $filename, $text, $data, $arch, $os, $type ) { die "Abstract" }
-    method import_rva($name)                                          { die "Imports not supported by this format" }
+    method import_rva($name)                                       { die "Imports not supported by this format" }
 }
 1;
 __END__
