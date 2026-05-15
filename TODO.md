@@ -42,12 +42,19 @@
 - [ ] Channels: Lock-free ring buffers for Isolate-to-Isolate communication.
 - [ ] [Maybe] Parallel Iterators: `pmap` and `pgrep`.
 
-## Milestone 5: Developer Experience & Correctness
+## Milestone 5: JIT-Powered FFI
+- [ ] Symbol lookup: Implement pure-Perl manual Export Directory parsing for PE/ELF.
+- [ ] Stabilize shared library output (.dll/.so): Verify cross-platform stability.
+- [ ] Full Type System and ABI support: Marshalling structs, pointers, and large SIMD vectors.
+- [ ] Compiler/IR: Implement `call_native` IR op and lowering logic.
+- [ ] Reverse trampolines: Implement JIT stubs for callbacks.
+
+## Milestone 6: Developer Experience & Correctness
 - [ ] Compiler Test Suite and Fuzzing: Expand tests to stress-test the Register Allocator and GC boundary cases.
 - [ ] IR-Diff Tool: Utility to verify output consistency between compiler versions (critical for self-hosting).
 - [ ] LSP Stub: Basic IDE support for symbol definitions and type tooltips using POD6.
 
-## Milestone 6: Ecosystem & Interop
+## Milestone 7: Ecosystem & Interop
 - [ ] FFI (`Affix`): Declarative C-ABI bindings using opaque pointers.
   - *Note: Windows x64 requires arguments 5+ to be homed in the caller's pre-allocated shadow space `[rsp+32]`, while SysV uses `[rsp]`. We also must use `rcx`/`rdx` for args 1 & 2 on Win64 vs `rdi`/`rsi` on SysV. Shadow space must be maintained for SEH unwinding.*
 - [ ] Regex Engine: PCRE-compatible engine compiled directly to machine code.
