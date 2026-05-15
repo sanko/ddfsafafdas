@@ -7,11 +7,18 @@ package Brocken::JIT::X64 {
     class Brocken::JIT::X64 {
         field $code : reader = '';
         field %labels;
+        field @fixups;
 
         method reg($r) {
             state $MAP = {
-                rax => 0, rcx => 1, rdx => 2, rbx => 3,
-                rsp => 4, rbp => 5, rsi => 6, rdi => 7,
+                rax => 0, eax => 0, ax => 0, al => 0,
+                rcx => 1, ecx => 1, cx => 1, cl => 1,
+                rdx => 2, edx => 2, dx => 2, dl => 2,
+                rbx => 3, ebx => 3, bx => 3, bl => 3,
+                rsp => 4, esp => 4, sp => 4, spl => 4,
+                rbp => 5, ebp => 5, bp => 5, bpl => 5,
+                rsi => 6, esi => 6, si => 6, sil => 6,
+                rdi => 7, edi => 7, di => 7, dil => 7,
                 r8  => 8, r9  => 9, r10 => 10, r11 => 11,
                 r12 => 12, r13 => 13, r14 => 14, r15 => 15,
                 xip => 16
@@ -66,7 +73,7 @@ package Brocken::JIT::X64 {
         method add_imm( $r, $imm ) {
             my $ri = $self->reg($r);
             if ( $imm >= -2147483648 && $imm <= 2147483647 ) {
-                $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'Ci<', 0x81, 0xC0 | ( $ri & 7 ), $imm );
+                $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xC0 | ( $ri & 7 ), $imm );
             }
             else {
                 $self->mov_imm( 'r11', $imm );
@@ -82,8 +89,46 @@ package Brocken::JIT::X64 {
 
         method sub_imm( $r, $imm ) {
             my $ri = $self->reg($r);
-            $self->mov_imm( 'r11', $imm );
-            $self->sub_reg( $r, 'r11' );
+            if ( $imm >= -2147483648 && $imm <= 2147483647 ) {
+                $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xE8 | ( $ri & 7 ), $imm );
+            }
+            else {
+                $self->mov_imm( 'r11', $imm );
+                $self->sub_reg( $r, 'r11' );
+            }
+        }
+
+        method and_imm( $r, $imm ) {
+            my $ri = $self->reg($r);
+            if ( $imm >= -2147483648 && $imm <= 2147483647 ) {
+                $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xE0 | ( $ri & 7 ), $imm );
+            }
+            else {
+                $self->mov_imm( 'r11', $imm );
+                $self->and_reg( $r, 'r11' );
+            }
+        }
+
+        method or_imm( $r, $imm ) {
+            my $ri = $self->reg($r);
+            if ( $imm >= -2147483648 && $imm <= 2147483647 ) {
+                $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xC8 | ( $ri & 7 ), $imm );
+            }
+            else {
+                $self->mov_imm( 'r11', $imm );
+                $self->or_reg( $r, 'r11' );
+            }
+        }
+
+        method xor_imm( $r, $imm ) {
+            my $ri = $self->reg($r);
+            if ( $imm >= -2147483648 && $imm <= 2147483647 ) {
+                $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CCl<', 0x81, 0xF0 | ( $ri & 7 ), $imm );
+            }
+            else {
+                $self->mov_imm( 'r11', $imm );
+                $self->xor_reg( $r, 'r11' );
+            }
         }
 
         method and_reg( $d, $s ) {
@@ -112,9 +157,8 @@ package Brocken::JIT::X64 {
 
         method jmp($label) {
             $code .= pack( 'C', 0xE9 );
-            my $target = $labels{$label} // die "Unknown label: $label";
-            my $dist = $target - length($code) - 4;
-            $code .= pack( 'l<', $dist );
+            push @fixups, { offset => length($code), target => $label };
+            $code .= pack( 'l<', 0 );
         }
 
         method jcc( $cc, $label ) {
@@ -123,9 +167,8 @@ package Brocken::JIT::X64 {
             my $op = $ccode->{$cc} // die "Unknown cc: $cc";
             $code .= pack( 'C', 0x0F );
             $code .= pack( 'C', $op );
-            my $target = $labels{$label} // die "Unknown label: $label";
-            my $dist = $target - length($code) - 4;
-            $code .= pack( 'l<', $dist );
+            push @fixups, { offset => length($code), target => $label };
+            $code .= pack( 'l<', 0 );
         }
 
         method lea_reg_disp( $d, $b, $off ) {
@@ -237,10 +280,9 @@ package Brocken::JIT::X64 {
         }
 
         method call_label($label) {
-            my $target = $labels{$label} // die "Unknown label: $label";
             $code .= pack( 'C', 0xE8 );
-            my $dist = $target - length($code) - 4;
-            $code .= pack( 'l<', $dist );
+            push @fixups, { offset => length($code), target => $label };
+            $code .= pack( 'l<', 0 );
         }
 
         method call_reg($r) {
@@ -256,6 +298,28 @@ package Brocken::JIT::X64 {
         method syscall() {
             $code .= pack( 'C', 0x0F );
             $code .= pack( 'C', 0x05 );
+        }
+
+        method mov_label($r, $label) {
+            my $ri = $self->reg($r);
+            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'C', 0xB8 + ( $ri & 7 ) );
+            push @fixups, { offset => length($code), target => $label, type => 'absolute' };
+            $code .= pack( 'Q<', 0 );
+        }
+
+        method resolve($base_addr = 0) {
+            for my $fixup (@fixups) {
+                my $target_pos = $labels{$fixup->{target}};
+                die "Unresolved label: $fixup->{target}" unless defined $target_pos;
+                my $offset = $fixup->{offset};
+                if (($fixup->{type} // '') eq 'absolute') {
+                    substr($code, $offset, 8) = pack('Q<', $base_addr + $target_pos);
+                } else {
+                    my $rel = $target_pos - ($offset + 4);
+                    substr($code, $offset, 4) = pack('l<', $rel);
+                }
+            }
+            @fixups = ();
         }
     }
 }

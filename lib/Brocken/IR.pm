@@ -4,32 +4,34 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 
 class Brocken::IR::Builder {
-    field @instructions : reader;
-    field $reg_count   = 0;
-    field $label_count = 0;
+        field $_instructions : reader = [];
+        field $reg_count   = 0;
+        field $label_count = 0;
     method new_reg()               { return '%' . ++$reg_count; }
     method new_label()             { return 'L' . ++$label_count; }
-    method set_instructions(@inst) { @instructions = @inst }
-    method push_instruction($inst) { push @instructions, $inst }
-    method last_instruction()      { $instructions[-1] }
+        method set_instructions(@inst) { $_instructions = [@inst] }
+        method push_instruction($inst) { push @$_instructions, $inst }
+        method pop_instruction() { pop @$_instructions }
+        method last_instruction() { $_instructions->[-1] }
+        method instructions() { wantarray ? @$_instructions : $_instructions }
 
     method emit( $op, $type, $args, $dest = undef ) {
         if ( !defined($dest) && $type ne 'void' ) { $dest = $self->new_reg(); }
-        push @instructions, { op => $op, type => $type, dest => $dest, args => $args };
+        push @$_instructions, { op => $op, type => $type, dest => $dest, args => $args };
         return $dest;
     }
-    method emit_label($name) { push @instructions, { op => 'label', name   => $name }; }
-    method emit_jump($label) { push @instructions, { op => 'jmp',   target => $label }; }
-    method emit_cond_br( $reg, $tl, $fl ) { push @instructions, { op => 'cond_br', reg => $reg, true_l => $tl, false_l => $fl }; }
+    method emit_label($name) { push @$_instructions, { op => 'label', name   => $name }; }
+    method emit_jump($label) { push @$_instructions, { op => 'jmp',   target => $label }; }
+    method emit_cond_br( $reg, $tl, $fl ) { push @$_instructions, { op => 'cond_br', reg => $reg, true_l => $tl, false_l => $fl }; }
 
     method dump_ir ( $title //= () ) {
         say "\n=== $title ===" if $title;
-        for my $i (@instructions) {
+        for my $i (@$_instructions) {
             my $op   = $i->{op}   // '???';
             my $dest = $i->{dest} // '';
             my @al;
             if ( $i->{args} ) {
-                @al = map { !defined($_) ? 'undef' : ( ref($_) ? 'OBJ' : $_ ) } @{ $i->{args} };
+                @al = map { !defined($_) ? 'undef' : ( ref($_) ? 'OBJ' : $_ ) } @{$i->{args}};
             }
             elsif ( $i->{target} )          { push @al, 'target:' . $i->{target}; }
             elsif ( $i->{name} )            { push @al, 'name:' . $i->{name}; }

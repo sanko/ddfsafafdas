@@ -438,26 +438,34 @@ my Int $i = 0;
         #~ sleep 20;
 END
 
-# Allow reading source from a file argument
-if ( @ARGV && -f $ARGV[0] && !( $ARGV[0] =~ /^--/ ) ) {
-    open my $fh, '<', $ARGV[0] or die "Cannot read $ARGV[0]: $!";
-    $source_code = do { local $/; <$fh> };
-    close $fh;
-    say "Reading source from: $ARGV[0]";
-    shift @ARGV;    # Remove file arg so it doesn't interfere with other options
-}
-say "Bootstrapping Brocken...";
 my $dbg = 0;
 my $os;
+my $type = 'exe';
+my @files;
 for ( my $i = 0; $i < @ARGV; $i++ ) {
-    if ( $ARGV[$i] =~ /^--debug(?:=(\d+))?$/ ) {
+    my $arg = $ARGV[$i];
+    if ( $arg =~ /^--debug(?:=(\d+))?$/ ) {
         $dbg = defined $1 ? $1 : ( $ARGV[ ++$i ] // 0 );
     }
-    elsif ( $ARGV[$i] =~ /^--os(?:=(.+))?$/ ) {
+    elsif ( $arg =~ /^--os(?:=(.+))?$/ ) {
         $os = defined $1 ? $1 : ( $ARGV[ ++$i ] );
     }
+    elsif ( $arg eq '--shared' ) {
+        $type = 'shared';
+    }
+    elsif ( $arg !~ /^--/ ) {
+        push @files, $arg;
+    }
 }
-my $p = Brocken::Compiler->new( debug => $dbg, ( $os ? ( os => $os ) : () ) );
+
+if ( @files && -f $files[0] ) {
+    open my $fh, '<', $files[0] or die "Cannot read $files[0]: $!";
+    $source_code = do { local $/; <$fh> };
+    close $fh;
+    say "Reading source from: $files[0]";
+}
+
+my $p = Brocken::Compiler->new( debug => $dbg, type => $type, ( $os ? ( os => $os ) : () ) );
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
 say "Debug: " . $p->debug;
 my $tokens   = Brocken::Lexer->new( source => $source_code )->lex();
@@ -467,13 +475,29 @@ my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => 
 $lowering->lower_program($ast);
 my $optimizer = Brocken::Compiler::Optimizer->new();
 $optimizer->optimize( $lowering->builder );
-$lowering->builder->dump_ir("FINAL IR");
-my $est_text = scalar( $lowering->builder->instructions ) * 32 + 4096;
+# $lowering->builder->dump_ir("FINAL IR");
+my $insts = $lowering->builder->instructions;
+my $est_text = scalar(@$insts) * 32 + 4096;
 my $est_data = length( $ds->get_raw_data() ) + 4096;
 $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
 $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve();
+my %labels = $p->as->labels;
+$p->format->set_labels( \%labels );
+
+if ( $p->type eq 'shared' ) {
+    my @exports;
+    for my $l ( keys %labels ) {
+        if ( $l =~ /^M_([a-zA-Z0-9_]+)$/ ) {
+            push @exports, $1;
+        }
+    }
+    # Pass exports to format if it's PE
+    if ( $p->format isa Brocken::Format::PE ) {
+        $p->format->set_exported_funcs( \@exports );
+    }
+}
 
 if ( $p->debug >= 1 ) {
     say "\n--- DEBUG SOURCE LOCATIONS ---";
@@ -549,8 +573,9 @@ if ( $p->debug >= 1 ) {
         }
     }
 }
-my $ext = $p->os eq 'win64' ? '.exe' : '';
-my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
+my $ext = $p->os eq 'win64' ? ($p->type eq 'shared' ? '.dll' : '.exe') : ($p->type eq 'shared' ? '.so' : '');
+$ext = '.dylib' if $p->os eq 'macos' && $p->type eq 'shared';
+my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os, $p->type );
 say "Executing Native Binary...";
 my $run = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
 if ( $^O eq 'darwin' ) {

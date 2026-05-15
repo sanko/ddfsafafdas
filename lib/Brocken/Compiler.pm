@@ -9,6 +9,7 @@ package Brocken::Compiler {
         # Input Parameters
         field $arch  : param : reader = undef;
         field $os    : param : reader = undef;
+        field $type  : param : reader = 'exe';
         field $debug : param : reader = 0;
 
         # Plugged components

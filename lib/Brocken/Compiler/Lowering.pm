@@ -5,6 +5,8 @@ package Brocken::Compiler::Lowering {
     no warnings 'portable', 'experimental::class';
     use Brocken::IR;
     use Brocken::AST;
+    use lib 'lib';
+    use Brocken::JIT;
 
     class Brocken::Compiler::Lowering {
         field $builder      : reader : param = Brocken::IR::Builder->new();
@@ -18,6 +20,7 @@ package Brocken::Compiler::Lowering {
         field @routine_types = ('main');
         field %class_info;
         field %global_methods;
+        field %native_funcs;
         field $global_method_count = 0;
         field $class_id_counter    = 0;
         method class_info () { return %class_info }
@@ -25,6 +28,9 @@ package Brocken::Compiler::Lowering {
         field @fragments;
         field @defer_stack;               # Stack of [ \@instructions ]
         field $defer_active_depth = 0;    # Helper to prevent return inside of defer block
+        field $_skip_runtime = 0;
+        method skip_runtime { $_skip_runtime }
+        method set_skip_runtime($val) { $_skip_runtime = $val }
         my $BLOCK_SIZE = 65536;
         my $LINE_SIZE  = 128;
         my $LINE_COUNT = 512;
@@ -298,7 +304,12 @@ package Brocken::Compiler::Lowering {
                 my $frag = shift @fragments;
                 $builder->push_instruction($_) for @$frag;
             }
-            $builder->emit( 'intrinsic_emit_runtime', 'void', [] );
+            if ($self->skip_runtime) {
+                $builder->pop_instruction() while $builder->last_instruction && $builder->last_instruction->{op} eq 'intrinsic_emit_runtime';
+            }
+            else {
+                $builder->emit( 'intrinsic_emit_runtime', 'void', [] );
+            }
         }
 
         method register_classes($nodes) {
@@ -638,7 +649,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'store_iso_disp', 'void',
                     [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $fr, $BLOCK_SIZE ] ) ] );
                 $builder->emit( 'store_mem_disp', 'void', [ $st, 0, $psz ] );
-                $builder->emit( 'local_store', 'void', [ $ret_slot, $st ] );
+                $builder->emit( 'local_store',    'void', [ $ret_slot, $st ] );
                 $builder->emit_jump($l_zero_and_ret);
 
                 # The common return block
@@ -947,6 +958,13 @@ package Brocken::Compiler::Lowering {
                 my $raw = $builder->emit( 'cmp_eq', 'Int', [ $r, 1 ] );
                 return ( $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $raw, 2 ] ), 1 ] ), 'Int' );
             }
+            if ( $node->op eq '-' ) {
+                my $c1  = $builder->emit( 'constant', 'i64', [1] );
+                my $c2  = $builder->emit( 'constant', 'i64', [2] );
+                my $val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $r, $c1 ] ), $c2 ] );
+                my $neg = $builder->emit( 'sub', 'i64', [ 0, $val ] );
+                return ( $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $neg, $c2 ] ), $c1 ] ), 'Int' );
+            }
             die "Unary " . $node->op;
         }
 
@@ -1125,6 +1143,14 @@ package Brocken::Compiler::Lowering {
                 }
                 return ( undef, 'void' );
             }
+
+            if ( exists $native_funcs{ $node->name } ) {
+                my $info = $native_funcs{ $node->name };
+                my @args = map { ( $self->lower($_) )[0] } @{ $node->args };
+                my $res  = $builder->emit( 'call_native', 'Any', [ $info->{library}, $node->name, $info->{signature}, @args ] );
+                return ( $res, 'Any' );
+            }
+
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
             my @args      = map { ( $self->lower($_) )[0] } @{ $node->args };
             my $res       = $builder->emit( 'call_func', 'i64', [ 'M_' . $node->name, @args ] );
@@ -1283,19 +1309,30 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_MethodCall($node) {
-            if ( $node->name eq 'new' && $node->invocant isa Brocken::AST::Expr::Const && $node->invocant->type eq 'Class' ) {
-                my $ptr = $builder->emit( 'call_func', 'ptr', [ 'M_' . $node->invocant->value . '::new' ] );
+            my ($invocant, $method_name, $args);
+            if ($node isa Brocken::AST::Expr::MethodCall) {
+                $invocant = $node->object;
+                $method_name = $node->method;
+                $args = $node->args;
+            } else {
+                $invocant = $node->invocant;
+                $method_name = $node->name;
+                $args = $node->args;
+            }
+
+            if ( $method_name eq 'new' && $invocant isa Brocken::AST::Expr::Const && $invocant->type eq 'Class' ) {
+                my $ptr = $builder->emit( 'call_func', 'ptr', [ 'M_' . $invocant->value . '::new' ] );
                 $builder->emit( 'shadow_push', 'void', [$ptr] );
-                return ( $ptr, $node->invocant->value );
+                return ( $ptr, $invocant->value );
             }
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
-            my ( $or, $ot ) = $self->lower( $node->invocant );
-            my @as = map { ( $self->lower($_) )[0] } @{ $node->args };
-            if ( $ot eq 'Fiber' && $node->name eq 'switch' ) {
+            my ( $or, $ot ) = $self->lower( $invocant );
+            my @as = map { ( $self->lower($_) )[0] } @$args;
+            if ( $ot eq 'Fiber' && $method_name eq 'switch' ) {
                 return ( $builder->emit( 'call_func', 'Any', [ 'M_fiber_switch', $or, @as ] ), 'Any' );
             }
             my $vt  = $builder->emit( 'load_mem_disp', 'ptr', [ $or, 0 ] );
-            my $fn  = $builder->emit( 'load_mem_disp', 'ptr', [ $vt, ( $global_methods{ $node->name } // die $node->name ) * 8 ] );
+            my $fn  = $builder->emit( 'load_mem_disp', 'ptr', [ $vt, ( $global_methods{ $method_name } // die "Unknown method $method_name" ) * 8 ] );
             my $res = $builder->emit( 'call_reg',      'i64', [ $fn, $or, @as ] );
             $builder->emit( 'shadow_set', 'void', [$sp_backup] );
             return ( $res, 'Any' );
@@ -1427,6 +1464,86 @@ package Brocken::Compiler::Lowering {
             return (
                 $builder->emit( 'call_reg', 'i64', [ ( $self->lower( $node->invocant ) )[0], map { ( $self->lower($_) )[0] } @{ $node->args } ] ),
                 'Any' );
+        }
+
+        method lower_Eval($node) {
+            my $code_node = $node->code;
+            my $source;
+            if ( $code_node isa Brocken::AST::Expr::Const && $code_node->type eq 'String' ) {
+                $source = $code_node->value;
+            }
+            else {
+                die "Cannot eval: only static string literals are supported at compile-time";
+            }
+
+            my $jit = Brocken::JIT->new(
+                driver => $driver,
+                arch   => $driver->arch,
+                os     => $driver->os,
+                standalone => 1
+            );
+
+            my $run_result;
+            my $compile_error;
+            {
+                local $@;
+                eval { $run_result = $jit->compile_and_run($source) };
+                $compile_error = $@;
+            }
+            if ($compile_error) {
+                die "EVAL ERROR: $compile_error";
+            }
+            return ( $builder->emit( 'constant', 'i64', [$run_result // 0] ), 'Int' );
+        }
+
+        method lower_Use($node) {
+            return $self->lower_Require($node);
+        }
+
+        method lower_Require($node) {
+            my $package = $node->package;
+            my $filename = $package;
+            $filename =~ s|::|/|g;
+            $filename .= ".brocken";
+
+            # Search in lib/ and current directory
+            my $path;
+            for my $dir ('.', 'lib') {
+                if (-f "$dir/$filename") {
+                    $path = "$dir/$filename";
+                    last;
+                }
+            }
+            die "Cannot find module $package ($filename)" unless $path;
+
+            open my $fh, '<', $path or die "Cannot open $path: $!";
+            my $source = do { local $/; <$fh> };
+            close $fh;
+
+            my $tokens = Brocken::Lexer->new( source => $source )->lex();
+            my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+
+            # Register classes in the required file
+            $self->register_classes($ast);
+
+            # Lower the contents of the required file
+            my @main_stmts;
+            for my $n (@$ast) {
+                if    ( $n isa Brocken::AST::OOP::Method )    { $self->lower($n); }
+                elsif ( $n isa Brocken::AST::OOP::ClassDecl ) { $self->lower($n); }
+                else                                          { push @main_stmts, $n; }
+            }
+            for my $stmt (@main_stmts) { $self->lower($stmt); }
+
+            return ( $builder->emit( 'constant', 'i64', [1] ), 'Int' );
+        }
+
+        method lower_NativeDecl($node) {
+            $native_funcs{ $node->name } = {
+                library   => $node->library,
+                signature => $node->signature
+            };
+            return ( undef, 'void' );
         }
     }
 }

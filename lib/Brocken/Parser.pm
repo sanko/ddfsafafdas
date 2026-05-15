@@ -35,6 +35,7 @@ class Brocken::Parser {
         'defer'     => '_parse_defer',
         'use'       => '_parse_use',
         'require'   => '_parse_require',
+        'native'    => '_parse_native_decl',
         'eval'      => '_parse_eval',
         'return'    => '_parse_return',
         'exit'      => '_parse_exit',
@@ -55,6 +56,7 @@ class Brocken::Parser {
         '['             => '_parse_array_literal',
         '('             => '_parse_grouped_expr',
         '!'             => '_parse_unary_op',
+        '-'             => '_parse_unary_op',
         'true'          => '_parse_bool_literal',
         'false'         => '_parse_bool_literal',
         'undef'         => '_parse_undef_literal',
@@ -308,6 +310,23 @@ class Brocken::Parser {
         }
         $self->expect(';');
         return Brocken::AST::Stmt::Require->new( package => $package, line => $tok->{line}, col => $tok->{col} );
+    }
+
+    method _parse_native_decl() {
+        my $tok = $self->advance(); # consume 'native'
+        my $library = $self->expect('STRING')->{value};
+        $self->expect(',');
+        my $name = $self->expect('STRING')->{value};
+        $self->expect(',');
+        my $signature = $self->expect('STRING')->{value};
+        $self->_consume_stmt_terminator();
+        return Brocken::AST::NativeDecl->new(
+            library   => $library,
+            name      => $name,
+            signature => $signature,
+            line      => $tok->{line},
+            col       => $tok->{col}
+        );
     }
 
     method _parse_eval() {
@@ -603,6 +622,31 @@ Maps keyword strings to parsing methods for statements (C<if>, C<while>, C<class
 =item C<%PREFIX_HANDLERS>
 
 Handles tokens that start expressions: literals, variables, identifiers, unary ops, grouping, and expression-level
+keywords (C<sub>, C<fiber>, C<yield>, C<map>).
+
+=item C<%INFIX_HANDLERS>
+
+Handles binary operators between expressions: arithmetic, comparison, logical, assignment, dereference, ternary.
+
+=back
+
+Returns an arrayref of AST nodes from C<parse()>.
+
+=head1 METHODS
+
+=head2 parse
+
+  my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+
+Returns an arrayref of AST::Node objects.
+
+=head2 parse_expression($precedence)
+
+Parse an expression starting at the current token position.
+
+=cut
+1;
+dentifiers, unary ops, grouping, and expression-level
 keywords (C<sub>, C<fiber>, C<yield>, C<map>).
 
 =item C<%INFIX_HANDLERS>

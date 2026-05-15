@@ -4,8 +4,8 @@ package Brocken::Target::X64::Emit {
     no warnings 'experimental::class';
 
     class Brocken::Target::X64::Emit {
-        field $code : reader = '';
-        field %labels;
+        field $code   : reader = '';
+        field %labels : reader;
         field @fixups;
 
         method reg($r) {

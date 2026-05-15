@@ -93,7 +93,7 @@ package Brocken::Format::ELF {
             # 4. Finalize ELF Header and Program Headers at offset 0
             my $ehdr = pack(
                 'A4 C C C C C x7 S S L Q Q Q L S S S S S S',
-                "\x7fELF", 2, 1, 1, 0, 0, 2, ( $arch eq 'arm64' ? 183 : 62 ),
+                "\x7fELF", 2, 1, 1, 0, 0, $elf_type, ( $arch eq 'arm64' ? 183 : 62 ),
                 1,         $base + $l->get('.text')->{rva},
                 64,        $shoff, 0, 64, 56, 2, 64, scalar(@shdrs), $shstrtab_idx
             );
@@ -132,6 +132,13 @@ Builds a Linux ELF64 executable. Emits ELF header (EM_X86_64 or EM_AARCH64), two
 =head1 METHODS
 
 =head2 write_bin($filename, $text, $data, $arch, $os)
+
+Writes the complete ELF executable to disk.
+
+=cut
+}
+1;
+ $text, $data, $arch, $os)
 
 Writes the complete ELF executable to disk.
 

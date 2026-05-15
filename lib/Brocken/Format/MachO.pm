@@ -91,10 +91,12 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
         }
 
         # LC_MAIN
-        print $fh pack(
-            'L<L< Q<Q< Q<', 0x80000028, 24, $t_sec->{off},    # entryoff
-            0, 0                                              # stacksize
-        );
+        if ($self->type ne 'shared') {
+            print $fh pack(
+                'L<L< Q<Q< Q<', 0x80000028, 24, $t_sec->{off},    # entryoff
+                0, 0                                              # stacksize
+            );
+        }
 
         # Pad to text section start
         print $fh ( "\0" x ( $t_sec->{off} - tell($fh) ) );
@@ -112,6 +114,15 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
                 print $fh ( "\0" x ( $s->{off} - tell($fh) ) );
                 my $dw_payload = $self->debug_section( $s->{name} ) || '';
                 print $fh $dw_payload;
+            }
+        }
+        close $fh;
+        chmod 0755, $f;
+        return $f;
+    }
+}
+1;
+
             }
         }
         close $fh;

@@ -15,6 +15,9 @@ package Brocken::AST::OOP {
     { field $invocant : param : reader; field $name : param : reader; field $args : param : reader; }
 
     class Brocken::AST::OOP::AnonSub : isa(Brocken::AST::Node) { field $params : param : reader; field $body : param : reader; }
+
+    class Brocken::AST::NativeDecl : isa(Brocken::AST::Node)
+    { field $library : param : reader; field $name : param : reader; field $signature : param : reader; }
 }
 1;
 __END__

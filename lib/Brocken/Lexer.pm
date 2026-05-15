@@ -15,6 +15,7 @@ class Brocken::Lexer {
         sub
         fiber yield sleep
         defer
+        native
         if else unless
         while for map
         say print
