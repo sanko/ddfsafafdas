@@ -13,6 +13,7 @@
   - [x] Basic System Calls / WinAPI Imports.
   - [x] Automated Layout Manager (Section & Offset tracking).
   - [x] DWARF/SEH debug info generation.
+  - [ ] Wasm
 
 ## Milestone 1: The IR & Optimizer Pipeline
 - [x] Futhark-style map merging (Loop Fusion).
@@ -58,6 +59,6 @@
 - [ ] FFI (`Affix`): Declarative C-ABI bindings using opaque pointers.
   - *Note: Windows x64 requires arguments 5+ to be homed in the caller's pre-allocated shadow space `[rsp+32]`, while SysV uses `[rsp]`. We also must use `rcx`/`rdx` for args 1 & 2 on Win64 vs `rdi`/`rsi` on SysV. Shadow space must be maintained for SEH unwinding.*
 - [ ] Regex Engine: PCRE-compatible engine compiled directly to machine code.
-- [ ] Sandboxed `eval`: Embedded Wasm engine for capability-based security.
+- [ ] Sandboxed `eval`: Embedded engine for capability-based security. File, process, and I/O operations should require permission grants.
 - [ ] Self-hosting!
 - [ ] The `bkn` (bacon) CLI: TOML manifests, Git dependencies, and reproducible builds.
