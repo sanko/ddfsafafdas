@@ -9,6 +9,14 @@ package Brocken::Compiler::DataSegment {
         field $raw_data = '';
         field %string_offsets;
 
+        method add_raw_bytes($bytes) {
+            my $offset = length($raw_data);
+            $raw_data .= $bytes;
+            # Padding to 8-byte alignment
+            my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;
+            $raw_data .= "\0" x $pad;
+            return $offset;
+        }
         method add_string($str) {
             return $string_offsets{$str} if exists $string_offsets{$str};
             my $offset     = length($raw_data);

@@ -123,7 +123,7 @@ package Brocken::Format::PE {
                 0x20B, 14, 0, $soc, $soid, 0,
                 $l->get('.text')->{rva},
                 $l->get('.text')->{rva},
-                $base, $sa, $fa, 6, 0, 0, 0, 6, 0, 0, $image_size, $l->header_size, 0, ($self->type eq 'shared' ? 2 : 3), 0x8100, 0x100000, $sa, 0x100000, $sa, 0, 16
+                $base, $sa, $fa, 6, 0, 0, 0, 6, 0, 0, $image_size, $l->header_size, 0, 3, 0x8100, 0x100000, $sa, 0x100000, $sa, 0, 16
             );
 
             # Data Directory Entries (16 standard entries)
@@ -256,8 +256,13 @@ package Brocken::Format::PE {
         for my $i (0 .. $#exports) {
             my $name = $exports[$i];
             my $target_label = "E_$name"; # Use the autoboxing thunk not the internal M_ function
-            my $offset = $self->labels->{$target_label} // 0;
+            my $offset = $self->labels->{$target_label};
+            if (!defined $offset) {
+                warn "PE: Export label $target_label NOT FOUND in map!\n" if $ENV{BROCKEN_JIT_DEBUG};
+                $offset = 0;
+            }
             my $rva = $self->rva_for('.text') + $offset;
+            warn "PE: Export $name -> RVA " . sprintf("0x%X", $rva) . "\n" if $ENV{BROCKEN_JIT_DEBUG};
 
             $eat .= pack('L<', $rva);
             $npt .= pack('L<', $base_rva + $name_data_off + length($name_data));

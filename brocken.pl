@@ -482,7 +482,7 @@ my $est_data = length( $ds->get_raw_data() ) + 4096;
 $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
 $codegen->compile( [ $lowering->builder->instructions() ], $p );
-$p->as->resolve();
+$p->as->resolve( $p->text_rva, $p->data_rva );
 my %labels = $p->as->labels;
 $p->format->set_labels( \%labels );
 

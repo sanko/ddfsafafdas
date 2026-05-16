@@ -154,6 +154,13 @@ package Brocken::Target::X64 {
                 for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
                 $as->mov_reg( 'rbp', 'rsp' );
                 $as->sub_imm( 'rsp', $driver->frame_local_size );
+
+                # In shared libraries, we must reload R14 from the global Isolate pointer
+                # because the caller (Perl/C) won't have it set up.
+                if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
+                    $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
+                    $as->load_reg_mem( 'r14', 'r11', 0 );
+                }
             }
             elsif ( $op eq 'leave_func' ) {
                 if ( defined $inst->{args}[0] ) {
@@ -190,8 +197,18 @@ package Brocken::Target::X64 {
             }
             elsif ( $op =~ /^load_(func|data)_addr$/ ) {
                 my $trva = $inst->{args}[0];
-                if ( $trva =~ /^\d+$/ ) { $trva += ( $op eq 'load_data_addr' ? $driver->data_rva : 0 ); }
-                $as->lea_rva( $d_reg, $trva, $driver->text_rva );
+                if ( $trva =~ /^\d+$/ ) {
+                    if ( $op eq 'load_data_addr' ) {
+                        $as->lea_rva( $d_reg, "DATA:$trva" );
+                    }
+                    else {
+                        # Absolute text address (e.g. for JIT)
+                        $as->lea_rva( $d_reg, $trva, $driver->text_rva );
+                    }
+                }
+                else {
+                    $as->lea_rva( $d_reg, $trva );
+                }
             }
             elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $d_reg, 'r14' ); }
             elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( 'r14',  $reg_map->{ $inst->{args}[0] } ); }

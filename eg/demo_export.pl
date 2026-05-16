@@ -1,14 +1,13 @@
 #!/usr/bin/env perl
 use v5.40;
-use lib '../lib';
+use lib '../lib', 'lib';
 use Brocken;
 
 print "Compiling Brocken Shared Library (DLL)...\n";
 
 my $source = <<'BROCKEN';
 sub math_add(Int $a, Int $b) {
-    say $a;
-    say $b;
+    say "Hi!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! $a, $b";
     return $a + $b;
 }
 
@@ -41,10 +40,12 @@ $lowering->lower_program($ast);
 # 2. Optimize
 my $optimizer = Brocken::Compiler::Optimizer->new();
 $optimizer->optimize($lowering->builder);
+$lowering->builder->dump_ir("DLL IR");
 
 # 3. PRE-LAYOUT (Fixes the circular dependency)
 my $format = $driver->format;
 my $data   = $ds->get_raw_data();
+say "Data Segment Size: " . length($data) . " bytes";
 $format->pre_layout(65536, length($data), 'x64', 'win64');
 
 # 4. Codegen
@@ -54,10 +55,11 @@ $codegen->compile(\@insts, $driver);
 
 # 5. Resolve internal machine code jumps
 my $as = $driver->as;
-$as->resolve();
+$as->resolve($driver->text_rva, $driver->data_rva);
 
 # 6. Format & Link
-$format->set_labels({ $as->labels });
+my %all_labels = $as->labels;
+$format->set_labels(\%all_labels);
 
 # CRITICAL PE REQUIREMENT: Export names must be alphabetically sorted!
 my @exports = sort('math_add', 'get_status_code');
@@ -78,6 +80,12 @@ for my $name (@exports) {
     my $off = $labels{"M_$name"} // 'MISSING';
     my $rva = sprintf("0x%08X", $format->rva_for('.text') + $off);
     print "  $name -> Text Offset: $off bytes (RVA: $rva)\n";
+}
+
+print "--- Internal Labels ---\n";
+my %all_labels = $driver->as->labels;
+for my $l (sort keys %all_labels) {
+    printf "  %-30s -> 0x%04X (RVA: 0x%04X)\n", $l, $all_labels{$l}, $all_labels{$l} + 0x1000;
 }
 print "\n";
 
@@ -107,26 +115,14 @@ affix($out_dll, 'get_status_code', [] => Int);
 # ============================================================================
 print "--- Testing get_status_code() ---\n";
 my $status_raw = get_status_code();
-my $status     = $status_raw;
-
 print "Raw return value : $status_raw\n";
-print "Untagged value   : $status\n\n";
 
-# ============================================================================
-# TEST 2: math_add(5, 7)
-# ============================================================================
-print "--- Testing math_add(5, 7) ---\n";
+if ($status_raw == 42) {
+    print "SUCCESS: get_status_code returned 42\n";
+} else {
+    print "FAILURE: get_status_code returned $status_raw\n";
+}
 
-# Tag the integers before passing them into the ABI
-my $a_raw =  5;
-my $b_raw =  7;
+warn math_add(3, 4);
 
-# Call the DLL!
-my $sum_raw = math_add($a_raw, $b_raw);
-
-# Untag the result
-my $sum = $sum_raw;
-
-print "Passed in (raw)  : $a_raw (which is 5), $b_raw (which is 7)\n";
-print "Raw return value : $sum_raw\n";
-print "Untagged value   : $sum\n";
+exit 0; # Stop here for now

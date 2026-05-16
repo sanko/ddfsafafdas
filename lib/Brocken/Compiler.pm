@@ -24,6 +24,7 @@ package Brocken::Compiler {
         field @func_ranges;
         field %debug_func_params;
         field %debug_func_locals;
+        field $global_iso_offset : reader : writer = undef;
         ADJUST {
             # 1. Platform Detection
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );

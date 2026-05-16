@@ -112,6 +112,11 @@ package Brocken::Compiler::Lowering {
             my $export_name   = 'E_' . $node->name;    # E_ prefix for Export
             $builder->emit_label($export_name);
             $builder->emit( 'enter_func', 'void', [] );
+
+            # RELOAD ISOLATE (Always load from global pointer)
+            $builder->emit( 'set_isolate_ctx', 'void',
+                [ $builder->emit( 'load_mem_disp', 'i64', [ $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] ), 0 ] ) ] );
+
             my @boxed_args;
             my $arg_idx = 0;
 
@@ -238,25 +243,32 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func',     'void', [$cf] );
         }
 
-        method lower_program($nodes) {
-            $builder->emit_jump('L_MAIN_START');
-            $self->inject_runtime();
-            $self->register_classes($nodes);
-            my @main_stmts;
-            for my $node (@$nodes) {
-                if    ( $node isa Brocken::AST::OOP::Method )    { $self->lower($node); }
-                elsif ( $node isa Brocken::AST::OOP::ClassDecl ) { $self->lower($node); }
-                else                                             { push @main_stmts, $node; }
-            }
-            $driver->reset_locals();
-            $builder->emit_label('L_MAIN_START');
+        method _emit_runtime_init_sub() {
+            $builder->emit_label('M_runtime_init');
             $builder->emit( 'enter_func', 'void', [] );
+
+            # Breadcrumb 1: Entered M_runtime_init
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("--- ENTER M_runtime_init ---\n") ] ) ] );
+
+            # Guard: Only init once
+            my $giso_ptr = $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] );
+            my $giso_val = $builder->emit( 'load_mem_disp', 'i64', [ $giso_ptr, 0 ] );
+            my $l_already_init = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $giso_val, 0 ] ), $l_already_init, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+
+            # Breadcrumb 2: Initializing
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("--- Initializing Isolate ---\n") ] ) ] );
+
             if ( !$self->skip_runtime ) {
                 $builder->emit( 'intrinsic_setup_fault_handler', 'void', [] );
                 $builder->emit( 'intrinsic_setup_env',           'void', [] );
             }
             my $iso_reg = $builder->emit( 'intrinsic_alloc', 'ptr', [1024] );
             $builder->emit( 'set_isolate_ctx', 'void', [$iso_reg] );
+
+            # Store Isolate into global pointer
+            $builder->emit( 'store_mem_disp', 'void', [ $giso_ptr, 0, $iso_reg ] );
 
             # Pointer initialization (Use raw 0 for linked lists)
             $builder->emit( 'store_mem_disp', 'void', [ $iso_reg, $driver->iso_offset('fiber_head'), $builder->emit( 'constant', 'i64', [0] ) ] );
@@ -285,7 +297,58 @@ package Brocken::Compiler::Lowering {
             my $state_mem = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('state_ptr'), $state_mem ] );
 
+            # Initialize "Main" Fiber
+            my $leaf_64  = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
+            my $main_fcb = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64 ] );
+
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('current_fcb'), $main_fcb ] );
+            $builder->emit( 'store_mem_disp', 'void',
+                [ $builder->emit( 'get_isolate_ctx', 'ptr', [] ), $driver->iso_offset('fiber_head'), $main_fcb ] );
+
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), 0 ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  0 ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('next'),        0 ] );
+
+            my $m_handle = $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('wait_handle'), $m_handle ] );
+
+            my $leaf_16k  = $builder->emit( 'constant',  'i64', [ 16384 | hex("2000000000000000") ] );
+            my $main_shad = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_16k ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), $main_shad ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  $main_shad ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('caller'),      $builder->emit( 'constant', 'i64', [0] ) ] );
+
+            $builder->emit_label($l_already_init);
+            $builder->emit( 'leave_func', 'void', [0] );
+        }
+
+        method lower_program($nodes) {
+            $driver->set_global_iso_offset( $data_segment->add_raw_bytes( "\0" x 8 ) );
+            $builder->emit_jump('L_MAIN_START');
+            $self->inject_runtime();
+            $self->_emit_runtime_init_sub();
+            $self->register_classes($nodes);
+            my @main_stmts;
+            for my $node (@$nodes) {
+                if    ( $node isa Brocken::AST::OOP::Method )    { $self->lower($node); }
+                elsif ( $node isa Brocken::AST::OOP::ClassDecl ) { $self->lower($node); }
+                else                                             { push @main_stmts, $node; }
+            }
+            $builder->emit_label('L_MAIN_START');
+            $builder->emit( 'enter_func', 'void', [] );
+
+            # Breadcrumb: DLL Loaded
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("--- Brocken DLL: L_MAIN_START ---\n") ] ) ] );
+
+            # Ensure runtime is initialized
+            $builder->emit( 'call_func', 'void', ['M_runtime_init'] );
+
+            # RELOAD ISOLATE (M_runtime_init restored r14 to junk)
+            $builder->emit( 'set_isolate_ctx', 'void',
+                [ $builder->emit( 'load_mem_disp', 'i64', [ $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] ), 0 ] ) ] );
+
             # VTable Generation
+            my $state_mem = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('state_ptr') ] );
             for my $cname ( sort keys %class_info ) {
                 my $c           = $class_info{$cname};
                 my $ptr_count   = scalar @{ $c->{ptr_offsets} };
@@ -304,31 +367,6 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'store_mem_disp', 'void', [ $state_mem, $c->{id} * 8, $method_base ] );
             }
 
-            # Initialize "Main" Fiber
-            # --- Initialize "Main" Fiber ---
-            my $leaf_64  = $builder->emit( 'constant',  'i64', [ 64 | hex("2000000000000000") ] );
-            my $main_fcb = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_64 ] );
-
-            # Link it immediately! So it survives if next alloc triggers GC
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('current_fcb'), $main_fcb ] );
-            $builder->emit( 'store_mem_disp', 'void',
-                [ $builder->emit( 'get_isolate_ctx', 'ptr', [] ), $driver->iso_offset('fiber_head'), $main_fcb ] );
-
-            # Zero out fields so GC doesn't follow junk
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), 0 ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  0 ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('next'),        0 ] );
-
-            # --- START: NEW BIT FOR INTERRUPTIBLE SLEEP ---
-            my $m_handle = $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('wait_handle'), $m_handle ] );
-
-            # --- END: NEW BIT ---
-            my $leaf_16k  = $builder->emit( 'constant',  'i64', [ 16384 | hex("2000000000000000") ] );
-            my $main_shad = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $leaf_16k ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_base'), $main_shad ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('shadow_ptr'),  $main_shad ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $main_fcb, $driver->fcb_offset('caller'),      $builder->emit( 'constant', 'i64', [0] ) ] );
             $current_func_name = 'L_MAIN_START';
             @func_locals       = ();
             $self->lower_block( \@main_stmts );

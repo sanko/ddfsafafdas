@@ -176,10 +176,17 @@ package Brocken::Target::X64::Emit {
         }
         method syscall { $code .= pack 'CC', 0x0F, 0x05 }
 
-        method resolve {
+        method resolve( $text_rva = 0, $data_rva = 0 ) {
             for (@fixups) {
-                my $t = $labels{ $_->{target} };
-                die "Linker Error: Unresolved label '$_->{target}'\n" unless defined $t;
+                my $target = $_->{target};
+                my $t;
+                if ( $target =~ /^DATA:(\d+)$/ ) {
+                    $t = $1 + $data_rva - $text_rva;
+                }
+                else {
+                    $t = $labels{$target};
+                    die "Linker Error: Unresolved label '$target'\n" unless defined $t;
+                }
                 substr( $code, $_->{offset}, 4, pack( 'l<', $t - ( $_->{offset} + 4 ) ) );
             }
         }
