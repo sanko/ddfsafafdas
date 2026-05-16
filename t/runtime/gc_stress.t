@@ -3,17 +3,18 @@ use lib '../../lib';
 use Brocken::TestHelpers qw(test_brocken);
 use Test::More;
 plan tests => 8;
+
 #~ test_brocken(
-    #~ name   => 'small_arrays',
-    #~ source => q{
-        #~ my Int $i = 0;
-        #~ while ($i < 100) {
-            #~ my Any $a = [1];
-            #~ $i = $i + 1;
-        #~ }
-        #~ say "Done";
-    #~ },
-    #~ expected => qr/Done/
+#~ name   => 'small_arrays',
+#~ source => q{
+#~ my Int $i = 0;
+#~ while ($i < 100) {
+#~ my Any $a = [1];
+#~ $i = $i + 1;
+#~ }
+#~ say "Done";
+#~ },
+#~ expected => qr/Done/
 #~ );
 test_brocken(
     name   => 'medium_arrays',

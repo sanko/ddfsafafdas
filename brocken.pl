@@ -425,8 +425,6 @@ say "--- FILE CONTENT ---";
 say $content;
 say "--------------------";
 END
-
-
 $source_code = <<'END';
 my Int $i = 0;
         while ($i < 1000) {
@@ -437,11 +435,11 @@ my Int $i = 0;
         say "Done";
         #~ sleep 20;
 END
-
 my $dbg = 0;
 my $os;
 my $type = 'exe';
 my @files;
+
 for ( my $i = 0; $i < @ARGV; $i++ ) {
     my $arg = $ARGV[$i];
     if ( $arg =~ /^--debug(?:=(\d+))?$/ ) {
@@ -457,14 +455,12 @@ for ( my $i = 0; $i < @ARGV; $i++ ) {
         push @files, $arg;
     }
 }
-
 if ( @files && -f $files[0] ) {
     open my $fh, '<', $files[0] or die "Cannot read $files[0]: $!";
     $source_code = do { local $/; <$fh> };
     close $fh;
     say "Reading source from: $files[0]";
 }
-
 my $p = Brocken::Compiler->new( debug => $dbg, type => $type, ( $os ? ( os => $os ) : () ) );
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
 say "Debug: " . $p->debug;
@@ -475,8 +471,9 @@ my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => 
 $lowering->lower_program($ast);
 my $optimizer = Brocken::Compiler::Optimizer->new();
 $optimizer->optimize( $lowering->builder );
+
 # $lowering->builder->dump_ir("FINAL IR");
-my $insts = $lowering->builder->instructions;
+my $insts    = $lowering->builder->instructions;
 my $est_text = scalar(@$insts) * 32 + 4096;
 my $est_data = length( $ds->get_raw_data() ) + 4096;
 $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
@@ -493,12 +490,12 @@ if ( $p->type eq 'shared' ) {
             push @exports, $1;
         }
     }
+
     # Pass exports to format if it's PE
     if ( $p->format isa Brocken::Format::PE ) {
         $p->format->set_exported_funcs( \@exports );
     }
 }
-
 if ( $p->debug >= 1 ) {
     say "\n--- DEBUG SOURCE LOCATIONS ---";
     my @sls = $p->source_locs;
@@ -573,7 +570,7 @@ if ( $p->debug >= 1 ) {
         }
     }
 }
-my $ext = $p->os eq 'win64' ? ($p->type eq 'shared' ? '.dll' : '.exe') : ($p->type eq 'shared' ? '.so' : '');
+my $ext = $p->os eq 'win64' ? ( $p->type eq 'shared' ? '.dll' : '.exe' ) : ( $p->type eq 'shared' ? '.so' : '' );
 $ext = '.dylib' if $p->os eq 'macos' && $p->type eq 'shared';
 my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os, $p->type );
 say "Executing Native Binary...";
@@ -600,7 +597,7 @@ else {
     }
     push @cmd, "-ex", "run", "-ex", "bt", "-ex", "quit \$_exitcode", "--args", $run;
 
-# Use the list form of system() to bypass shell parsing issues entirely
+    # Use the list form of system() to bypass shell parsing issues entirely
     system(@cmd);
 }
 say "Exit code: " . ( $? >> 8 );

@@ -33,16 +33,20 @@ sub test_brocken {
     warn;
     $p->as->resolve();
     warn;
-    my $ext    = $p->os eq 'win64' ? '.exe' : '';
-    my $exe    = $p->format->write_bin( "test_bin$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os );
+    my $ext = $p->os eq 'win64' ? '.exe' : '';
+
+my $exe = "test_bin$ext";
+
+    $p->compile_source($source, $exe);
     warn;
-    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
+    my $run = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
     warn;
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
         warn;
         alarm($timeout);
         warn $run;
+
         #~ my $out = `$run 2>&1`;
         my $out = system $run;
         warn;

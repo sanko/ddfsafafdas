@@ -11,14 +11,27 @@ package Brocken::Target::ARM64 {
             return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27)];
         }
 
+        method fp_registers() {
+            return [qw(d8 d9 d10 d11 d12 d13 d14 d15)];
+        }
+
         method _abi_arg_reg($idx) {
             return (qw[x0 x1 x2 x3 x4 x5 x6 x7])[$idx] // 'stack';
         }
 
+        method _abi_fp_arg_reg($idx) {
+            return (qw[d0 d1 d2 d3 d4 d5 d6 d7])[$idx] // "d$idx";
+        }
+
+        method _abi_fp_return_reg() {
+            return 'd0';
+        }
+
         method emit_op( $as, $inst, $reg_map, $driver ) {
-            my $op    = $inst->{op};
-            my $v     = sub { $self->val( $reg_map, shift ) };
-            my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
+            my $op       = $inst->{op};
+            my $v        = sub { $self->val( $reg_map, shift ) };
+            my $d_reg    = $reg_map->{ $inst->{dest} } if $inst->{dest};
+            my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) );
             if    ( $op eq 'jmp' ) { $as->jmp( $inst->{target} ); }
             elsif ( $op eq 'cond_br' ) {
                 my $reg = $v->( $inst->{reg} );
@@ -26,7 +39,16 @@ package Brocken::Target::ARM64 {
                 $as->jcc( $driver->cc('nz'), $inst->{true_l} );
                 $as->jmp( $inst->{false_l} );
             }
-            elsif ( $op eq 'constant' ) { $as->mov_imm( $d_reg, $inst->{args}[0] ); }
+            elsif ( $op eq 'constant' ) {
+                if ($is_float) {
+                    my $bits = unpack( 'Q<', pack( 'd<', $inst->{args}[0] ) );
+                    $as->mov_imm( 'x16', $bits );
+                    $as->fmov_x_to_d( $d_reg, 'x16' );
+                }
+                else {
+                    $as->mov_imm( $d_reg, $inst->{args}[0] );
+                }
+            }
             elsif ( $op eq 'mov' ) {
                 my $s = $v->( $inst->{args}[0] );
                 if ( $inst->{args}[0] =~ /^%/ || $inst->{args}[0] =~ /^[a-z]/i ) { $as->mov_reg( $d_reg, $s ) if ( $d_reg // '' ) ne ( $s // '' ); }
@@ -35,6 +57,26 @@ package Brocken::Target::ARM64 {
             elsif ( $op =~ /^(add|sub|mul)$/ ) {
                 my $lv = $v->( $inst->{args}[0] );
                 my $rv = $v->( $inst->{args}[1] );
+                if ($is_float) {
+                    my $ln = $lv;
+                    if ( $inst->{args}[0] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $lv ) );
+                        $as->mov_imm( 'x16', $bits );
+                        $as->fmov_x_to_d( 'd16', 'x16' );
+                        $ln = 'd16';
+                    }
+                    my $rs = $rv;
+                    if ( $inst->{args}[1] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $rv ) );
+                        $as->mov_imm( 'x17', $bits );
+                        $as->fmov_x_to_d( 'd17', 'x17' );
+                        $rs = 'd17';
+                    }
+                    if    ( $op eq 'add' ) { $as->fadd_reg( $d_reg, $ln, $rs ); }
+                    elsif ( $op eq 'sub' ) { $as->fsub_reg( $d_reg, $ln, $rs ); }
+                    elsif ( $op eq 'mul' ) { $as->fmul_reg( $d_reg, $ln, $rs ); }
+                    return;
+                }
                 my $ln = ( $inst->{args}[0] =~ /^%/ ) ? $lv : 'x16';
                 $as->mov_imm( 'x16', $lv ) if $inst->{args}[0] !~ /^%/;
                 if ( $inst->{args}[1] =~ /^%/ ) {
@@ -73,6 +115,24 @@ package Brocken::Target::ARM64 {
             elsif ( $op =~ /^(div|mod)$/ ) {
                 my $lv = $v->( $inst->{args}[0] );
                 my $rv = $v->( $inst->{args}[1] );
+                if ($is_float) {
+                    my $ln = $lv;
+                    if ( $inst->{args}[0] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $lv ) );
+                        $as->mov_imm( 'x16', $bits );
+                        $as->fmov_x_to_d( 'd16', 'x16' );
+                        $ln = 'd16';
+                    }
+                    my $rs = $rv;
+                    if ( $inst->{args}[1] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $rv ) );
+                        $as->mov_imm( 'x17', $bits );
+                        $as->fmov_x_to_d( 'd17', 'x17' );
+                        $rs = 'd17';
+                    }
+                    $as->fdiv_reg( $d_reg, $ln, $rs );
+                    return;
+                }
                 my $ln = ( $inst->{args}[0] =~ /^%/ ) ? $lv : 'x16';
                 $as->mov_imm( 'x16', $lv ) if $inst->{args}[0] !~ /^%/;
                 my $rs = ( $inst->{args}[1] =~ /^%/ ) ? $reg_map->{ $inst->{args}[1] } : 'x17';
@@ -110,10 +170,30 @@ package Brocken::Target::ARM64 {
                 my $type = $1;
                 my $lv   = $v->( $inst->{args}[0] );
                 my $rv   = $v->( $inst->{args}[1] );
-                my $ln   = ( $inst->{args}[0] =~ /^%/ ) ? $lv : 'x16';
-                $as->mov_imm( 'x16', $lv ) if $inst->{args}[0] !~ /^%/;
-                $inst->{args}[1] =~ /^%/ ? $as->cmp_reg_reg( $ln, $reg_map->{ $inst->{args}[1] } ) : $as->cmp_reg_imm( $ln, $rv );
-                $as->setcc( $driver->cc($type), $d_reg );
+                if ($is_float) {
+                    my $ln = $lv;
+                    if ( $inst->{args}[0] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $lv ) );
+                        $as->mov_imm( 'x16', $bits );
+                        $as->fmov_x_to_d( 'd16', 'x16' );
+                        $ln = 'd16';
+                    }
+                    my $rs = $rv;
+                    if ( $inst->{args}[1] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $rv ) );
+                        $as->mov_imm( 'x17', $bits );
+                        $as->fmov_x_to_d( 'd17', 'x17' );
+                        $rs = 'd17';
+                    }
+                    $as->fcmp_reg( $ln, $rs );
+                    $as->setcc( $driver->cc($type), $d_reg );
+                }
+                else {
+                    my $ln = ( $inst->{args}[0] =~ /^%/ ) ? $lv : 'x16';
+                    $as->mov_imm( 'x16', $lv ) if $inst->{args}[0] !~ /^%/;
+                    $inst->{args}[1] =~ /^%/ ? $as->cmp_reg_reg( $ln, $reg_map->{ $inst->{args}[1] } ) : $as->cmp_reg_imm( $ln, $rv );
+                    $as->setcc( $driver->cc($type), $d_reg );
+                }
             }
             elsif ( $op =~ /^(shl|shr)$/ ) {
                 my $val = $v->( $inst->{args}[0] );
@@ -133,15 +213,33 @@ package Brocken::Target::ARM64 {
             elsif ( $op eq 'local_store' ) {
                 my $val = $v->( $inst->{args}[1] );
                 my $src = ( $inst->{args}[1] =~ /^%/ ) ? $reg_map->{ $inst->{args}[1] } : 'x16';
-                $as->mov_imm( 'x16', $val ) if $inst->{args}[1] !~ /^%/;
                 my $off = -$inst->{args}[0];
-                if ( $off < 0 || $off % 8 != 0 ) { $as->stur_mem_disp_reg( 'x29', $off, $src ); }
-                else                             { $as->store_mem_disp_reg( 'x29', $off, $src ); }
+                if ($is_float) {
+                    if ( $inst->{args}[1] !~ /^%/ ) {
+                        my $bits = unpack( 'Q<', pack( 'd<', $val ) );
+                        $as->mov_imm( 'x16', $bits );
+                        $as->fmov_x_to_d( 'd16', 'x16' );
+                        $src = 'd16';
+                    }
+                    if ( $off < 0 || $off % 8 != 0 ) { $as->stur_d_mem( $src, 'x29', $off ); }
+                    else                             { $as->str_d_mem( $src, 'x29', $off ); }
+                }
+                else {
+                    $as->mov_imm( 'x16', $val ) if $inst->{args}[1] !~ /^%/;
+                    if ( $off < 0 || $off % 8 != 0 ) { $as->stur_mem_disp_reg( 'x29', $off, $src ); }
+                    else                             { $as->store_mem_disp_reg( 'x29', $off, $src ); }
+                }
             }
             elsif ( $op eq 'local_load' ) {
                 my $off = -$inst->{args}[0];
-                if ( $off < 0 || $off % 8 != 0 ) { $as->ldur_reg_mem( $d_reg, 'x29', $off ); }
-                else                             { $as->load_reg_mem( $d_reg, 'x29', $off ); }
+                if ($is_float) {
+                    if ( $off < 0 || $off % 8 != 0 ) { $as->ldur_d_mem( $d_reg, 'x29', $off ); }
+                    else                             { $as->ldr_d_mem( $d_reg, 'x29', $off ); }
+                }
+                else {
+                    if ( $off < 0 || $off % 8 != 0 ) { $as->ldur_reg_mem( $d_reg, 'x29', $off ); }
+                    else                             { $as->load_reg_mem( $d_reg, 'x29', $off ); }
+                }
             }
             elsif ( $op eq 'load_mem_disp' ) {
                 my $off = $inst->{args}[1];
@@ -201,7 +299,14 @@ package Brocken::Target::ARM64 {
                 }
                 else { $as->lea_rva( $d_reg, $target, $driver->text_rva ); }
             }
-            elsif ( $op eq 'get_arg' )         { $as->mov_reg( $d_reg, $self->_abi_arg_reg( $inst->{args}[0] ) ); }
+            elsif ( $op eq 'get_arg' ) {
+                if ($is_float) {
+                    $as->fmov_reg( $d_reg, $self->_abi_fp_arg_reg( $inst->{args}[0] ) );
+                }
+                else {
+                    $as->mov_reg( $d_reg, $self->_abi_arg_reg( $inst->{args}[0] ) );
+                }
+            }
             elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( 'x28',  $reg_map->{ $inst->{args}[0] } ); }
             elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $d_reg, 'x28' ); }
             elsif ( $op eq 'enter_func' ) {
@@ -214,7 +319,21 @@ package Brocken::Target::ARM64 {
             }
             elsif ( $op eq 'leave_func' ) {
                 my $rv = $v->( $inst->{args}[0] );
-                if ( defined $rv ) { $inst->{args}[0] =~ /^%/ ? $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } ) : $as->mov_imm( 'x0', $rv ); }
+                if ( defined $rv ) {
+                    if ($is_float) {
+                        if ( $inst->{args}[0] =~ /^%/ ) {
+                            $as->fmov_reg( 'd0', $reg_map->{ $inst->{args}[0] } );
+                        }
+                        else {
+                            my $bits = unpack( 'Q<', pack( 'd<', $rv ) );
+                            $as->mov_imm( 'x16', $bits );
+                            $as->fmov_x_to_d( 'd0', 'x16' );
+                        }
+                    }
+                    else {
+                        $inst->{args}[0] =~ /^%/ ? $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } ) : $as->mov_imm( 'x0', $rv );
+                    }
+                }
                 my $size = $driver->frame_local_size;
                 $size = ( $size + 15 ) & ~15;
                 $as->add_imm( 'sp', $size ) if $size > 0;

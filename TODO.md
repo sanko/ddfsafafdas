@@ -62,3 +62,16 @@
 - [ ] Sandboxed `eval`: Embedded engine for capability-based security. File, process, and I/O operations should require permission grants.
 - [ ] Self-hosting!
 - [ ] The `bkn` (bacon) CLI: TOML manifests, Git dependencies, and reproducible builds.
+
+## Milestone 8: Hardware Acceleration & HPC (High-Performance Computing)
+- [ ] **Dynamic OS Linker**: Refactor `PE.pm` and `ELF.pm` to accept a dynamic list of imports.
+  - *Note: Instead of a hardcoded kernel32 table, the compiler must build the IAT/PLT by merging runtime requirements (GC/Threads) with user-requested symbols. Windows requires careful RVA ordering for the Hint/Name table.*
+- [ ] **Processor Topology & Affinity**: Core selection and P/E-core scheduling.
+  - *Note: Implement `sched_setaffinity` (Linux) and `SetThreadAffinityMask` (Win). For modern laptops, we need to detect Alder Lake/Apple M-series topology to distinguish between Performance and Efficiency cores to prevent the GC from being scheduled on a slow core.*
+- [ ] **The GPGPU Backend**: Emit PTX (NVIDIA) and SPIR-V (Vulkan/OpenCL).
+  - *Note: This requires a new IR lowering path. GPUs use a SIMT (Single Instruction, Multiple Threads) model. We'll need to handle 'Device Memory' vs 'Host Memory' transitions and generate the boilerplate for kernel dispatch.*
+- [ ] **NPU & Tensor Pipeline**: Targeting AI Accelerators (Apple AMX, Intel AMX, Qualcomm Hexagon).
+  - *Note: This is the 'Wild West.' For Apple, we must emit undocumented AMX opcodes for the matrix co-processor. For Intel, we use AMX (Advanced Matrix Extensions) tiles. The IR needs a new 'Matrix' type that maps to these hardware tiles.*
+- [ ] **Vectorization (SIMD)**: Auto-vectorizer for the SSA IR.
+  - *Note: Map IR loops to AVX-512 or ARM Neon instructions. The register allocator must be upgraded to handle 128-bit (XMM/Q), 256-bit (YMM), and 512-bit (ZMM) registers without clobbering the standard GPRs.*
+- [ ] **The "Universal" Header**: A single binary entry-point for PE/ELF/Mach-O (Fat Binaries).

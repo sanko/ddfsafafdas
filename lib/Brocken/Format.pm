@@ -10,19 +10,18 @@ class Brocken::Format {
     field $labels         : reader = {};
     field $exported_funcs : reader = [];
     #
-    method set_debug_data($d)     { $debug_data = $d; }
-    method debug_section($name)   { return $self->debug_data->{$name} // ''; }
-    method set_func_ranges($r)    { $func_ranges = $r; }
-    method set_labels($l)         { $labels      = $l; }
+    method set_debug_data($d)   { $debug_data = $d; }
+    method debug_section($name) { return $self->debug_data->{$name} // ''; }
+    method set_func_ranges($r)  { $func_ranges = $r; }
+    method set_labels($l)       { $labels      = $l; }
 
-# shared lib
-
+    # shared lib
     method set_exported_funcs($f) { $exported_funcs = $f; }
-#
+    #
     method rva_for($name) {
         return $self->layout->get($name)->{rva};
     }
-
+method image_base() { return 0; }
     method pre_layout( $text_size, $data_size, $arch, $os, $debug = 0 ) {
         require Brocken::Format::Layout;
         my $fa = $os eq 'macos' ? 0x4000 : ( $os eq 'win64' ? 0x200 : 0x1000 );

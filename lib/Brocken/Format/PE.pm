@@ -6,7 +6,7 @@ package Brocken::Format::PE {
     use File::Basename qw(basename);
 
     class Brocken::Format::PE : isa(Brocken::Format) {
-         our %IMPORTS = (
+        our %IMPORTS = (
             ExitProcess                 => 0,
             GetStdHandle                => 8,
             WriteFile                   => 16,
@@ -26,7 +26,7 @@ package Brocken::Format::PE {
             return $self->rva_for('.idata') + ( $IMPORTS{$n} // die "Unknown PE import: $n" );
         }
 
-        method _setup_layout( $l, $t, $d, $a, $o, $type, $dbg = 0 ) {
+        method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 ) {
             $l->add_section( '.text',  $t,                    0x60000020 );
             $l->add_section( '.data',  ( $d > 0 ? $d : 512 ), 0xC0000040 );
             $l->add_section( '.idata', 2048,                  0xC0000040 );
@@ -35,7 +35,6 @@ package Brocken::Format::PE {
                 warn "PE: Adding .edata section\n" if $ENV{BROCKEN_JIT_DEBUG};
                 $l->add_section( '.edata', 2048, 0x40000040 );
             }
-
             if ( $dbg >= 1 ) {
                 $l->add_section( '.debug_line',     4096, 0x42000040 );
                 $l->add_section( '.debug_info',     8192, 0x42000040 );
@@ -60,15 +59,15 @@ package Brocken::Format::PE {
             my $idata_rva = $l->get('.idata')->{rva};
             my $idata_raw = $self->_build_idata_raw($idata_rva);
             warn "PE: idata built\n" if $ENV{BROCKEN_JIT_DEBUG};
+            my ( $edata_data, $edata_rva, $edata_size ) = ( '', 0, 0 );
 
-            my ($edata_data, $edata_rva, $edata_size) = ('', 0, 0);
-            if ($self->type eq 'shared') {
+            if ( $self->type eq 'shared' ) {
                 warn "PE: building edata...\n" if $ENV{BROCKEN_JIT_DEBUG};
-                $edata_rva = $l->get('.edata')->{rva};
-                $edata_data = $self->_build_edata_raw($edata_rva, $filename);
-                $edata_size = length($edata_data);
+                $edata_rva                = $l->get('.edata')->{rva};
+                $edata_data               = $self->_build_edata_raw( $edata_rva, $filename );
+                $edata_size               = length($edata_data);
                 $l->get('.edata')->{size} = $edata_size;
-                $l->calculate(0x1000); # Recalculate offsets/RVAs
+                $l->calculate(0x1000);    # Recalculate offsets/RVAs
                 warn "PE: edata built, size=$edata_size\n" if $ENV{BROCKEN_JIT_DEBUG};
             }
 
@@ -85,14 +84,14 @@ package Brocken::Format::PE {
                 $pdata_rva                = $l->get('.pdata')->{rva};
                 $pdata_size               = length($pdata_data);
             }
-            if ($ENV{BROCKEN_JIT_DEBUG}) {
+            if ( $ENV{BROCKEN_JIT_DEBUG} ) {
                 for my $s ( $l->sections ) {
                     warn "PE: Section " . $s->{name} . " size=" . $s->{size} . "\n";
                 }
             }
             my $image_size = $l->calculate(0x1000);
             warn "PE: layout calculated, image_size=$image_size\n" if $ENV{BROCKEN_JIT_DEBUG};
-            my $m_type     = ( $arch eq 'arm64' ? 0xAA64 : 0x8664 );
+            my $m_type = ( $arch eq 'arm64' ? 0xAA64 : 0x8664 );
             open my $fh, '>', $filename or die $!;
             binmode $fh;
             print $fh pack( 'S< x58 L<', 0x5A4D, 0x80 ), pack( 'a64', "Brocken AOT\n\$" ), pack( 'L<', 0x4550 );
@@ -107,9 +106,9 @@ package Brocken::Format::PE {
                 }
                 else { $sec_name{ $s->{name} } = $s->{name}; }
             }
-            my $num_syms = length($strtab) ? 1                                                : 0;
-            my $sym_off  = $num_syms       ? ( 132 + 20 + 240 + scalar( $l->sections ) * 40 ) : 0;
-            my $characteristics = ($self->type eq 'shared') ? 0x2022 : 0x0022;
+            my $num_syms        = length($strtab)             ? 1                                                : 0;
+            my $sym_off         = $num_syms                   ? ( 132 + 20 + 240 + scalar( $l->sections ) * 40 ) : 0;
+            my $characteristics = ( $self->type eq 'shared' ) ? 0x2022                                           : 0x0022;
             print $fh pack( 'S< S< L< L< L< S< S<', $m_type, scalar( $l->sections ), time(), $sym_off, $num_syms, 240, $characteristics );
 
             # Optional Header
@@ -131,8 +130,8 @@ package Brocken::Format::PE {
             #~ if ($self->type eq 'shared') {
             #~ my $edata = $l->get('.edata');
             #~ }
-              print $fh pack( 'L< L<', $edata_rva, $edata_size );       # 0: Export
-            print $fh pack( 'L< L<', $idata_rva + 256, 40 );          # 1: Import
+            print $fh pack( 'L< L<', $edata_rva,       $edata_size );    # 0: Export
+            print $fh pack( 'L< L<', $idata_rva + 256, 40 );             # 1: Import
             print $fh pack( 'L< L<', 0,                0 );              # 2: Resource
             print $fh pack( 'L< L<', $pdata_rva,       $pdata_size );    # 3: Exception (.pdata)
             print $fh ( pack( 'L< L<', 0, 0 ) x 8 );                     # 4-11: reserved
@@ -190,7 +189,7 @@ package Brocken::Format::PE {
 
         method _build_xdata () {
             my $locals      = 1024;
-            my $ctx         = 64;                          # 8 preserved regs on Win64
+            my $ctx         = 64;                  # 8 preserved regs on Win64
             my $shadow      = 32;
             my $target_size = $locals + $shadow;
             my $rem         = ( 8 - $ctx ) % 16;
@@ -199,8 +198,8 @@ package Brocken::Format::PE {
             $align_padding += 16 if $align_padding < 0;
             my $FRAME  = $target_size + $align_padding;
             my $scaled = $FRAME / 8;
-            my $hdr = pack( 'C C C C', 1, 22, 10, 0 );
-            my $codes = pack( 'CC', 22, 0x01 );
+            my $hdr    = pack( 'C C C C', 1, 22, 10, 0 );
+            my $codes  = pack( 'CC', 22, 0x01 );
             $codes .= pack( 'S<', $scaled );
             $codes .= pack( 'CC', 12, 0xF0 );
             $codes .= pack( 'CC', 10, 0xE0 );
@@ -221,59 +220,47 @@ package Brocken::Format::PE {
             return $data;
         }
 
-    my @EXPLICIT_EXPORTS;
+        method _build_edata_raw( $base_rva, $filename ) {
+            my @exports     = @{ $self->exported_funcs // [] };
+            my $num_exports = scalar @exports;
+            return ( "\0" x 2048 ) if $num_exports == 0;
+            my $eat_off       = 40;
+            my $npt_off       = $eat_off + ( 4 * $num_exports );
+            my $ot_off        = $npt_off + ( 4 * $num_exports );
+            my $name_data_off = $ot_off + ( 2 * $num_exports );
+            my $edat          = pack(
+                'L< L< S< S< L< L< L< L< L< L< L<',
+                0, time(),       0, 0, $base_rva + $name_data_off,
+                1, $num_exports, $num_exports,
+                $base_rva + $eat_off,
+                $base_rva + $npt_off,
+                $base_rva + $ot_off
+            );
+            my $eat       = '';
+            my $npt       = '';
+            my $ot        = '';
+            my $name_data = basename($filename) . "\0";
 
-    sub set_exported_funcs {
-        my ($self, $funcs) = @_;
-        @EXPLICIT_EXPORTS = @$funcs;
-    }
-        method _build_edata_raw($base_rva, $filename) {
-        my @exports = @EXPLICIT_EXPORTS;
-        my $num_exports = scalar @exports;
-
-        return ("\0" x 2048) if $num_exports == 0;
-
-        my $eat_off = 40;
-        my $npt_off = $eat_off + (4 * $num_exports);
-        my $ot_off  = $npt_off + (4 * $num_exports);
-        my $name_data_off = $ot_off + (2 * $num_exports);
-
-        my $edat = pack('L< L< S< S< L< L< L< L< L< L< L<',
-            0, time(), 0, 0,
-            $base_rva + $name_data_off,
-            1,
-            $num_exports, $num_exports,
-            $base_rva + $eat_off,
-            $base_rva + $npt_off,
-            $base_rva + $ot_off
-        );
-
-        my $eat = '';
-        my $npt = '';
-        my $ot  = '';
-        my $name_data = basename($filename) . "\0";
-
-        for my $i (0 .. $#exports) {
-            my $name = $exports[$i];
-            my $target_label = "E_$name"; # Use the autoboxing thunk not the internal M_ function
-            my $offset = $self->labels->{$target_label};
-            if (!defined $offset) {
-                warn "PE: Export label $target_label NOT FOUND in map!\n" if $ENV{BROCKEN_JIT_DEBUG};
-                $offset = 0;
+            for my $i ( 0 .. $#exports ) {
+                my $name         = $exports[$i];
+                my $target_label = "E_$name";                        # Use the autoboxing thunk not the internal M_ function
+                my $offset       = $self->labels->{$target_label};
+                if ( !defined $offset ) {
+                    warn "PE: Export label $target_label NOT FOUND in map!\n" if $ENV{BROCKEN_JIT_DEBUG};
+                    $offset = 0;
+                }
+                my $rva = $self->rva_for('.text') + $offset;
+                warn "PE: Export $name -> RVA " . sprintf( "0x%X", $rva ) . "\n" if $ENV{BROCKEN_JIT_DEBUG};
+                $eat .= pack( 'L<', $rva );
+                $npt .= pack( 'L<', $base_rva + $name_data_off + length($name_data) );
+                $ot  .= pack( 'S<', $i );
+                $name_data .= $name . "\0";
             }
-            my $rva = $self->rva_for('.text') + $offset;
-            warn "PE: Export $name -> RVA " . sprintf("0x%X", $rva) . "\n" if $ENV{BROCKEN_JIT_DEBUG};
-
-            $eat .= pack('L<', $rva);
-            $npt .= pack('L<', $base_rva + $name_data_off + length($name_data));
-            $ot  .= pack('S<', $i);
-            $name_data .= $name . "\0";
+            my $block   = $edat . $eat . $npt . $ot . $name_data;
+            my $pad_len = 2048 - length($block);
+            $pad_len = 0 if $pad_len < 0;
+            return $block . ( "\0" x $pad_len );
         }
-        my $block = $edat . $eat . $npt . $ot . $name_data;
-        my $pad_len = 2048 - length($block);
-        $pad_len = 0 if $pad_len < 0;
-        return $block . ("\0" x $pad_len);
-    };
     }
 }
 1;

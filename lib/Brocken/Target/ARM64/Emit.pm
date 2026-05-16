@@ -38,7 +38,8 @@ package Brocken::Target::ARM64::Emit {
             x29 => 29,
             x30 => 30,
             sp  => 31,
-            xzr => 31
+            xzr => 31,
+            ( map { ( "d$_" => $_, "s$_" => $_, "v$_" => $_ ) } 0 .. 31 )
         );
         field $code : reader = '';
         field %labels;
@@ -59,7 +60,31 @@ package Brocken::Target::ARM64::Emit {
             # LDR Rt, [SP], #16    (Post-indexed)
             $code .= pack( 'L<', 0xF84107E0 | $r );
         }
-        method push_imm($imm) { $self->mov_imm( 'x16', $imm ); $self->push_reg('x16'); }
+        method push_imm($imm)         { $self->mov_imm( 'x16', $imm ); $self->push_reg('x16'); }
+        method fadd_reg( $d, $n, $m ) { $code .= pack( 'L<', 0x1E602800 | ( $self->reg($m) << 16 ) | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fsub_reg( $d, $n, $m ) { $code .= pack( 'L<', 0x1E603800 | ( $self->reg($m) << 16 ) | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fmul_reg( $d, $n, $m ) { $code .= pack( 'L<', 0x1E600800 | ( $self->reg($m) << 16 ) | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fdiv_reg( $d, $n, $m ) { $code .= pack( 'L<', 0x1E601800 | ( $self->reg($m) << 16 ) | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fmov_reg( $d, $n )     { $code .= pack( 'L<', 0x1E604000 | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fmov_x_to_d( $d, $n )  { $code .= pack( 'L<', 0x9E670000 | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fmov_d_to_x( $d, $n )  { $code .= pack( 'L<', 0x9E660000 | ( $self->reg($n) << 5 ) | $self->reg($d) ); }
+        method fcmp_reg( $n, $m )     { $code .= pack( 'L<', 0x1E602000 | ( $self->reg($m) << 16 ) | ( $self->reg($n) << 5 ) ); }
+
+        method ldr_d_mem( $d, $n, $disp = 0 ) {
+            $code .= pack( 'L<', 0xFD400000 | ( ( ( $disp >> 3 ) & 0xFFF ) << 10 ) | ( $self->reg($n) << 5 ) | $self->reg($d) );
+        }
+
+        method str_d_mem( $d, $n, $disp = 0 ) {
+            $code .= pack( 'L<', 0xFD000000 | ( ( ( $disp >> 3 ) & 0xFFF ) << 10 ) | ( $self->reg($n) << 5 ) | $self->reg($d) );
+        }
+
+        method ldur_d_mem( $d, $n, $disp = 0 ) {
+            $code .= pack( 'L<', 0xFC400000 | ( ( $disp & 0x1FF ) << 12 ) | ( $self->reg($n) << 5 ) | $self->reg($d) );
+        }
+
+        method stur_d_mem( $d, $n, $disp = 0 ) {
+            $code .= pack( 'L<', 0xFC000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $self->reg($n) << 5 ) | $self->reg($d) );
+        }
 
         method mov_imm( $r, $imm ) {
             my $ri = $self->reg($r);
@@ -286,10 +311,17 @@ package Brocken::Target::ARM64::Emit {
         method jmp($l)        { push @fixups, { offset => length($code), target => $l, type => 'uncond' }; $code .= pack( 'L<', 0x14000000 ) }
         method mark_label($n) { $labels{$n} = length $code }
 
-        method resolve {
-            for (@fixups) {
-                my $t = $labels{ $_->{target} };
-                die "Linker Error: Unresolved label '$_->{target}'\n" unless defined $t;
+method resolve($text_rva = 0, $data_rva = 0) {
+    for (@fixups) {
+ my $target = $_->{target};
+                my $t;
+                if ( $target =~ /^DATA:(\d+)$/ ) {
+                    $t = $1 + $data_rva - $text_rva;
+                }
+                else {
+                    $t = $labels{$target};
+                    die "Linker Error: Unresolved label '$target'\n" unless defined $t;
+                }
                 my $off   = ( $t - $_->{offset} );
                 my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
                 if ( $_->{type} eq 'cond' ) {

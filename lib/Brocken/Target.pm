@@ -15,7 +15,6 @@ package Brocken::Target {
             return $reg_map->{$arg} if !ref($arg) && $arg =~ /^%/;
             return $arg;
         }
-
         method new_assembler() { die "Abstract" }
     }
 }

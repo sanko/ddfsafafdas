@@ -5,7 +5,7 @@ package Brocken::JIT::Intrinsics {
     no warnings 'experimental::class';
 
     class Brocken::JIT::Intrinsics {
-        field $os : param;
+        field $os   : param;
         field $arch : param;
 
         method alloc_executable($size) {
@@ -23,42 +23,39 @@ package Brocken::JIT::Intrinsics {
 
         method _win32_alloc($size) {
             eval { require Win32::API::Access };
-            my $VA = Win32::API::Access->new(
-                'kernel32.dll', 'VirtualAlloc',
-                'PNNNN', 'P'
-            ) or die "Cannot create VirtualAlloc: $^E";
-            my $buf = $VA->Call(0, $size, 0x3000, 0x40);
+            my $VA  = Win32::API::Access->new( 'kernel32.dll', 'VirtualAlloc', 'PNNNN', 'P' ) or die "Cannot create VirtualAlloc: $^E";
+            my $buf = $VA->Call( 0, $size, 0x3000, 0x40 );
             die "VirtualAlloc failed" unless $buf;
             return $buf;
         }
 
         method _linux_alloc($size) {
             my $page_size = 4096;
-            my $aligned = ( $size + $page_size - 1 ) & ~( $page_size - 1 );
-            my $buf = "\0" x $aligned;
+            my $aligned   = ( $size + $page_size - 1 ) & ~( $page_size - 1 );
+            my $buf       = "\0" x $aligned;
             return \$buf;
         }
 
         method _darwin_alloc($size) {
             my $page_size = 4096;
-            my $aligned = ( $size + $page_size - 1 ) & ~( $page_size - 1 );
-            my $buf = "\0" x $aligned;
+            my $aligned   = ( $size + $page_size - 1 ) & ~( $page_size - 1 );
+            my $buf       = "\0" x $aligned;
             return \$buf;
         }
 
-        method emit_print_string($jit_as, $str_ptr, $str_len) {
+        method emit_print_string( $jit_as, $str_ptr, $str_len ) {
             if ( $os eq 'win64' ) {
-                $self->_emit_win32_print($jit_as, $str_ptr, $str_len);
+                $self->_emit_win32_print( $jit_as, $str_ptr, $str_len );
             }
             elsif ( $os eq 'linux' ) {
-                $self->_emit_linux_write($jit_as, $str_ptr, $str_len, 1);
+                $self->_emit_linux_write( $jit_as, $str_ptr, $str_len, 1 );
             }
             elsif ( $os eq 'darwin' ) {
-                $self->_emit_darwin_write($jit_as, $str_ptr, $str_len, 1);
+                $self->_emit_darwin_write( $jit_as, $str_ptr, $str_len, 1 );
             }
         }
 
-        method _emit_win32_print($jit_as, $str_ptr, $str_len) {
+        method _emit_win32_print( $jit_as, $str_ptr, $str_len ) {
             $jit_as->mov_imm( 'rcx', -11 );
             my $GetStdHandle = $self->_get_win32_addr('GetStdHandle');
             $jit_as->append_code( pack( 'C', 0xE8 ) );
@@ -70,7 +67,7 @@ package Brocken::JIT::Intrinsics {
             return 0;
         }
 
-        method emit_exit($jit_as, $code) {
+        method emit_exit( $jit_as, $code ) {
             if ( $os eq 'win64' ) {
                 $jit_as->mov_imm( 'rcx', $code );
                 $jit_as->mov_imm( 'rax', 0xC0000100 | ( $code & 0xFF ) );
@@ -88,7 +85,7 @@ package Brocken::JIT::Intrinsics {
             $jit_as->mov_reg( 'rbp', 'rsp' );
         }
 
-        method emit_epilogue($jit_as, $ret_reg = 'rax') {
+        method emit_epilogue( $jit_as, $ret_reg = 'rax' ) {
             $jit_as->mov_reg( 'rax', $ret_reg );
             $jit_as->mov_reg( 'rsp', 'rbp' );
             $jit_as->pop_reg('rbp');

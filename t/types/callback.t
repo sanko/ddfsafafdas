@@ -66,15 +66,16 @@ BROCKEN
     affix $out_dll, 'pass_callback', [ Callback [ [Int] => Int ] ], Int;
     affix $out_dll, 'return_null',   [],                            Int;
 
-# Callback pointer is passed through - verify we can call with Affix
+    # Callback pointer is passed through - verify we can call with Affix
     # Test that return value from Perl callback works correctly
-    my $cb_result = pass_callback(sub { return 42 });
-    is($cb_result, 42, 'Callback return value correctly returned');
+    my $cb_result = pass_callback( sub { return 42 } );
+    is( $cb_result, 42, 'Callback return value correctly returned' );
 
     # Test with argument - should receive unboxed value
-    my $cb_result2 = pass_callback(sub { my $v = shift; warn "Received: $v"; return $v * 2; });
+    my $cb_result2 = pass_callback( sub { my $v = shift; warn "Received: $v"; return $v * 2; } );
+
     # If arg is unboxed: 3 * 2 = 6. If arg is boxed: 7 * 2 = 14
-    is($cb_result2, 6, 'Callback receives unboxed argument (3 * 2 = 6)');
+    is( $cb_result2, 6, 'Callback receives unboxed argument (3 * 2 = 6)' );
     unlink $out_dll if -f $out_dll;
 };
 done_testing();

@@ -4,16 +4,16 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 
 class Brocken::IR::Builder {
-        field $_instructions : reader = [];
-        field $reg_count   = 0;
-        field $label_count = 0;
+    field $_instructions : reader = [];
+    field $reg_count              = 0;
+    field $label_count            = 0;
     method new_reg()               { return '%' . ++$reg_count; }
     method new_label()             { return 'L' . ++$label_count; }
-        method set_instructions(@inst) { $_instructions = [@inst] }
-        method push_instruction($inst) { push @$_instructions, $inst }
-        method pop_instruction() { pop @$_instructions }
-        method last_instruction() { $_instructions->[-1] }
-        method instructions() { wantarray ? @$_instructions : $_instructions }
+    method set_instructions(@inst) { $_instructions = [@inst] }
+    method push_instruction($inst) { push @$_instructions, $inst }
+    method pop_instruction()       { pop @$_instructions }
+    method last_instruction()      { $_instructions->[-1] }
+    method instructions()          { wantarray ? @$_instructions : $_instructions }
 
     method emit( $op, $type, $args, $dest = undef ) {
         if ( !defined($dest) && $type ne 'void' ) { $dest = $self->new_reg(); }
@@ -31,7 +31,7 @@ class Brocken::IR::Builder {
             my $dest = $i->{dest} // '';
             my @al;
             if ( $i->{args} ) {
-                @al = map { !defined($_) ? 'undef' : ( ref($_) ? 'OBJ' : $_ ) } @{$i->{args}};
+                @al = map { !defined($_) ? 'undef' : ( ref($_) ? 'OBJ' : $_ ) } @{ $i->{args} };
             }
             elsif ( $i->{target} )          { push @al, 'target:' . $i->{target}; }
             elsif ( $i->{name} )            { push @al, 'name:' . $i->{name}; }

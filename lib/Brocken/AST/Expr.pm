@@ -23,7 +23,8 @@ package Brocken::AST::Expr {
 
     class Brocken::AST::Expr::IndexExpr : isa(Brocken::AST::Node) { field $source : param : reader; field $index : param : reader; }
 
-    class Brocken::AST::Expr::MethodCall : isa(Brocken::AST::Node) { field $object : param : reader; field $method : param : reader; field $args : param : reader; }
+    class Brocken::AST::Expr::MethodCall : isa(Brocken::AST::Node)
+    { field $object : param : reader; field $method : param : reader; field $args : param : reader; }
 }
 1;
 __END__

@@ -11,17 +11,63 @@ package Brocken::JIT::X64 {
 
         method reg($r) {
             state $MAP = {
-                rax => 0, eax => 0, ax => 0, al => 0,
-                rcx => 1, ecx => 1, cx => 1, cl => 1,
-                rdx => 2, edx => 2, dx => 2, dl => 2,
-                rbx => 3, ebx => 3, bx => 3, bl => 3,
-                rsp => 4, esp => 4, sp => 4, spl => 4,
-                rbp => 5, ebp => 5, bp => 5, bpl => 5,
-                rsi => 6, esi => 6, si => 6, sil => 6,
-                rdi => 7, edi => 7, di => 7, dil => 7,
-                r8  => 8, r9  => 9, r10 => 10, r11 => 11,
-                r12 => 12, r13 => 13, r14 => 14, r15 => 15,
-                xip => 16
+                rax   => 0,
+                eax   => 0,
+                ax    => 0,
+                al    => 0,
+                rcx   => 1,
+                ecx   => 1,
+                cx    => 1,
+                cl    => 1,
+                rdx   => 2,
+                edx   => 2,
+                dx    => 2,
+                dl    => 2,
+                rbx   => 3,
+                ebx   => 3,
+                bx    => 3,
+                bl    => 3,
+                rsp   => 4,
+                esp   => 4,
+                sp    => 4,
+                spl   => 4,
+                rbp   => 5,
+                ebp   => 5,
+                bp    => 5,
+                bpl   => 5,
+                rsi   => 6,
+                esi   => 6,
+                si    => 6,
+                sil   => 6,
+                rdi   => 7,
+                edi   => 7,
+                di    => 7,
+                dil   => 7,
+                r8    => 8,
+                r9    => 9,
+                r10   => 10,
+                r11   => 11,
+                r12   => 12,
+                r13   => 13,
+                r14   => 14,
+                r15   => 15,
+                xmm0  => 0,
+                xmm1  => 1,
+                xmm2  => 2,
+                xmm3  => 3,
+                xmm4  => 4,
+                xmm5  => 5,
+                xmm6  => 6,
+                xmm7  => 7,
+                xmm8  => 8,
+                xmm9  => 9,
+                xmm10 => 10,
+                xmm11 => 11,
+                xmm12 => 12,
+                xmm13 => 13,
+                xmm14 => 14,
+                xmm15 => 15,
+                xip   => 16
             };
             my $name = lc( $r // '' );
             $name =~ s/^\s+|\s+$//g;
@@ -38,6 +84,68 @@ package Brocken::JIT::X64 {
             return ( $rex == 0x40 && !$w ) ? '' : pack( 'C', $rex );
         }
 
+        method movq_reg_xmm( $d, $s ) {
+            my $di = $self->reg($d);
+            my $si = $self->reg($s);
+            $code
+                .= pack( 'C', 0x66 ) .
+                $self->_rex( 1, $di, 0, $si ) .
+                pack( 'CC', 0x0F, 0x6E ) .
+                pack( 'C', 0xC0 | ( ( $di & 7 ) << 3 ) | ( $si & 7 ) );
+        }
+
+        method movq_xmm_reg( $d, $s ) {
+            my $di = $self->reg($d);
+            my $si = $self->reg($s);
+            $code
+                .= pack( 'C', 0x66 ) .
+                $self->_rex( 1, $si, 0, $di ) .
+                pack( 'CC', 0x0F, 0x7E ) .
+                pack( 'C', 0xC0 | ( ( $si & 7 ) << 3 ) | ( $di & 7 ) );
+        }
+
+        method movq_xmm_mem( $s, $b, $disp = 0 ) {
+            my $si = $self->reg($s);
+            my $bi = $self->reg($b);
+            $code .= pack( 'C', 0x66 ) . $self->_rex( 0, $si, 0, $bi ) . pack( 'CC', 0x0F, 0xD6 );
+            my $mod = ( $disp == 0 && ( $bi & 7 ) != 5 ) ? 0 : ( $disp >= -128 && $disp <= 127 ? 1 : 2 );
+            $code .= pack( 'C', ( $mod << 6 ) | ( ( $si & 7 ) << 3 ) | ( $bi & 7 ) );
+            $code .= pack( 'C', 0x24 ) if ( ( $bi & 7 ) == 4 );
+            if    ( $mod == 1 )                                      { $code .= pack( 'c',  $disp ); }
+            elsif ( $mod == 2 || ( $mod == 0 && ( $bi & 7 ) == 5 ) ) { $code .= pack( 'l<', $disp ); }
+        }
+
+        method addsd_reg( $d, $s ) {
+            $code
+                .= pack( 'C', 0xF2 ) .
+                $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x58 ) .
+                pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method subsd_reg( $d, $s ) {
+            $code
+                .= pack( 'C', 0xF2 ) .
+                $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x5C ) .
+                pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method mulsd_reg( $d, $s ) {
+            $code
+                .= pack( 'C', 0xF2 ) .
+                $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x59 ) .
+                pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method divsd_reg( $d, $s ) {
+            $code
+                .= pack( 'C', 0xF2 ) .
+                $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x5E ) .
+                pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
         method append_code($bin) { $code .= $bin }
         method mark_label($n)    { $labels{$n} = length $code }
 
@@ -81,6 +189,12 @@ package Brocken::JIT::X64 {
             }
         }
 
+        method mul_imm($dest, $imm) {
+            # x64 doesn't have a simple 2-operand mul with immediate.
+            # We load the immediate into scratch r11 and use the register multiplier.
+            $self->mov_imm('r11', $imm);
+            $self->mul_reg($dest, 'r11');
+        }
         method sub_reg( $d, $s ) {
             my $di = $self->reg($d);
             my $si = $self->reg($s);
@@ -162,8 +276,22 @@ package Brocken::JIT::X64 {
         }
 
         method jcc( $cc, $label ) {
-            my $ccode = { 0 => 0x84, 1 => 0x85, 2 => 0x82, 3 => 0x83, 4 => 0x8C, 5 => 0x8D, 6 => 0x8E, 7 => 0x8F,
-                          nz => 0x85, eq => 0x84, lt => 0x8C, gt => 0x8F, le => 0x8E, ge => 0x8D };
+            my $ccode = {
+                0  => 0x84,
+                1  => 0x85,
+                2  => 0x82,
+                3  => 0x83,
+                4  => 0x8C,
+                5  => 0x8D,
+                6  => 0x8E,
+                7  => 0x8F,
+                nz => 0x85,
+                eq => 0x84,
+                lt => 0x8C,
+                gt => 0x8F,
+                le => 0x8E,
+                ge => 0x8D
+            };
             my $op = $ccode->{$cc} // die "Unknown cc: $cc";
             $code .= pack( 'C', 0x0F );
             $code .= pack( 'C', $op );
@@ -274,10 +402,13 @@ package Brocken::JIT::X64 {
             $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CC', 0xF7, 0xF8 | ( $ri & 7 ) );
         }
 
-        method mul_reg($r) {
-            my $ri = $self->reg($r);
-            $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CC', 0xF7, 0xE0 | ( $ri & 7 ) );
-        }
+         method mul_reg($dest, $src) {
+            # Brocken Target logic moves the first operand to RAX, then calls mul_reg(dest, src)
+            # We map this to the x64 IMUL r, r instruction for simplicity
+            my $di = $self->reg($dest);
+            my $si = $self->reg($src);
+            $code .= $self->_rex( 1, $di, 0, $si ) . pack( 'CCC', 0x0F, 0xAF, 0xC0 | ( ( $di & 7 ) << 3 ) | ( $si & 7 ) );
+}
 
         method call_label($label) {
             $code .= pack( 'C', 0xE8 );
@@ -300,23 +431,24 @@ package Brocken::JIT::X64 {
             $code .= pack( 'C', 0x05 );
         }
 
-        method mov_label($r, $label) {
+        method mov_label( $r, $label ) {
             my $ri = $self->reg($r);
             $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'C', 0xB8 + ( $ri & 7 ) );
             push @fixups, { offset => length($code), target => $label, type => 'absolute' };
             $code .= pack( 'Q<', 0 );
         }
 
-        method resolve($base_addr = 0) {
+        method resolve( $base_addr = 0 ) {
             for my $fixup (@fixups) {
-                my $target_pos = $labels{$fixup->{target}};
+                my $target_pos = $labels{ $fixup->{target} };
                 die "Unresolved label: $fixup->{target}" unless defined $target_pos;
                 my $offset = $fixup->{offset};
-                if (($fixup->{type} // '') eq 'absolute') {
-                    substr($code, $offset, 8) = pack('Q<', $base_addr + $target_pos);
-                } else {
-                    my $rel = $target_pos - ($offset + 4);
-                    substr($code, $offset, 4) = pack('l<', $rel);
+                if ( ( $fixup->{type} // '' ) eq 'absolute' ) {
+                    substr( $code, $offset, 8 ) = pack( 'Q<', $base_addr + $target_pos );
+                }
+                else {
+                    my $rel = $target_pos - ( $offset + 4 );
+                    substr( $code, $offset, 4 ) = pack( 'l<', $rel );
                 }
             }
             @fixups = ();
