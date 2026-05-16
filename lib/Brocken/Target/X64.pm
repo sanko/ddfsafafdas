@@ -6,14 +6,28 @@ package Brocken::Target::X64 {
     class Brocken::Target::X64 : isa(Brocken::Target) {
 
         method registers() {
-
             # Reserve R14 for Isolate and R10/R11 for internal compiler use
             return $self->os eq 'win64' ? [qw(rbx rsi rdi r12 r13 r15)] : [qw(rbx r12 r13 r15)];
+        }
+
+        method fp_registers() {
+            # XMM registers for floating point (SSE2)
+            return [qw(xmm0 xmm1 xmm2 xmm3 xmm4 xmm5 xmm6 xmm7)];
         }
 
         method _abi_arg_reg($idx) {
             if   ( $self->os eq 'win64' ) { return (qw[rcx rdx r8 r9])[$idx]         // $idx; }
             else                          { return (qw[rdi rsi rdx rcx r8 r9])[$idx] // $idx; }
+        }
+
+        method _abi_fp_arg_reg($idx) {
+            # Float/double args go in XMM registers on x64
+            return (qw[xmm0 xmm1 xmm2 xmm3])[$idx] // "xmm$idx";
+        }
+
+        method _abi_fp_return_reg() {
+            # Float/double return value in XMM0
+            return 'xmm0';
         }
 
         method compile_intrinsic( $as, $inst, $reg_map, $driver ) {
@@ -35,7 +49,15 @@ package Brocken::Target::X64 {
                 $as->jcc( $driver->cc('nz'), $inst->{true_l} );
                 $as->jmp( $inst->{false_l} );
             }
-            elsif ( $op eq 'constant' ) { $as->mov_imm( $d_reg, $inst->{args}[0] ); }
+            elsif ( $op eq 'constant' ) {
+                if ($inst->{type} eq 'double' || $inst->{type} eq 'float') {
+                    # Double constant - load bits into XMM register
+                    $as->mov_imm('r10', $inst->{args}[0]);
+                    $as->movq_reg_xmm($d_reg, 'r10');
+                } else {
+                    $as->mov_imm( $d_reg, $inst->{args}[0] );
+                }
+            }
             elsif ( $op eq 'mov' ) {
                 my $src = $inst->{args}[0];
                 if ( $src =~ /^%/ ) { $as->mov_reg( $d_reg, $reg_map->{$src} ) if $d_reg ne $reg_map->{$src}; }
@@ -43,24 +65,64 @@ package Brocken::Target::X64 {
             }
             elsif ( $op =~ /^(add|sub|mul|and|or|xor)$/ ) {
                 my ( $l_raw, $r_raw ) = @{ $inst->{args} };
-                if ( $l_raw !~ /^%/ ) { $as->mov_imm( $d_reg, $v->($l_raw) ); }
-                else                  { $as->mov_reg( $d_reg, $reg_map->{$l_raw} ) if $d_reg ne $reg_map->{$l_raw}; }
-                if ( $r_raw =~ /^%/ ) {
-                    my $rs = $reg_map->{$r_raw};
-                    if    ( $op eq 'add' ) { $as->add_reg( $d_reg, $rs ) }
-                    elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, $rs ) }
-                    elsif ( $op eq 'and' ) { $as->and_reg( $d_reg, $rs ) }
-                    elsif ( $op eq 'or' )  { $as->or_reg( $d_reg, $rs ) }
-                    elsif ( $op eq 'xor' ) { $as->xor_reg( $d_reg, $rs ) }
-                    else                   { $as->mul_reg( $d_reg, $rs ) }
+                my $is_float = ( $inst->{type} eq 'double' || $inst->{type} eq 'float' );
+
+                if ($is_float) {
+                    # Floating point using XMM0 and XMM1 as temps (SSE2)
+                    # Load left operand into XMM0
+                    if ( $l_raw =~ /^%/ ) {
+                        my $src_reg = $reg_map->{$l_raw} // 'r10';
+                        $as->push_reg($src_reg);
+                        $as->movdqu_mem('xmm0', 'rsp', 0);
+                        $as->add_imm('rsp', 8);
+                    } else {
+                        $as->mov_imm('r10', $v->($l_raw));
+                        $as->movq_reg_xmm('xmm0', 'r10');
+                    }
+
+                    # Load right operand into XMM1 and perform operation
+                    if ( $r_raw =~ /^%/ ) {
+                        my $src_reg = $reg_map->{$r_raw} // 'r11';
+                        $as->push_reg($src_reg);
+                        $as->movdqu_mem('xmm1', 'rsp', 0);
+                        $as->add_imm('rsp', 8);
+                    } else {
+                        $as->mov_imm('r11', $v->($r_raw));
+                        $as->movq_reg_xmm('xmm1', 'r11');
+                    }
+
+                    # Perform FP operation
+                    if    ( $op eq 'add' ) { $as->addsd_reg('xmm0', 'xmm1') }
+                    elsif ( $op eq 'sub' ) { $as->subsd_reg('xmm0', 'xmm1') }
+                    elsif ( $op eq 'mul' ) { $as->mulsd_reg('xmm0', 'xmm1') }
+                    elsif ( $op eq 'div' ) { $as->divsd_reg('xmm0', 'xmm1') }
+
+                    # Move result back to allocated register (if any) - but for now just leave in xmm0
+                    if ($d_reg) {
+                        $as->movq_reg_xmm($d_reg, 'xmm0');
+                    }
                 }
                 else {
-                    if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $v->($r_raw) ) }
-                    elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $v->($r_raw) ) }
-                    elsif ( $op eq 'and' ) { $as->and_imm( $d_reg, $v->($r_raw) ) }
-                    elsif ( $op eq 'or' )  { $as->or_imm( $d_reg, $v->($r_raw) ) }
-                    elsif ( $op eq 'xor' ) { $as->xor_imm( $d_reg, $v->($r_raw) ) }
-                    else                   { $as->mov_imm( 'r11', $v->($r_raw) ); $as->mul_reg( $d_reg, 'r11' ); }
+                    # Integer operations
+                    if ( $l_raw !~ /^%/ ) { $as->mov_imm( $d_reg, $v->($l_raw) ); }
+                    else                  { $as->mov_reg( $d_reg, $reg_map->{$l_raw} ) if $d_reg ne $reg_map->{$l_raw}; }
+                    if ( $r_raw =~ /^%/ ) {
+                        my $rs = $reg_map->{$r_raw};
+                        if    ( $op eq 'add' ) { $as->add_reg( $d_reg, $rs ) }
+                        elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, $rs ) }
+                        elsif ( $op eq 'and' ) { $as->and_reg( $d_reg, $rs ) }
+                        elsif ( $op eq 'or' )  { $as->or_reg( $d_reg, $rs ) }
+                        elsif ( $op eq 'xor' ) { $as->xor_reg( $d_reg, $rs ) }
+                        else                   { $as->mul_reg( $d_reg, $rs ) }
+                    }
+                    else {
+                        if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $v->($r_raw) ) }
+                        elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $v->($r_raw) ) }
+                        elsif ( $op eq 'and' ) { $as->and_imm( $d_reg, $v->($r_raw) ) }
+                        elsif ( $op eq 'or' )  { $as->or_imm( $d_reg, $v->($r_raw) ) }
+                        elsif ( $op eq 'xor' ) { $as->xor_imm( $d_reg, $v->($r_raw) ) }
+                        else                   { $as->mov_imm( 'r11', $v->($r_raw) ); $as->mul_reg( $d_reg, 'r11' ); }
+                    }
                 }
             }
             elsif ( $op =~ /^(div|mod)$/ ) {
@@ -101,11 +163,31 @@ package Brocken::Target::X64 {
                 $as->setcc( $cc, $d_reg );
             }
             elsif ( $op eq 'local_store' ) {
+                my $type = $inst->{type} // 'i64';
                 my $src = $inst->{args}[1];
-                if ( $src !~ /^%/ ) { $as->mov_imm( 'r11', $v->($src) ); $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' ); }
-                else                { $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], $reg_map->{$src} ); }
+                if ($type eq 'double' || $type eq 'float') {
+                    # Store XMM register to stack
+                    my $src_reg = ($src =~ /^%/) ? ($reg_map->{$src} // 'xmm0') : 'xmm0';
+                    if ($src !~ /^%/) {
+                        $as->mov_imm('r10', $v->($src));
+                        $as->movq_reg_xmm('xmm0', 'r10');
+                        $src_reg = 'xmm0';
+                    }
+                    $as->store_mem_disp_reg('rbp', -$inst->{args}[0], $src_reg);
+                } else {
+                    if ( $src !~ /^%/ ) { $as->mov_imm( 'r11', $v->($src) ); $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' ); }
+                    else                { $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], $reg_map->{$src} ); }
+                }
             }
-            elsif ( $op eq 'local_load' ) { $as->load_reg_mem( $d_reg, 'rbp', -$inst->{args}[0] ); }
+            elsif ( $op eq 'local_load' ) {
+                my $type = $inst->{type} // 'i64';
+                if ($type eq 'double' || $type eq 'float') {
+                    # Load double from stack into XMM register
+                    $as->movdqu_mem($d_reg, 'rbp', -$inst->{args}[0]);
+                } else {
+                    $as->load_reg_mem( $d_reg, 'rbp', -$inst->{args}[0] );
+                }
+            }
             elsif ( $op eq 'store_mem_disp' ) {
                 my $src = ( $inst->{args}[2] =~ /^%/ ) ? $reg_map->{ $inst->{args}[2] } : 'r11';
                 $as->mov_imm( 'r11', $v->( $inst->{args}[2] ) ) if $inst->{args}[2] !~ /^%/;
@@ -163,9 +245,24 @@ package Brocken::Target::X64 {
                 }
             }
             elsif ( $op eq 'leave_func' ) {
+                my $type = $inst->{type} // 'i64';
                 if ( defined $inst->{args}[0] ) {
-                    if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map->{ $inst->{args}[0] } ); }
-                    else                            { $as->mov_imm( 'rax', $v->( $inst->{args}[0] ) ); }
+                    my $arg = $inst->{args}[0];
+                    if ($type eq 'double' || $type eq 'float') {
+                        # Float return goes in XMM0
+                        if ( $arg =~ /^%/ ) {
+                            my $src_reg = $reg_map->{$arg} // 'r10';
+                            $as->movq_reg_xmm('xmm0', $src_reg);
+                        } else {
+                            my $imm = $v->($arg);
+                            $as->mov_imm('r10', $imm);
+                            $as->movq_reg_xmm('xmm0', 'r10');
+                        }
+                    } else {
+                        # Int return in RAX
+                        if ( $arg =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map->{ $arg } ); }
+                        else                { $as->mov_imm( 'rax', $v->( $arg ) ); }
+                    }
                 }
                 $as->add_imm( 'rsp', $driver->frame_local_size );
                 for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
@@ -212,7 +309,19 @@ package Brocken::Target::X64 {
             }
             elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $d_reg, 'r14' ); }
             elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( 'r14',  $reg_map->{ $inst->{args}[0] } ); }
-            elsif ( $op eq 'get_arg' )         { $as->mov_reg( $d_reg, $self->_abi_arg_reg( $inst->{args}[0] ) ); }
+            elsif ( $op eq 'get_arg' ) {
+                my $arg_idx = $inst->{args}[0];
+                my $type = $inst->{type} // 'i64';
+                if ($type eq 'double' || $type eq 'float') {
+                    # Float/double args: move bits from XMM to GP register
+                    # Use 66 0F 7E /r - MOVQ xmm, r/m64 (or reverse)
+                    my $xmm_reg = $self->_abi_fp_arg_reg($arg_idx);
+                    # Move from XMM to GP: 66 REX.W 0F 6E /r
+                    $as->emit_raw("66 REX.W 0F 6E C0" | (($self->reg($xmm_reg) & 7) << 3) | ($self->reg($d_reg) & 7));
+                } else {
+                    $as->mov_reg( $d_reg, $self->_abi_arg_reg( $arg_idx ) );
+                }
+            }
             elsif ( $op eq 'get_sp' )          { $as->mov_reg( $d_reg, 'rsp' ); }
         }
     }

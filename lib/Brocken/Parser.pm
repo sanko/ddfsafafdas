@@ -3,6 +3,7 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Brocken::AST;
+use Brocken::Type;
 
 class Brocken::Parser {
     field $tokens : param;
@@ -592,10 +593,53 @@ class Brocken::Parser {
     }
 
     method _parse_type_spec() {
-        if ( $self->current->{type} eq 'KEYWORD' && $self->current->{value} =~ /^(?:Int|String|Any|Bool|Class|Fiber|Array)$/ ) {
+        if ( $self->current->{type} eq 'KEYWORD' && $self->current->{value} =~ /^[A-Za-z_][A-Za-z0-9_]*$/ ) {
             my $t = $self->current->{value};
             $self->advance();
-            return $t;
+            
+            # Check for Callback signature: Callback[[args] => ret]
+            # Note: After consuming 'Callback', the current token should be '[' (OP)
+            if ( $t eq 'Callback' && $self->current->{type} eq 'OP' && $self->current->{value} eq '[' ) {
+                $self->advance(); # consume first '['
+                
+                # Check if args are in inner array format [[args]]
+                my @arg_types;
+                if ( $self->current->{value} eq '[' ) {
+                    # Inner array: [[args...]]
+                    $self->advance(); # consume inner '['
+                    while ( $self->current->{value} ne ']' ) {
+                        push @arg_types, $self->_parse_type_spec();
+                        if ( $self->current->{value} eq ']' ) { last; }
+                        $self->expect(',');
+                    }
+                    # After inner args, current should be ']' - consume it
+                    $self->expect(']'); 
+                    # Now current should be '=>' for return type
+                    $self->expect('=>');
+                    my $ret_type = $self->_parse_type_spec();
+                    # After return type, consume outer ']'
+                    $self->expect(']');
+                    
+                    # Return string format
+                    my $args_str = join( ',', @arg_types );
+                    return "Callback[$args_str=>$ret_type]";
+                } else {
+                    # Simple format: Callback[arg1, arg2 => ret]
+                    while ( $self->current->{value} ne ']' ) {
+                        push @arg_types, $self->_parse_type_spec();
+                        last if $self->current->{value} eq ']';
+                        $self->expect(',');
+                    }
+                    $self->expect(']');
+                    $self->expect('=>');
+                    my $ret_type = $self->_parse_type_spec();
+                    
+                    my $args_str = join( ',', @arg_types );
+                    return "Callback[$args_str=>$ret_type]";
+                }
+            }
+            
+            return $t;  # Return string for backward compatibility
         }
         return 'Any';
     }

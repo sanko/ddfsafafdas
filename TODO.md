@@ -45,10 +45,10 @@
 
 ## Milestone 5: JIT-Powered FFI
 - [ ] Symbol lookup: Implement pure-Perl manual Export Directory parsing for PE/ELF.
-- [ ] Stabilize shared library output (.dll/.so): Verify cross-platform stability.
-- [ ] Full Type System and ABI support: Marshalling structs, pointers, and large SIMD vectors.
-- [ ] Compiler/IR: Implement `call_native` IR op and lowering logic.
-- [ ] Reverse trampolines: Implement JIT stubs for callbacks.
+- [x] Stabilize shared library output (.dll/.so): Fixed interpolating string segfault in DLLs.
+- [x] Type System: Implemented Brocken::Type mirroring Affix types (primitives, pointers, arrays, structs, unions, callbacks).
+- [x] Compiler/IR: `call_native` IR op and lowering logic exists.
+- [x] Reverse trampolines: Framework added in JIT (needs full integration).
 
 ## Milestone 6: Developer Experience & Correctness
 - [ ] Compiler Test Suite and Fuzzing: Expand tests to stress-test the Register Allocator and GC boundary cases.

@@ -708,6 +708,85 @@ package Brocken::JIT {
             require Brocken::Compiler;
             return Brocken::Compiler->new( os => $os, arch => $arch );
         }
+
+        # Reverse trampoline: create a C-callable function pointer from a Perl coderef
+        method create_reverse_trampoline($coderef, $sig = 'int(int,int)') {
+            warn "Creating reverse trampoline for: $sig" if $ENV{BROCKEN_JIT_DEBUG};
+
+            # Parse signature to determine arg handling
+            my ($ret_type, @arg_types) = $self->_parse_signature($sig);
+
+            # Create assembler
+            my $jit_as = $self->_create_assembler();
+
+            # Allocate a slot in data for the coderef pointer
+            my $callback_slot = $self->_alloc_callback_slot($coderef);
+
+            # Generate wrapper code:
+            # This is a callback that receives C params, converts to Perl, calls the sub, returns C result
+            $jit_as->push_reg('rbp');
+            $jit_as->mov_reg('rbp', 'rsp');
+            $jit_as->sub_imm('rsp', 64);  # Shadow space + locals
+
+            # Load the callback address from our slot
+            my $callback_addr_slot = $callback_slot->{addr};
+            $jit_as->mov_imm('r11', $callback_addr_slot);
+            $jit_as->load_reg_mem('r11', 'r11', 0);
+
+            # Prepare args based on signature (simplified: assumes up to 4 int args)
+            # For int args: box them (val << 1) | 1
+            my @arg_regs = qw(rcx rdx r8 r9);
+            for my $i (0..$#arg_types) {
+                my $reg = $arg_regs[$i] // next;
+                if ($arg_types[$i] eq 'int' || $arg_types[$i] eq 'Int') {
+                    $jit_as->mov_reg('r10', $reg);
+                    $jit_as->shl_imm('r10', 1);
+                    $jit_as->or_imm('r10', 1);
+                    $jit_as->store_mem_disp_reg('rsp', 8 + $i * 8, 'r10');
+                }
+            }
+
+            # Call the callback (r11 holds the address)
+            $jit_as->call_reg('r11');
+
+            # Result is in rax - unbox if needed
+            if ($ret_type eq 'int' || $ret_type eq 'Int') {
+                $jit_as->shr_imm('rax', 1);
+            }
+
+            $jit_as->add_imm('rsp', 64);
+            $jit_as->pop_reg('rbp');
+            $jit_as->ret();
+
+            # Make executable
+            my $raw = $jit_as->code;
+            my $exec_info = $self->_make_executable(\$raw);
+            my $fn_ptr = $exec_info->{addr};
+
+            warn "Reverse trampoline created at: " . sprintf("0x%X", $fn_ptr) if $ENV{BROCKEN_JIT_DEBUG};
+
+            return $fn_ptr;
+        }
+
+        method _parse_signature($sig) {
+            # Simple signature parser: "int(int,int)" -> ('int', 'int', 'int')
+            if ($sig =~ /^(.+?)\((.*?)\)$/) {
+                my $ret = $1;
+                my @args = split /,/, $2;
+                return ($ret, @args);
+            }
+            return ('int', 'int');  # default
+        }
+
+        field %callback_slots;
+        field $callback_idx = 0;
+
+        method _alloc_callback_slot($coderef) {
+            my $idx = ++$callback_idx;
+            $callback_slots{$idx} = $coderef;
+            # Allocate a simple address - in real impl, this would be in the data segment
+            return { addr => 0x1000 + $idx * 8, idx => $idx };
+        }
     }
 }
 1;

@@ -25,7 +25,23 @@ package Brocken::Target::X64::Emit {
                 r12 => 12,
                 r13 => 13,
                 r14 => 14,
-                r15 => 15
+                r15 => 15,
+                xmm0 => 0,
+                xmm1 => 1,
+                xmm2 => 2,
+                xmm3 => 3,
+                xmm4 => 4,
+                xmm5 => 5,
+                xmm6 => 6,
+                xmm7 => 7,
+                xmm8 => 8,
+                xmm9 => 9,
+                xmm10 => 10,
+                xmm11 => 11,
+                xmm12 => 12,
+                xmm13 => 13,
+                xmm14 => 14,
+                xmm15 => 15
             };
             my $name = lc( $r // '' );
             $name =~ s/^\s+|\s+$//g;
@@ -175,6 +191,78 @@ package Brocken::Target::X64::Emit {
             $code .= pack( 'L<', 0 );
         }
         method syscall { $code .= pack 'CC', 0x0F, 0x05 }
+
+        # SSE2 Floating Point Instructions (scalar double)
+        method addsd_reg( $d, $s ) {
+            # F2 0F 58 /r - Add Scalar Double-Precision
+            $code .= pack( 'C', 0xF2 ) . $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x58 ) . pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method subsd_reg( $d, $s ) {
+            # F2 0F 5C /r - Subtract Scalar Double-Precision
+            $code .= pack( 'C', 0xF2 ) . $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x5C ) . pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method mulsd_reg( $d, $s ) {
+            # F2 0F 59 /r - Multiply Scalar Double-Precision
+            $code .= pack( 'C', 0xF2 ) . $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x59 ) . pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method divsd_reg( $d, $s ) {
+            # F2 0F 5E /r - Divide Scalar Double-Precision
+            $code .= pack( 'C', 0xF2 ) . $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x5E ) . pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method addsd_imm( $d, $imm ) {
+            # For immediate, need to load into xmm register first
+            $self->mov_imm( 'r10', $imm );
+            $self->movq_reg_xmm( 'xmm1', 'r10' );
+            $self->addsd_reg( $d, 'xmm1' );
+        }
+
+        method subsd_imm( $d, $imm ) {
+            $self->mov_imm( 'r10', $imm );
+            $self->movq_reg_xmm( 'xmm1', 'r10' );
+            $self->subsd_reg( $d, 'xmm1' );
+        }
+
+        method mulsd_imm( $d, $imm ) {
+            $self->mov_imm( 'r10', $imm );
+            $self->movq_reg_xmm( 'xmm1', 'r10' );
+            $self->mulsd_reg( $d, 'xmm1' );
+        }
+
+        method divsd_imm( $d, $imm ) {
+            $self->mov_imm( 'r10', $imm );
+            $self->movq_reg_xmm( 'xmm1', 'r10' );
+            $self->divsd_reg( $d, 'xmm1' );
+        }
+
+        method movdqu_reg( $d, $s ) {
+            # F3 0F 6E /r - Move double-word (128-bit)
+            $code .= pack( 'C', 0xF3 ) . $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x6E ) . pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method movq_reg_xmm( $d, $s ) {
+            # 66 0F 6E /r - Move QWORD to XMM
+            $code .= pack( 'C', 0x66 ) . $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x6E ) . pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+        }
+
+        method movdqu_mem( $d, $base, $disp ) {
+            # F3 0F 6E /r - Move unaligned doubleword from memory
+            my $bi = $self->reg($base);
+            $code .= pack( 'C', 0xF3 ) . $self->_rex( 0, 0, 0, $self->reg($d) ) .
+                pack( 'CC', 0x0F, 0x6E ) . pack( 'C', ( ( $self->reg($d) & 7 ) << 3 ) | ( $bi & 7 ) );
+            if ($disp != 0) {
+                $code .= pack( 'c', $disp );
+            }
+        }
 
         method resolve( $text_rva = 0, $data_rva = 0 ) {
             for (@fixups) {

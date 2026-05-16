@@ -7,6 +7,7 @@ package Brocken::Compiler::Lowering {
     use Brocken::AST;
     use lib 'lib';
     use Brocken::JIT;
+    use Brocken::Type;
 
     class Brocken::Compiler::Lowering {
         field $builder      : reader : param = Brocken::IR::Builder->new();
@@ -36,6 +37,11 @@ package Brocken::Compiler::Lowering {
         my $LINE_COUNT = 512;
 
         # Helpers
+        method _type_name($type) {
+            return 'Any' unless defined $type;
+            return ref($type) ? $type->{name} : $type;
+        }
+
         method _emit_bool_test($reg) {
 
             # In Brocken Smi: False is 1, True is 3. CPU needs 0/1.
@@ -122,29 +128,50 @@ package Brocken::Compiler::Lowering {
 
             # 1. Catch standard C arguments and BOX them into Brocken types
             for my $p ( @{ $node->params } ) {
-                my $raw_arg = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
-                if ( $p->{type} eq 'Int' ) {
-
+                my $param_type = $p->{type};
+                
+                # Determine IR type based on parameter type
+                my $ir_type = 'i64';
+                if ( $param_type eq 'Float' || $param_type eq 'double' ) {
+                    $ir_type = 'double';
+                }
+                
+                my $raw_arg = $builder->emit( 'get_arg', $ir_type, [ $arg_idx++ ] );
+                
+                if ( $param_type eq 'Int' || $param_type =~ /^Int\d+$/ ) {
                     # Box: (val << 1) | 1
                     my $shifted = $builder->emit( 'shl', 'i64', [ $raw_arg, 1 ] );
                     my $boxed   = $builder->emit( 'or',  'i64', [ $shifted, 1 ] );
                     push @boxed_args, $boxed;
                 }
+                elsif ( $param_type eq 'Float' || $param_type eq 'double' ) {
+                    # Float passed as-is (unboxed double)
+                    push @boxed_args, $raw_arg;
+                }
+                elsif ( $param_type eq 'Pointer' || $param_type eq 'Fun' || $param_type eq 'Callback' ) {
+                    # Pointers and callbacks pass through as-is
+                    push @boxed_args, $raw_arg;
+                }
                 else {
-                    # Pointers (Strings, Objects) pass through as-is
+                    # Other types pass through as-is
                     push @boxed_args, $raw_arg;
                 }
             }
 
             # 2. Call the real internal Brocken function
-            my $result = $builder->emit( 'call_func', 'i64', [ $internal_name, @boxed_args ] );
+            my $has_float = grep { $_->{type} eq 'Float' || $_->{type} eq 'double' } @{ $node->params };
+            my $ret_type = $has_float ? 'double' : 'i64';
+            my $result = $builder->emit( 'call_func', $ret_type, [ $internal_name, @boxed_args ] );
 
-            # 3. Catch the return value and UNBOX it for C
-            # (Assuming Int return for this example. You could add a return_type to the AST node)
-            my $unboxed = $builder->emit( 'shr', 'i64', [ $result, 1 ] );
-
-            # 4. Return standard C value
-            $builder->emit( 'leave_func', 'void', [$unboxed] );
+            # 3. Catch the return value
+            if ($has_float) {
+                # Float return - pass through as double
+                $builder->emit( 'leave_func', 'double', [$result] );
+            }
+            else {
+                # Int return - pass through as-is
+                $builder->emit( 'leave_func', 'i64', [$result] );
+            }
         }
 
         # --- Core Dispatcher ---
@@ -979,6 +1006,11 @@ package Brocken::Compiler::Lowering {
                 return ( $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string( $node->value ) ] ), 'String' );
             }
             if ( $node->type eq 'Class' ) { return ( $builder->emit( 'constant', 'i64', [0] ), $node->value ); }
+            if ( $node->type eq 'Float' || $node->type eq 'double' ) {
+                # Float constants stored as double bits
+                my $bits = unpack('Q<', pack('d<', $node->value));
+                return ( $builder->emit( 'constant', 'double', [$bits] ), 'Float' );
+            }
             return ( $builder->emit( 'constant', 'i64', [ ( $node->value << 1 ) | 1 ] ), 'Int' );
         }
 
@@ -1062,12 +1094,31 @@ package Brocken::Compiler::Lowering {
                 my $rc = $rt eq 'String' ? $rr : $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $rr ] );
                 return ( $builder->emit( 'call_func', 'ptr', [ 'M_concat', $lc, $rc ] ), 'String' );
             }
+            
+            # Check if this is a Float operation
+            my $is_float = ( $lt eq 'Float' || $lt eq 'double' || $rt eq 'Float' || $rt eq 'double' );
+            
             my $cm = { '==' => 'cmp_eq', '!=' => 'cmp_ne', '<' => 'cmp_lt', '>' => 'cmp_gt', '<=' => 'cmp_le', '>=' => 'cmp_ge' };
             if ( exists $cm->{ $node->op } ) {
+                if ($is_float) {
+                    # Float comparison - returns 0 or 1 as double
+                    my $raw = $builder->emit( $cm->{ $node->op }, 'double', [ $lr, $rr ] );
+                    return ( $raw, 'Float' );
+                }
                 my $raw = $builder->emit( $cm->{ $node->op }, 'i64', [ $lr, $rr ] );
                 return ( $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $raw, 2 ] ), 1 ] ), 'Int' );
             }
-            my $mm  = { '+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod' };
+            
+            # Arithmetic operations
+            my $mm = { '+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod' };
+            
+            if ($is_float) {
+                # Float arithmetic - use double operations
+                my $res = $builder->emit( $mm->{ $node->op }, 'double', [ $lr, $rr ] );
+                return ( $res, 'Float' );
+            }
+            
+            # Integer arithmetic (existing code)
             my $c1  = $builder->emit( 'constant',         'i64', [1] );
             my $c2  = $builder->emit( 'constant',         'i64', [2] );
             my $lu  = $builder->emit( 'div',              'i64', [ $builder->emit( 'sub', 'i64', [ $lr, $c1 ] ), $c2 ] );
@@ -1424,7 +1475,15 @@ package Brocken::Compiler::Lowering {
             }
             my $vt  = $builder->emit( 'load_mem_disp', 'ptr', [ $or, 0 ] );
             my $fn  = $builder->emit( 'load_mem_disp', 'ptr', [ $vt, ( $global_methods{$method_name} // die "Unknown method $method_name" ) * 8 ] );
-            my $res = $builder->emit( 'call_reg',      'i64', [ $fn, $or, @as ] );
+            
+            # Unbox arguments when calling C callbacks
+            my @unboxed_args;
+            for my $arg (@as) {
+                # Unbox: (val - 1) >> 1 or just shift right by 1
+                push @unboxed_args, $builder->emit( 'shr', 'i64', [ $arg, 1 ] );
+            }
+            
+            my $res = $builder->emit( 'call_reg',      'i64', [ $fn, $or, @unboxed_args ] );
             $builder->emit( 'shadow_set', 'void', [$sp_backup] );
             return ( $res, 'Any' );
         }
@@ -1552,8 +1611,18 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_AnonCall($node) {
+            my ($invocant_reg, $invocant_type) = $self->lower( $node->invocant );
+            
+            # Unbox arguments when calling C callbacks
+            my @unboxed_args;
+            for my $arg (@{ $node->args }) {
+                my ($arg_reg, $arg_type) = $self->lower($arg);
+                # Unbox: shift right by 1 to get the original integer
+                push @unboxed_args, $builder->emit( 'shr', 'i64', [ $arg_reg, 1 ] );
+            }
+            
             return (
-                $builder->emit( 'call_reg', 'i64', [ ( $self->lower( $node->invocant ) )[0], map { ( $self->lower($_) )[0] } @{ $node->args } ] ),
+                $builder->emit( 'call_reg', 'i64', [ $invocant_reg, @unboxed_args ] ),
                 'Any' );
         }
 

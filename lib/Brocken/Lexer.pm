@@ -20,7 +20,12 @@ class Brocken::Lexer {
         while for map
         say print
         use require eval
-        Int String Any Bool Class Fiber Array
+        Int String Any Bool Class Fiber Array Fun Pointer Struct Callback
+        Float double
+        int8 int16 int32 int64
+        uint8 uint16 uint32 uint64
+        Int8 Int16 Int32 Int64
+        UInt8 UInt16 UInt32 UInt64
         true false undef
     ];
 
