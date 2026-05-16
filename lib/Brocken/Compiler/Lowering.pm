@@ -28,8 +28,8 @@ package Brocken::Compiler::Lowering {
         field @fragments;
         field @defer_stack;               # Stack of [ \@instructions ]
         field $defer_active_depth = 0;    # Helper to prevent return inside of defer block
-        field $_skip_runtime = 0;
-        method skip_runtime { $_skip_runtime }
+        field $_skip_runtime      = 0;
+        method skip_runtime           {$_skip_runtime}
         method set_skip_runtime($val) { $_skip_runtime = $val }
         my $BLOCK_SIZE = 65536;
         my $LINE_SIZE  = 128;
@@ -106,41 +106,42 @@ package Brocken::Compiler::Lowering {
             push @fragments, \@captured;
             $builder->set_instructions(@saved);
         }
-method _generate_export_thunk($node) {
-    my $internal_name = 'M_' . $node->name;
-    my $export_name   = 'E_' . $node->name; # E_ prefix for Export
 
-    $builder->emit_label($export_name);
-    $builder->emit( 'enter_func', 'void', [] );
+        method _generate_export_thunk($node) {
+            my $internal_name = 'M_' . $node->name;
+            my $export_name   = 'E_' . $node->name;    # E_ prefix for Export
+            $builder->emit_label($export_name);
+            $builder->emit( 'enter_func', 'void', [] );
+            my @boxed_args;
+            my $arg_idx = 0;
 
-    my @boxed_args;
-    my $arg_idx = 0;
+            # 1. Catch standard C arguments and BOX them into Brocken types
+            for my $p ( @{ $node->params } ) {
+                my $raw_arg = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
+                if ( $p->{type} eq 'Int' ) {
 
-    # 1. Catch standard C arguments and BOX them into Brocken types
-    for my $p ( @{ $node->params } ) {
-        my $raw_arg = $builder->emit( 'get_arg', 'i64', [$arg_idx++] );
+                    # Box: (val << 1) | 1
+                    my $shifted = $builder->emit( 'shl', 'i64', [ $raw_arg, 1 ] );
+                    my $boxed   = $builder->emit( 'or',  'i64', [ $shifted, 1 ] );
+                    push @boxed_args, $boxed;
+                }
+                else {
+                    # Pointers (Strings, Objects) pass through as-is
+                    push @boxed_args, $raw_arg;
+                }
+            }
 
-        if ($p->{type} eq 'Int') {
-            # Box: (val << 1) | 1
-            my $shifted = $builder->emit( 'shl', 'i64', [$raw_arg, 1] );
-            my $boxed   = $builder->emit( 'or',  'i64', [$shifted, 1] );
-            push @boxed_args, $boxed;
-        } else {
-            # Pointers (Strings, Objects) pass through as-is
-            push @boxed_args, $raw_arg;
+            # 2. Call the real internal Brocken function
+            my $result = $builder->emit( 'call_func', 'i64', [ $internal_name, @boxed_args ] );
+
+            # 3. Catch the return value and UNBOX it for C
+            # (Assuming Int return for this example. You could add a return_type to the AST node)
+            my $unboxed = $builder->emit( 'shr', 'i64', [ $result, 1 ] );
+
+            # 4. Return standard C value
+            $builder->emit( 'leave_func', 'void', [$unboxed] );
         }
-    }
 
-    # 2. Call the real internal Brocken function
-    my $result = $builder->emit( 'call_func', 'i64', [ $internal_name, @boxed_args ] );
-
-    # 3. Catch the return value and UNBOX it for C
-    # (Assuming Int return for this example. You could add a return_type to the AST node)
-    my $unboxed = $builder->emit( 'shr', 'i64', [$result, 1] );
-
-    # 4. Return standard C value
-    $builder->emit( 'leave_func', 'void', [$unboxed] );
-}
         # --- Core Dispatcher ---
         method lower($node) {
             return ( undef, 'void' ) unless defined $node;
@@ -249,8 +250,8 @@ method _generate_export_thunk($node) {
             }
             $driver->reset_locals();
             $builder->emit_label('L_MAIN_START');
-            $builder->emit( 'enter_func',                    'void', [] );
-                   if (!$self->skip_runtime) {
+            $builder->emit( 'enter_func', 'void', [] );
+            if ( !$self->skip_runtime ) {
                 $builder->emit( 'intrinsic_setup_fault_handler', 'void', [] );
                 $builder->emit( 'intrinsic_setup_env',           'void', [] );
             }
@@ -335,17 +336,20 @@ method _generate_export_thunk($node) {
             $self->_emit_all_defers();    # Support top-level defer
 
             # EXPLICIT EXIT 0 to prevent CPU from falling through into M_fiber_switch!
-            if ($self->skip_runtime) {
+            if ( $self->skip_runtime ) {
+
                 # In a DLL, return 1 (TRUE) to signal successful DllMain init
                 $builder->emit( 'leave_func', 'void', [ $builder->emit( 'constant', 'i64', [1] ) ] );
-            } else {
+            }
+            else {
                 # In an EXE, terminate the process
                 $builder->emit( 'intrinsic_exit', 'void', [ $builder->emit( 'constant', 'i64', [1] ) ] );
-            }            while (@fragments) {
+            }
+            while (@fragments) {
                 my $frag = shift @fragments;
                 $builder->push_instruction($_) for @$frag;
             }
-            if ($self->skip_runtime) {
+            if ( $self->skip_runtime ) {
                 $builder->pop_instruction() while $builder->last_instruction && $builder->last_instruction->{op} eq 'intrinsic_emit_runtime';
             }
             else {
@@ -403,9 +407,9 @@ method _generate_export_thunk($node) {
                 $builder->emit( 'store_mem_disp', 'void', [ $obj, -8, $new_hdr ] );
 
                 # Immix Bitmap Line Marking (FIXED: Loop over all lines the object occupies)
-                my $block      = $builder->emit( 'and', 'i64', [ $obj, -$BLOCK_SIZE ] );
-                my $off        = $builder->emit( 'sub', 'i64', [ $obj, $block ] );
-                my $start_line = $builder->emit( 'shr', 'i64', [ $off, 7 ] );
+                my $block      = $builder->emit( 'and', 'i64', [ $obj,    -$BLOCK_SIZE ] );
+                my $off        = $builder->emit( 'sub', 'i64', [ $obj,    $block ] );
+                my $start_line = $builder->emit( 'shr', 'i64', [ $off,    7 ] );
                 my $obj_sz     = $builder->emit( 'and', 'i64', [ $header, hex("1FFFFFFFFFFFFFFF") ] );
                 my $num_lines  = $builder->emit( 'div', 'i64', [ $builder->emit( 'add', 'i64', [ $obj_sz, 135 ] ), 128 ] );
                 my $ml_slot    = $driver->alloc_local_slot();
@@ -522,9 +526,11 @@ method _generate_export_thunk($node) {
                 my $l_next = $builder->new_label();
                 $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $mark, 0 ] ), $l_next, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
+
                 # FIXED: Instead of breaking on first marked line, update HWM and continue
                 # to find the actual high water mark (highest line with live data)
                 $builder->emit( 'local_store', 'void', [ $hwm_slot, $builder->emit( 'add', 'i64', [ $idx, 1 ] ) ] );
+
                 # Continue loop to find the true high water mark
                 $builder->emit_label($l_next);
                 $builder->emit( 'local_store', 'void', [ $idx_slot, $builder->emit( 'sub', 'i64', [ $idx, 1 ] ) ] );
@@ -661,7 +667,7 @@ method _generate_export_thunk($node) {
                 $builder->emit( 'local_store',    'void', [ $ret_slot, $ap2 ] );
                 $builder->emit_jump($l_zero_and_ret);
                 $builder->emit_label($l_s2);
-                my $raw = $builder->emit( 'intrinsic_alloc', 'ptr', [ $BLOCK_SIZE ] );
+                my $raw = $builder->emit( 'intrinsic_alloc', 'ptr', [$BLOCK_SIZE] );
                 my $fr  = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw, $BLOCK_SIZE - 1 ] ), -$BLOCK_SIZE ] );
 
                 # Update heap_min
@@ -690,7 +696,7 @@ method _generate_export_thunk($node) {
                 $builder->emit( 'store_iso_disp', 'void',
                     [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $fr, $BLOCK_SIZE ] ) ] );
                 $builder->emit( 'store_mem_disp', 'void', [ $st, 0, $psz ] );
-                $builder->emit( 'local_store',    'void', [ $ret_slot, $st ] );
+                $builder->emit( 'local_store', 'void', [ $ret_slot, $st ] );
                 $builder->emit_jump($l_zero_and_ret);
 
                 # The common return block
@@ -1002,8 +1008,8 @@ method _generate_export_thunk($node) {
             if ( $node->op eq '-' ) {
                 my $c1  = $builder->emit( 'constant', 'i64', [1] );
                 my $c2  = $builder->emit( 'constant', 'i64', [2] );
-                my $val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $r, $c1 ] ), $c2 ] );
-                my $neg = $builder->emit( 'sub', 'i64', [ 0, $val ] );
+                my $val = $builder->emit( 'div',      'i64', [ $builder->emit( 'sub', 'i64', [ $r, $c1 ] ), $c2 ] );
+                my $neg = $builder->emit( 'sub',      'i64', [ 0, $val ] );
                 return ( $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $neg, $c2 ] ), $c1 ] ), 'Int' );
             }
             die "Unary " . $node->op;
@@ -1184,14 +1190,12 @@ method _generate_export_thunk($node) {
                 }
                 return ( undef, 'void' );
             }
-
             if ( exists $native_funcs{ $node->name } ) {
                 my $info = $native_funcs{ $node->name };
                 my @args = map { ( $self->lower($_) )[0] } @{ $node->args };
                 my $res  = $builder->emit( 'call_native', 'Any', [ $info->{library}, $node->name, $info->{signature}, @args ] );
                 return ( $res, 'Any' );
             }
-
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
             my @args      = map { ( $self->lower($_) )[0] } @{ $node->args };
             my $res       = $builder->emit( 'call_func', 'i64', [ 'M_' . $node->name, @args ] );
@@ -1347,41 +1351,41 @@ method _generate_export_thunk($node) {
             @defer_stack   = @old_defers;
             pop @routine_types;
 
-
-             # If this is an exported method, generate the C ABI Thunk!
-        # (You could pass a list of export names down to Lowering, or add an
-        # 'is_export' boolean to your AST Node by adding an `export sub` keyword to Parser.pm)
-        #~ if ( $self->is_exported($node->name) ) {
+            # If this is an exported method, generate the C ABI Thunk!
+            # (You could pass a list of export names down to Lowering, or add an
+            # 'is_export' boolean to your AST Node by adding an `export sub` keyword to Parser.pm)
+            #~ if ( $self->is_exported($node->name) ) {
             $self->_generate_export_thunk($node);
-        #~ }
+
+            #~ }
             return ( undef, 'void' );
         }
 
         method lower_MethodCall($node) {
-            my ($invocant, $method_name, $args);
-            if ($node isa Brocken::AST::Expr::MethodCall) {
-                $invocant = $node->object;
+            my ( $invocant, $method_name, $args );
+            if ( $node isa Brocken::AST::Expr::MethodCall ) {
+                $invocant    = $node->object;
                 $method_name = $node->method;
-                $args = $node->args;
-            } else {
-                $invocant = $node->invocant;
-                $method_name = $node->name;
-                $args = $node->args;
+                $args        = $node->args;
             }
-
+            else {
+                $invocant    = $node->invocant;
+                $method_name = $node->name;
+                $args        = $node->args;
+            }
             if ( $method_name eq 'new' && $invocant isa Brocken::AST::Expr::Const && $invocant->type eq 'Class' ) {
                 my $ptr = $builder->emit( 'call_func', 'ptr', [ 'M_' . $invocant->value . '::new' ] );
                 $builder->emit( 'shadow_push', 'void', [$ptr] );
                 return ( $ptr, $invocant->value );
             }
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
-            my ( $or, $ot ) = $self->lower( $invocant );
+            my ( $or, $ot ) = $self->lower($invocant);
             my @as = map { ( $self->lower($_) )[0] } @$args;
             if ( $ot eq 'Fiber' && $method_name eq 'switch' ) {
                 return ( $builder->emit( 'call_func', 'Any', [ 'M_fiber_switch', $or, @as ] ), 'Any' );
             }
             my $vt  = $builder->emit( 'load_mem_disp', 'ptr', [ $or, 0 ] );
-            my $fn  = $builder->emit( 'load_mem_disp', 'ptr', [ $vt, ( $global_methods{ $method_name } // die "Unknown method $method_name" ) * 8 ] );
+            my $fn  = $builder->emit( 'load_mem_disp', 'ptr', [ $vt, ( $global_methods{$method_name} // die "Unknown method $method_name" ) * 8 ] );
             my $res = $builder->emit( 'call_reg',      'i64', [ $fn, $or, @as ] );
             $builder->emit( 'shadow_set', 'void', [$sp_backup] );
             return ( $res, 'Any' );
@@ -1524,14 +1528,7 @@ method _generate_export_thunk($node) {
             else {
                 die "Cannot eval: only static string literals are supported at compile-time";
             }
-
-            my $jit = Brocken::JIT->new(
-                driver => $driver,
-                arch   => $driver->arch,
-                os     => $driver->os,
-                standalone => 1
-            );
-
+            my $jit = Brocken::JIT->new( driver => $driver, arch => $driver->arch, os => $driver->os, standalone => 1 );
             my $run_result;
             my $compile_error;
             {
@@ -1542,7 +1539,7 @@ method _generate_export_thunk($node) {
             if ($compile_error) {
                 die "EVAL ERROR: $compile_error";
             }
-            return ( $builder->emit( 'constant', 'i64', [$run_result // 0] ), 'Int' );
+            return ( $builder->emit( 'constant', 'i64', [ $run_result // 0 ] ), 'Int' );
         }
 
         method lower_Use($node) {
@@ -1550,25 +1547,23 @@ method _generate_export_thunk($node) {
         }
 
         method lower_Require($node) {
-            my $package = $node->package;
+            my $package  = $node->package;
             my $filename = $package;
             $filename =~ s|::|/|g;
             $filename .= ".brocken";
 
             # Search in lib/ and current directory
             my $path;
-            for my $dir ('.', 'lib') {
-                if (-f "$dir/$filename") {
+            for my $dir ( '.', 'lib' ) {
+                if ( -f "$dir/$filename" ) {
                     $path = "$dir/$filename";
                     last;
                 }
             }
             die "Cannot find module $package ($filename)" unless $path;
-
             open my $fh, '<', $path or die "Cannot open $path: $!";
             my $source = do { local $/; <$fh> };
             close $fh;
-
             my $tokens = Brocken::Lexer->new( source => $source )->lex();
             my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
 
@@ -1583,15 +1578,11 @@ method _generate_export_thunk($node) {
                 else                                          { push @main_stmts, $n; }
             }
             for my $stmt (@main_stmts) { $self->lower($stmt); }
-
             return ( $builder->emit( 'constant', 'i64', [1] ), 'Int' );
         }
 
         method lower_NativeDecl($node) {
-            $native_funcs{ $node->name } = {
-                library   => $node->library,
-                signature => $node->signature
-            };
+            $native_funcs{ $node->name } = { library => $node->library, signature => $node->signature };
             return ( undef, 'void' );
         }
     }
