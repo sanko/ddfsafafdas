@@ -9,35 +9,33 @@ package Brocken::Compiler::DataSegment {
         field $raw_data = '';
         field %string_offsets;
 
-        method add_raw_bytes($bytes) {
-            my $offset = length($raw_data);
-            $raw_data .= $bytes;
-
-            # Padding to 8-byte alignment
-            my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;
-            $raw_data .= "\0" x $pad;
-            return $offset;
-        }
-
         method add_string($str) {
             return $string_offsets{$str} if exists $string_offsets{$str};
-            my $offset     = length($raw_data);
             my $utf8_bytes = encode( 'UTF-8', $str );
             my $byte_len   = length($utf8_bytes);
 
-            # HEADER: Bit 61 (Leaf) | Byte Length
-            # This tells the GC "I am live, but I contain no pointers"
-            my $header = $byte_len | 0x2000000000000000;
+            # HEADER: Byte Length + 24 | Cycle 0 | Flags (Leaf=Bit 61)
+            # No Magic Number needed with Exact Roots.
+            my $total_sz = $byte_len + 24;
+            my $header = $total_sz | hex("2000000000000000"); # Leaf bit set
+
+            my $offset = length($raw_data);
             $raw_data .= pack( 'Q<',    $header );
-            $raw_data .= pack( 'Q< Q<', $byte_len, length($str) );    # Metadata
+            $raw_data .= pack( 'Q< Q<', $byte_len, length($str) );
             $raw_data .= $utf8_bytes;
 
             # Padding to 8-byte alignment
             my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;
             $raw_data .= "\0" x $pad;
 
-            # Return pointer to the Metadata (skip the 8-byte GC header)
             return $string_offsets{$str} = $offset + 8;
+        }
+        method add_raw_bytes($bytes) {
+            my $offset = length($raw_data);
+            $raw_data .= $bytes;
+            my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;
+            $raw_data .= "\0" x $pad;
+            return $offset;
         }
         method get_raw_data() { return $raw_data; }
     }

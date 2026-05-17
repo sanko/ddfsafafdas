@@ -225,8 +225,8 @@ class Brocken::Compiler {
         my $ds       = Brocken::Compiler::DataSegment->new();
         my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
         $lowering->lower_program($ast);
-        my $optimizer = Brocken::Compiler::Optimizer->new();
-        $optimizer->optimize( $lowering->builder );
+        # my $optimizer = Brocken::Compiler::Optimizer->new();
+        # $optimizer->optimize( $lowering->builder );
         my @instructions = $lowering->builder->instructions();
 
         # Pre-layout with rough size estimates (required before codegen for RVA calculation)

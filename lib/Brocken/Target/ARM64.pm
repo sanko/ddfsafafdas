@@ -32,6 +32,7 @@ package Brocken::Target::ARM64 {
             my $v        = sub { $self->val( $reg_map, shift ) };
             my $d_reg    = $reg_map->{ $inst->{dest} } if $inst->{dest};
             my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) );
+
             if    ( $op eq 'jmp' ) { $as->jmp( $inst->{target} ); }
             elsif ( $op eq 'cond_br' ) {
                 my $reg = $v->( $inst->{reg} );
@@ -357,15 +358,11 @@ package Brocken::Target::ARM64 {
                 $as->mov_reg( $d_reg, 'x0' ) if defined $d_reg;
             }
             elsif ( $op eq 'get_sp' ) { $as->mov_reg( $d_reg, 'sp' ); }
+            elsif ( $op eq 'get_bp' ) { $as->mov_reg( $d_reg, 'x29' ); }
             elsif ( $op eq 'map_op' ) {
                 $as->mov_imm( $d_reg, 1 ) if defined $d_reg;
             }
-
-            # ... shadow stack ops omitted for brevity or I should add them
             elsif ( $op =~ /^shadow_/ ) {
-
-                # Add shadow stack support for ARM64 if needed.
-                # For now, let's just use x28 for isolate context and follow X64 pattern.
                 if ( $op eq 'shadow_push' ) {
                     my $val = $v->( $inst->{args}[0] );
                     $as->ldur_reg_mem( 'x15', 'x28', $driver->iso_offset('current_fcb') );

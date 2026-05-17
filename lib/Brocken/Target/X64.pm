@@ -219,10 +219,10 @@ package Brocken::Target::X64 {
                 }
                 else { $as->store_mem_disp_byte( $reg_map->{$base}, $idx, $src ); }
             }
-            elsif ( $op =~ /^call_/ ) {
+            elsif ( $op =~ /^call_/ || $op =~ /^tail_call_/ ) {
                 my @args   = @{ $inst->{args} };
-                my $target = ( $op eq 'call_func' ) ? shift @args : $reg_map->{ shift @args };
-                $as->mov_reg( 'r11', $target ) if $op eq 'call_reg';
+                my $target = ( $op =~ /_func$/ ) ? shift @args : $reg_map->{ shift @args };
+                $as->mov_reg( 'r11', $target ) if $op =~ /_reg$/;
                 for my $i ( 0 .. $#args ) {
                     my $dst = $self->_abi_arg_reg($i);
                     my $src = ( $args[$i] =~ /^%/ ) ? $reg_map->{ $args[$i] } : 'r10';
@@ -239,20 +239,38 @@ package Brocken::Target::X64 {
                         $as->movq_reg_xmm( $xmm_dst, $src );    # Keep ABI fully happy
                     }
                 }
-                if   ( $op eq 'call_func' ) { $as->call_label($target); }
-                else                        { $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xD3 ) ); }
-                if ( defined $d_reg ) {
-                    if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) ) {
-                        $as->movq_xmm_reg( $d_reg, 'xmm0' );
-                    }
-                    else {
-                        $as->mov_reg( $d_reg, 'rax' );
+                if ( $op =~ /^tail_call_/ ) {
+                    # Epilogue before jumping
+                    $as->add_imm( 'rsp', $driver->frame_local_size );
+                    for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
+                    if   ( $op eq 'tail_call_func' ) { $as->jmp($target); }
+                    else                             { $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xE3 ) ); }    # jmp r11
+                }
+                else {
+                    if   ( $op eq 'call_func' ) { $as->call_label($target); }
+                    else                        { $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xD3 ) ); }         # call r11
+                    if ( defined $d_reg ) {
+                        if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) ) {
+                            $as->movq_xmm_reg( $d_reg, 'xmm0' );
+                        }
+                        else {
+                            $as->mov_reg( $d_reg, 'rax' );
+                        }
                     }
                 }
             }
-            elsif ( $op eq 'enter_func' ) {
-                for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
-                $as->mov_reg( 'rbp', 'rsp' );
+            elsif ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
+                if ( $op eq 'enter_func' ) {
+                    for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
+                    $as->mov_reg( 'rbp', 'rsp' );
+                }
+                else {
+                    # enter_leaf_func: can omit rbp setup if we don't need it for unwinding/debugging,
+                    # but for now let's just omit the preserved regs if we are feeling brave.
+                    # Actually, a leaf function still might use preserved regs if the register
+                    # allocator assigned them.
+                    for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
+                }
                 $as->sub_imm( 'rsp', $driver->frame_local_size );
                 if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
                     $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
@@ -331,6 +349,7 @@ package Brocken::Target::X64 {
                 }
             }
             elsif ( $op eq 'get_sp' ) { $as->mov_reg( $d_reg, 'rsp' ); }
+            elsif ( $op eq 'get_bp' ) { $as->mov_reg( $d_reg, 'rbp' ); }
         }
     }
 }

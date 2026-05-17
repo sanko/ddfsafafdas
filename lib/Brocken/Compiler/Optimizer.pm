@@ -9,6 +9,10 @@ class Brocken::Compiler::Optimizer {
     method optimize($builder) {
         my @instructions = $builder->instructions();
         return unless @instructions;
+
+        $self->_tail_call_optimization(\@instructions);
+        $self->_identify_leaf_functions(\@instructions);
+
         my $changed = 1;
         while ($changed) {
             $changed = 0;
@@ -37,6 +41,67 @@ class Brocken::Compiler::Optimizer {
             @instructions = grep { $_->{op} ne 'nop' } @instructions;
         }
         $builder->set_instructions(@instructions);
+    }
+
+    method _tail_call_optimization($insts) {
+        for ( my $i = 0; $i < @$insts - 1; $i++ ) {
+            my $curr = $insts->[$i];
+            next unless $curr->{op} eq 'call_func' || $curr->{op} eq 'call_reg';
+
+            # Look ahead for shadow_set + leave_func or just leave_func
+            my $next_idx = $i + 1;
+            my $has_shadow_set = 0;
+            if ($next_idx < @$insts && $insts->[$next_idx]{op} && $insts->[$next_idx]{op} eq 'shadow_set') {
+                $has_shadow_set = 1;
+                $next_idx++;
+            }
+            
+            # Skip labels or jmps that lead to the same leave_func
+            while ($next_idx < @$insts && $insts->[$next_idx]{op} && ($insts->[$next_idx]{op} eq 'label' || $insts->[$next_idx]{op} eq 'jmp')) {
+                $next_idx++;
+            }
+
+            if ( $next_idx < @$insts && $insts->[$next_idx]{op} && $insts->[$next_idx]{op} eq 'leave_func' ) {
+                my $leave = $insts->[$next_idx];
+                if ( defined $leave->{args}[0] && defined $curr->{dest} && $leave->{args}[0] eq $curr->{dest} ) {
+                    # Pattern matched: %res = call ...; [shadow_set ...;] leave_func %res
+                    
+                    if ($has_shadow_set) {
+                        # Move shadow_set BEFORE the tail call so it actually runs
+                        my $ss = $insts->[$i+1];
+                        $insts->[$i+1] = $curr;
+                        $insts->[$i] = $ss;
+                        $curr->{op} = ( $curr->{op} eq 'call_func' ) ? 'tail_call_func' : 'tail_call_reg';
+                    } else {
+                        $curr->{op} = ( $curr->{op} eq 'call_func' ) ? 'tail_call_func' : 'tail_call_reg';
+                    }
+                    $leave->{op} = 'nop';
+                }
+            }
+        }
+    }
+
+    method _identify_leaf_functions($insts) {
+        my $current_enter = undef;
+        my $is_leaf = 1;
+        for my $i (@$insts) {
+            if ($i->{op} eq 'enter_func') {
+                $current_enter = $i;
+                $is_leaf = 1;
+            }
+            elsif ($i->{op} eq 'leave_func' || $i->{op} eq 'tail_call_func' || $i->{op} eq 'tail_call_reg') {
+                if ($current_enter && $is_leaf) {
+                    $current_enter->{op} = 'enter_leaf_func';
+                }
+                $current_enter = undef;
+            }
+            elsif ($current_enter) {
+                # Instructions that disqualify a leaf
+                if ($i->{op} =~ /^call_/ || $i->{op} =~ /^intrinsic_(print|alloc|sleep|read|write|open|close)/) {
+                    $is_leaf = 0;
+                }
+            }
+        }
     }
 
     method substitute_ast( $node, $var_name, $repl_node ) {

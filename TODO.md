@@ -17,7 +17,7 @@
 
 ## Milestone 1: The IR & Optimizer Pipeline
 - [x] Futhark-style map merging (Loop Fusion).
-- [ ] Tail call & Leaf optimizations.
+- [x] Tail call & Leaf optimizations.
 - [ ] Arithmetic expansion (IMUL, DIV, SSE/AVX for floats).
 
 ## Milestone 2: Memory & The "Variant" Type
