@@ -23,7 +23,6 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
             $l->add_section( '.eh_frame',       4096, 0 );
         }
     }
-
     method image_base () { return $self->type eq 'shared' ? 0 : 0x400000; }
 
     method write_bin( $f, $text, $data, $arch, $os, $type = $self->type ) {
@@ -92,17 +91,18 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
             my $sym_idx = 1;
             for my $name (@exports) {
                 my $rva = $l->get('.text')->{rva} + ( $self->labels->{"E_$name"} // 0 );
- $dynsym .= pack( 'L< C C S< Q< Q<', $str_off{$name}, 0x12, 0, 1, $base + $rva, 0 );
- $sym_idx++;
+                $dynsym .= pack( 'L< C C S< Q< Q<', $str_off{$name}, 0x12, 0, 1, $base + $rva, 0 );
+                $sym_idx++;
             }
             my $elf_hash = sub {
                 my $name = shift;
                 my $h    = 0;
                 for my $c ( split //, $name ) {
-                    $h = ( $h << 4 ) + ord($c);$h &= 0xffffffff;         # Prevent 64-bit Perl promotion overflow
+                    $h = ( $h << 4 ) + ord($c);
+                    $h &= 0xffffffff;    # Prevent 64-bit Perl promotion overflow
                     my $g = $h & 0xf0000000;
                     if ($g) { $h ^= ( $g >> 24 ); }
-                    $h &= 0x0fffffff;         # Standard 32-bit clear
+                    $h &= 0x0fffffff;    # Standard 32-bit clear
                 }
                 return $h;
             };
@@ -118,8 +118,8 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
                 $buckets[$b] = $i;
                 $i++;
             }
-$hash                      = pack( 'L<*', $nbucket, $nchain, @buckets, @chains );
-$l->get('.dynstr')->{size} = length($dynstr);
+            $hash                      = pack( 'L<*', $nbucket, $nchain, @buckets, @chains );
+            $l->get('.dynstr')->{size} = length($dynstr);
             $l->get('.dynsym')->{size} = length($dynsym);
             $l->get('.hash')->{size}   = length($hash);
             $l->calculate(0x1000);
@@ -128,16 +128,17 @@ $l->get('.dynstr')->{size} = length($dynstr);
             my $sym_rva  = $l->get('.dynsym')->{rva};
             my $hash_rva = $l->get('.hash')->{rva};
             $dynamic = '';
-$dynamic .= pack( 'Q< Q<', 4,  $base + $hash_rva );
+            $dynamic .= pack( 'Q< Q<', 4,  $base + $hash_rva );
             $dynamic .= pack( 'Q< Q<', 5,  $base + $str_rva );
             $dynamic .= pack( 'Q< Q<', 6,  $base + $sym_rva );
             $dynamic .= pack( 'Q< Q<', 10, $dynstr_sz );
             $dynamic .= pack( 'Q< Q<', 11, 24 );
             my $main_lbl = $self->labels->{'L_MAIN_START'};
-            if (defined $main_lbl) {
-                $dynamic .= pack( 'Q< Q<', 12, $base + $l->get('.text')->{rva} + $main_lbl ); # DT_INIT
+
+            if ( defined $main_lbl ) {
+                $dynamic .= pack( 'Q< Q<', 12, $base + $l->get('.text')->{rva} + $main_lbl );    # DT_INIT
             }
-            $dynamic .= pack( 'Q< Q<', 0,  0 );
+            $dynamic .= pack( 'Q< Q<', 0, 0 );
             $l->get('.dynamic')->{size} = length($dynamic);
             $l->calculate(0x1000);
         }
@@ -180,7 +181,7 @@ $dynamic .= pack( 'Q< Q<', 4,  $base + $hash_rva );
         my @shdrs = ();
 
         # NULL Section (index 0)
-push @shdrs, pack( 'L< L< Q< Q< Q< Q< L< L< Q< Q<', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
+        push @shdrs, pack( 'L< L< Q< Q< Q< Q< L< L< Q< Q<', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
 
         # Real sections from layout
         for my $s ( $l->sections ) {
@@ -230,9 +231,9 @@ push @shdrs, pack( 'L< L< Q< Q< Q< Q< L< L< Q< Q<', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                 );
         }
         my $shstrtab_idx = scalar(@shdrs);
-     push @shdrs, pack( 'L< L< Q< Q< Q< Q< L< L< Q< Q<', $sh_name_off{'.shstrtab'},       3, 0, 0, $shstrtab_off, length($shstrtab), 0, 0, 1, 0 );
+        push @shdrs, pack( 'L< L< Q< Q< Q< Q< L< L< Q< Q<', $sh_name_off{'.shstrtab'},       3, 0, 0, $shstrtab_off, length($shstrtab), 0, 0, 1, 0 );
         push @shdrs, pack( 'L< L< Q< Q< Q< Q< L< L< Q< Q<', $sh_name_off{'.note.GNU-stack'}, 1, 0, 0, 0,             0,                 0, 0, 1, 0 );
-seek( $fh, $shoff, 0 );
+        seek( $fh, $shoff, 0 );
         print $fh $_ for @shdrs;
 
         # 4. Finalize ELF Header and Program Headers at offset 0
@@ -241,54 +242,58 @@ seek( $fh, $shoff, 0 );
         if ($pintable_data)            { $num_ph++; }
         if ( $self->type eq 'shared' ) { $num_ph++; }
         my $ehdr = pack(
-           'A4 C C C C C x7 S< S< L< Q< Q< Q< L< S< S< S< S< S< S<',
+            'A4 C C C C C x7 S< S< L< Q< Q< Q< L< S< S< S< S< S< S<',
             "\x7fELF", 2, 1, 1, $osabi, 0, $elf_type, ( $arch eq 'arm64' ? 183 : 62 ),
             1,         $base + $l->get('.text')->{rva},
             64,        $shoff, 0, 64, 56, $num_ph, 64, scalar(@shdrs), $shstrtab_idx
         );
         my $ph_hdrs = pack( 'L< L< Q< Q< Q< Q< Q< Q<', 1, 4, 0, $base, $base, 0x1000, 0x1000, 0x1000 );
         my $ph_t    = pack(
-            'L< L< Q< Q< Q< Q< Q< Q<',         1, 5,    # PT_LOAD, RX
-            $l->get('.text')->{off},  $base + $l->get('.text')->{rva}, $base + $l->get('.text')->{rva}, $l->get('.text')->{size},
-            $l->get('.text')->{size}, 0x1000
+            'L< L< Q< Q< Q< Q< Q< Q<', 1, 5,    # PT_LOAD, RX
+            $l->get('.text')->{off},   $base + $l->get('.text')->{rva}, $base + $l->get('.text')->{rva}, $l->get('.text')->{size},
+            $l->get('.text')->{size},  0x1000
         );
-
-        my $d_sec       = $l->get('.data');
-       my $d_end_off   = $d_sec->{off} + $d_sec->{size};
-        if ($self->type eq 'shared') {
+        my $d_sec     = $l->get('.data');
+        my $d_end_off = $d_sec->{off} + $d_sec->{size};
+        if ( $self->type eq 'shared' ) {
             my $dyn_sec = $l->get('.dynamic');
-            $d_end_off  = $dyn_sec->{off} + $dyn_sec->{size};
+            $d_end_off = $dyn_sec->{off} + $dyn_sec->{size};
         }
         my $d_size = $d_end_off - $d_sec->{off};
-
-
-
-
-
-
-        my $ph_d = pack(
-      'L< L< Q< Q< Q< Q< Q< Q<',         1, 6,    # PT_LOAD, RW
+        my $ph_d   = pack(
+            'L< L< Q< Q< Q< Q< Q< Q<', 1, 6,    # PT_LOAD, RW
             $d_sec->{off}, $base + $d_sec->{rva}, $base + $d_sec->{rva}, $d_size, $d_size, 0x1000
         );
         my $extra_off = 64 + ( $num_ph * 56 );
         my $ph_note   = '';
         if ($note_data) {
- $ph_note = pack( 'L< L< Q< Q< Q< Q< Q< Q<', 4, 4, $extra_off, $base + $extra_off, $base + $extra_off, length($note_data), length($note_data), 4 );
- $extra_off += length($note_data);
+            $ph_note
+                = pack( 'L< L< Q< Q< Q< Q< Q< Q<', 4, 4, $extra_off, $base + $extra_off, $base + $extra_off, length($note_data), length($note_data),
+                4 );
+            $extra_off += length($note_data);
         }
         my $ph_syscalls = '';
         if ($pintable_data) {
-            $ph_syscalls = pack( 'L< L< Q< Q< Q< Q< Q< Q<',
+            $ph_syscalls = pack(
+                'L< L< Q< Q< Q< Q< Q< Q<',
                 0x65a3dbe9, 4, $extra_off,
                 $base + $extra_off,
                 $base + $extra_off,
-                length($pintable_data), length($pintable_data), 4 );
+                length($pintable_data), length($pintable_data), 4
+            );
             $extra_off += length($pintable_data);
         }
         my $ph_dyn = '';
         if ( $self->type eq 'shared' ) {
             my $d_sec = $l->get('.dynamic');
-$ph_dyn = pack( 'L< L< Q< Q< Q< Q< Q< Q<', 2, 6, $d_sec->{off}, $base + $d_sec->{rva}, $base + $d_sec->{rva}, $d_sec->{size}, $d_sec->{size}, 8 );        }
+            $ph_dyn = pack(
+                'L< L< Q< Q< Q< Q< Q< Q<',
+                2, 6, $d_sec->{off},
+                $base + $d_sec->{rva},
+                $base + $d_sec->{rva},
+                $d_sec->{size}, $d_sec->{size}, 8
+            );
+        }
         seek( $fh, 0, 0 );
         print $fh $ehdr, $ph_hdrs, $ph_t, $ph_d, $ph_note, $ph_syscalls, $ph_dyn, $note_data, $pintable_data;
         close $fh;
@@ -297,25 +302,33 @@ $ph_dyn = pack( 'L< L< Q< Q< Q< Q< Q< Q<', 2, 6, $d_sec->{off}, $base + $d_sec->
     }
 }
 1;
-
 __END__
 
 =pod
 
 =head1 NAME
 
-Brocken::Format::ELF - Linux ELF64 binary format writer
+Brocken::Format::ELF - ELF64 binary format writer
+
+=head1 SYNOPSIS
+
+  my $elf = Brocken::Format::ELF->new(type => 'executable');
+  $elf->write_bin("out.elf", $code, $data, "x64", "linux");
 
 =head1 DESCRIPTION
 
-Builds a Linux ELF64 executable. Emits ELF header (EM_X86_64 or EM_AARCH64), two PT_LOAD program headers (.text RX,
-.data RW), and appends code and data at the computed offsets.
+Generates 64-bit ELF (Executable and Linkable Format) binaries. Supports both executables and shared libraries. Handles
+architecture-specific headers (x64, ARM64) and OS-specific identification (Linux, FreeBSD, NetBSD, OpenBSD, DragonFly).
 
 =head1 METHODS
 
-=head2 write_bin($filename, $text, $data, $arch, $os, $type)
+=head2 image_base()
 
-Writes the complete ELF executable to disk.
+Returns the default load address (0x400000 for executables, 0 for shared libraries).
+
+=head2 write_bin($filename, $text, $data, $arch, $os, $type = $self->type)
+
+Constructs the ELF file: 1. Calculates section layout. 2. Builds dynamic symbols and hash table (if shared library). 3.
+Writes section payloads. 4. Writes section headers and string table. 5. Writes ELF header and program headers.
 
 =cut
-

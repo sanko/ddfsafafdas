@@ -117,6 +117,11 @@ __END__
 
 Brocken::Codegen - Linear scan register allocator and instruction dispatcher
 
+=head1 SYNOPSIS
+
+    my $codegen = Brocken::Codegen->new( arch => 'x64' );
+    $codegen->compile( \@instructions, $driver );
+
 =head1 DESCRIPTION
 
 Performs liveness analysis on the IR instruction sequence, then runs linear scan register allocation. Spills to local

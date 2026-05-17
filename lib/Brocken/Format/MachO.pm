@@ -1,4 +1,4 @@
---- START OF FILE MachO . pm-- - use v5.40;
+use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
@@ -201,3 +201,35 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Format::MachO - Mach-O (macOS) binary format writer
+
+=head1 SYNOPSIS
+
+  my $macho = Brocken::Format::MachO->new(type => 'executable');
+  $macho->write_bin("out.macho", $code, $data, "x64", "macos");
+
+=head1 DESCRIPTION
+
+Generates 64-bit Mach-O (Mach Object) binaries for macOS.  Supports: - Executables and Dynamic Libraries (MH_DYLIB). -
+LC_MAIN for executables. - Export Tries and Symbol Tables for libraries. - DWARF debug sections (mapped into __DWARF
+segment).
+
+=head1 METHODS
+
+=head2 image_base()
+
+Returns the default load address 0x100000000.
+
+=head2 write_bin($filename, $text, $data, $arch, $os)
+
+Constructs and writes the Mach-O file: 1. Calculates layout. 2. Writes Mach-O header. 3. Writes Load Commands
+(__PAGEZERO, __TEXT, __DATA, __LINKEDIT, LC_DYLD_INFO_ONLY, LC_SYMTAB, LC_DYSYMTAB, LC_MAIN, etc.). 4. Writes Segment
+and Section descriptors. 5. Writes section payloads at correct page-aligned offsets.
+
+=cut

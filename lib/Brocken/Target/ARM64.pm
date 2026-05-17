@@ -396,3 +396,45 @@ package Brocken::Target::ARM64 {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Target::ARM64 - ARM64 CPU target implementation
+
+=head1 SYNOPSIS
+
+    my $target = Brocken::Target::ARM64->new( os => 'linux', arch => 'arm64' );
+    my @regs = @{ $target->registers };
+    $target->emit_op($as, $inst, \%reg_map, $compiler);
+
+=head1 DESCRIPTION
+
+Implements the L<Brocken::Target> interface for the ARM64 (AArch64) architecture. Handles the mapping of Brocken IR to
+ARM64 machine code, manages the ARM64 register pool, and follows the standard AArch64 ABI.
+
+=head1 METHODS
+
+=head2 registers
+
+Returns the list of available callee-saved registers (x19-x27). x28 is reserved for the Isolate context.
+
+=head2 fp_registers
+
+Returns the list of available SIMD/FP registers (d8-d15).
+
+=head2 compile_intrinsic($as, $inst, $reg_map, $driver)
+
+Delegates intrinsic compilation to the current platform module.
+
+=head2 new_assembler
+
+Returns a new L<Brocken::Target::ARM64::Emit> instance.
+
+=head2 emit_op($as, $inst, $reg_map, $driver)
+
+Translates Brocken IR instructions into ARM64 machine instructions.
+
+=cut

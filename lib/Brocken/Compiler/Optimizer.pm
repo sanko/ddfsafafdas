@@ -61,6 +61,11 @@ __END__
 
 Brocken::Compiler::Optimizer - IR optimizer
 
+=head1 SYNOPSIS
+
+    my $optimizer = Brocken::Compiler::Optimizer->new();
+    $optimizer->optimize($builder);
+
 =head1 DESCRIPTION
 
 Transforms the IR instruction sequence. Currently implements:

@@ -254,3 +254,36 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Platform::Darwin - macOS (Darwin) platform support
+
+=head1 SYNOPSIS
+
+    my $platform = Brocken::Platform::Darwin->new( os => 'macos' );
+    my $name = $platform->format_name; # 'MachO'
+
+=head1 DESCRIPTION
+
+Implements the L<Brocken::Platform> interface for macOS (x64 and ARM64). Handles the Mach-O binary format and
+translates intrinsics into Darwin system calls. Darwin system calls are typically prefixed with C<0x2000000> on x64.
+
+=head1 METHODS
+
+=head2 format_name
+
+Returns C<'MachO'>.
+
+=head2 shadow_space
+
+Returns C<0>.
+
+=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
+
+Emits machine code for intrinsics using Darwin-specific system call numbers.
+
+=cut

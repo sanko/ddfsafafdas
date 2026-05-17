@@ -21,7 +21,8 @@ class Brocken::Format {
     method rva_for($name) {
         return $self->layout->get($name)->{rva};
     }
-method image_base() { return 0; }
+    method image_base() { return 0; }
+
     method pre_layout( $text_size, $data_size, $arch, $os, $debug = 0 ) {
         require Brocken::Format::Layout;
         my $fa = $os eq 'macos' ? 0x4000 : ( $os eq 'win64' ? 0x200 : 0x1000 );
@@ -43,6 +44,11 @@ __END__
 
 Brocken::Format - Abstract base class for binary format writers
 
+=head1 SYNOPSIS
+
+  # In a subclass:
+  class Brocken::Format::MyFormat : isa(Brocken::Format) { ... }
+
 =head1 DESCRIPTION
 
 Defines the interface for OS-specific binary format modules (PE, ELF, Mach-O). Provides shared layout management via
@@ -50,20 +56,48 @@ Brocken::Format::Layout.
 
 Subclasses must implement C<_setup_layout>, C<write_bin>, and optionally C<import_rva>.
 
+=head1 FIELDS
+
+=over
+
+=item layout
+
+The Brocken::Format::Layout instance managing section offsets and RVAs.
+
+=item type
+
+The type of binary: 'exe' (default) or 'shared'.
+
+=back
+
 =head1 METHODS
+
+=head2 set_debug_data($data) / debug_section($name)
+
+Used to store and retrieve binary debug payloads (e.g. DWARF sections).
+
+=head2 set_labels($labels)
+
+Registers a hash of labels (name => offset within section) for resolution.
+
+=head2 set_exported_funcs($funcs)
+
+Registers a list of function names to be exported (for shared libraries).
 
 =head2 rva_for($name)
 
-Returns the RVA for a named section (delegates to Layout).
+Returns the Relative Virtual Address (RVA) for a named section.
 
-=head2 pre_layout($text_size, $data_size, $arch, $os)
+=head2 image_base()
 
-Creates the Layout object and calls C<_setup_layout> to register sections.
+Returns the base address where the image is preferred to be loaded.
 
-=head2 write_bin($filename, $text, $data, $arch, $os)
+=head2 pre_layout($text_size, $data_size, $arch, $os, $debug = 0)
+
+Initializes the layout and computes RVAs/offsets based on section alignments.
+
+=head2 write_bin($filename, $text, $data, $arch, $os, $type)
 
 Abstract. Writes the native executable to disk.
 
 =cut
-}
-1;

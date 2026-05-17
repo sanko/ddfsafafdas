@@ -6,11 +6,13 @@ package Brocken::Target::X64 {
     class Brocken::Target::X64 : isa(Brocken::Target) {
 
         method registers() {
+
             # Reserve R14 for Isolate and R10/R11 for internal compiler use
             return $self->os eq 'win64' ? [qw(rbx rsi rdi r12 r13 r15)] : [qw(rbx r12 r13 r15)];
         }
 
         method fp_registers() {
+
             # XMM registers for floating point (SSE2)
             return [qw(xmm0 xmm1 xmm2 xmm3 xmm4 xmm5 xmm6 xmm7)];
         }
@@ -21,11 +23,13 @@ package Brocken::Target::X64 {
         }
 
         method _abi_fp_arg_reg($idx) {
+
             # Float/double args go in XMM registers on x64
             return (qw[xmm0 xmm1 xmm2 xmm3])[$idx] // "xmm$idx";
         }
 
         method _abi_fp_return_reg() {
+
             # Float/double return value in XMM0
             return 'xmm0';
         }
@@ -42,7 +46,6 @@ package Brocken::Target::X64 {
             my $op    = $inst->{op};
             my $v     = sub { $self->val( $reg_map, shift ) };
             my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
-
             if    ( $op eq 'jmp' ) { $as->jmp( $inst->{target} ); }
             elsif ( $op eq 'cond_br' ) {
                 my $reg = $v->( $inst->{reg} );
@@ -51,9 +54,10 @@ package Brocken::Target::X64 {
                 $as->jmp( $inst->{false_l} );
             }
             elsif ( $op eq 'constant' ) {
-                if ( $inst->{type} && ($inst->{type} eq 'double' || $inst->{type} eq 'float') ) {
+                if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) ) {
+
                     # Load 64-bit floating point bit pattern directly into GP register
-                    my $bits = unpack('Q<', pack('d<', $inst->{args}[0] // 0.0));
+                    my $bits = unpack( 'Q<', pack( 'd<', $inst->{args}[0] // 0.0 ) );
                     $as->mov_imm( $d_reg, $bits );
                 }
                 else {
@@ -67,26 +71,26 @@ package Brocken::Target::X64 {
             }
             elsif ( $op =~ /^(add|sub|mul|and|or|xor|div|mod)$/ ) {
                 my ( $l_raw, $r_raw ) = @{ $inst->{args} };
-                my $is_float = ( $inst->{type} && ($inst->{type} eq 'double' || $inst->{type} eq 'float') );
+                my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) );
+                if ( $is_float && $op =~ /^(add|sub|mul|div)$/ ) {
 
-                if ($is_float && $op =~ /^(add|sub|mul|div)$/) {
                     # Move GP stored floats into XMM0/XMM1 temps
                     if ( $l_raw =~ /^%/ ) {
                         $as->movq_reg_xmm( 'xmm0', $reg_map->{$l_raw} );
-                    } else {
-                        my $bits = unpack('Q<', pack('d<', $v->($l_raw) // 0.0));
+                    }
+                    else {
+                        my $bits = unpack( 'Q<', pack( 'd<', $v->($l_raw) // 0.0 ) );
                         $as->mov_imm( 'r10', $bits );
                         $as->movq_reg_xmm( 'xmm0', 'r10' );
                     }
-
                     if ( $r_raw =~ /^%/ ) {
                         $as->movq_reg_xmm( 'xmm1', $reg_map->{$r_raw} );
-                    } else {
-                        my $bits = unpack('Q<', pack('d<', $v->($r_raw) // 0.0));
+                    }
+                    else {
+                        my $bits = unpack( 'Q<', pack( 'd<', $v->($r_raw) // 0.0 ) );
                         $as->mov_imm( 'r11', $bits );
                         $as->movq_reg_xmm( 'xmm1', 'r11' );
                     }
-
                     if    ( $op eq 'add' ) { $as->addsd_reg( 'xmm0', 'xmm1' ) }
                     elsif ( $op eq 'sub' ) { $as->subsd_reg( 'xmm0', 'xmm1' ) }
                     elsif ( $op eq 'mul' ) { $as->mulsd_reg( 'xmm0', 'xmm1' ) }
@@ -100,12 +104,9 @@ package Brocken::Target::X64 {
                     $as->push_reg('rax');
                     if ( $l_raw =~ /^%/ ) { $as->mov_reg( 'rax', $reg_map->{$l_raw} ); }
                     else                  { $as->mov_imm( 'rax', $v->($l_raw) ); }
-
-                    $as->append_code( pack( 'CC', 0x48, 0x99 ) ); # CQO
-
+                    $as->append_code( pack( 'CC', 0x48, 0x99 ) );    # CQO
                     if   ( $r_raw =~ /^%/ ) { $as->idiv_reg( $reg_map->{$r_raw} ); }
                     else                    { $as->mov_imm( 'r11', $v->($r_raw) ); $as->idiv_reg('r11'); }
-
                     $as->mov_reg( 'r10', ( $op eq 'div' ? 'rax' : 'rdx' ) );
                     $as->pop_reg('rax');
                     $as->pop_reg('rdx');
@@ -115,7 +116,6 @@ package Brocken::Target::X64 {
                     # Integer Add/Sub/Mul/Logical
                     if ( $l_raw !~ /^%/ ) { $as->mov_imm( $d_reg, $v->($l_raw) ); }
                     else                  { $as->mov_reg( $d_reg, $reg_map->{$l_raw} ) if $d_reg ne $reg_map->{$l_raw}; }
-
                     if ( $r_raw =~ /^%/ ) {
                         my $rs = $reg_map->{$r_raw};
                         if    ( $op eq 'add' ) { $as->add_reg( $d_reg, $rs ) }
@@ -151,25 +151,21 @@ package Brocken::Target::X64 {
             }
             elsif ( $op =~ /^cmp_/ ) {
                 my ( $l_raw, $r_raw ) = @{ $inst->{args} };
-                my $is_float = ( $inst->{type} && ($inst->{type} eq 'double' || $inst->{type} eq 'float') );
-
+                my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) );
                 if ($is_float) {
                     if ( $l_raw =~ /^%/ ) { $as->movq_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
                     else {
-                        my $bits = unpack('Q<', pack('d<', $v->($l_raw) // 0.0));
+                        my $bits = unpack( 'Q<', pack( 'd<', $v->($l_raw) // 0.0 ) );
                         $as->mov_imm( 'r10', $bits );
                         $as->movq_reg_xmm( 'xmm0', 'r10' );
                     }
-
                     if ( $r_raw =~ /^%/ ) { $as->movq_reg_xmm( 'xmm1', $reg_map->{$r_raw} ); }
                     else {
-                        my $bits = unpack('Q<', pack('d<', $v->($r_raw) // 0.0));
+                        my $bits = unpack( 'Q<', pack( 'd<', $v->($r_raw) // 0.0 ) );
                         $as->mov_imm( 'r11', $bits );
                         $as->movq_reg_xmm( 'xmm1', 'r11' );
                     }
-
-                    $as->ucomisd_reg('xmm0', 'xmm1');
-
+                    $as->ucomisd_reg( 'xmm0', 'xmm1' );
                     $as->mov_imm( $d_reg, 0 );
                     my $cc = { eq => 0x94, ne => 0x95, lt => 0x92, gt => 0x97, le => 0x96, ge => 0x93 }->{ substr( $op, 4 ) };
                     $as->setcc( $cc, $d_reg );
@@ -185,7 +181,7 @@ package Brocken::Target::X64 {
                 }
             }
             elsif ( $op eq 'local_store' ) {
-                my $src  = $inst->{args}[1];
+                my $src = $inst->{args}[1];
                 if ( $src !~ /^%/ ) {
                     $as->mov_imm( 'r11', $v->($src) );
                     $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' );
@@ -227,33 +223,29 @@ package Brocken::Target::X64 {
                 my @args   = @{ $inst->{args} };
                 my $target = ( $op eq 'call_func' ) ? shift @args : $reg_map->{ shift @args };
                 $as->mov_reg( 'r11', $target ) if $op eq 'call_reg';
-
                 for my $i ( 0 .. $#args ) {
                     my $dst = $self->_abi_arg_reg($i);
                     my $src = ( $args[$i] =~ /^%/ ) ? $reg_map->{ $args[$i] } : 'r10';
-
                     if ( $args[$i] !~ /^%/ ) {
                         if ( $args[$i] =~ /^[A-Z_]/i ) { $as->lea_rva( 'r10', $args[$i], $driver->text_rva ); }
                         else                           { $as->mov_imm( 'r10', $v->( $args[$i] ) ); }
                     }
-
                     if ( $dst =~ /^\d+$/ ) {
                         $as->store_mem_disp_reg( 'rsp', $dst * 8, $src );
                     }
                     else {
                         $as->mov_reg( $dst, $src ) if $dst ne $src;
                         my $xmm_dst = "xmm$i";
-                        $as->movq_reg_xmm( $xmm_dst, $src ); # Keep ABI fully happy
+                        $as->movq_reg_xmm( $xmm_dst, $src );    # Keep ABI fully happy
                     }
                 }
-
                 if   ( $op eq 'call_func' ) { $as->call_label($target); }
                 else                        { $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xD3 ) ); }
-
-                if (defined $d_reg) {
-                    if ( $inst->{type} && ($inst->{type} eq 'double' || $inst->{type} eq 'float') ) {
+                if ( defined $d_reg ) {
+                    if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) ) {
                         $as->movq_xmm_reg( $d_reg, 'xmm0' );
-                    } else {
+                    }
+                    else {
                         $as->mov_reg( $d_reg, 'rax' );
                     }
                 }
@@ -262,7 +254,6 @@ package Brocken::Target::X64 {
                 for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
                 $as->mov_reg( 'rbp', 'rsp' );
                 $as->sub_imm( 'rsp', $driver->frame_local_size );
-
                 if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
                     $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
                     $as->load_reg_mem( 'r14', 'r11', 0 );
@@ -270,16 +261,16 @@ package Brocken::Target::X64 {
             }
             elsif ( $op eq 'leave_func' ) {
                 if ( defined $inst->{args}[0] ) {
-                    my $arg = $inst->{args}[0];
+                    my $arg  = $inst->{args}[0];
                     my $type = $inst->{type} // 'i64';
-
                     if ( $type eq 'double' || $type eq 'float' ) {
+
                         # Float return goes in XMM0
                         if ( $arg =~ /^%/ ) {
                             $as->movq_reg_xmm( 'xmm0', $reg_map->{$arg} );
                         }
                         else {
-                            my $bits = unpack('Q<', pack('d<', $v->($arg) // 0.0));
+                            my $bits = unpack( 'Q<', pack( 'd<', $v->($arg) // 0.0 ) );
                             $as->mov_imm( 'r10', $bits );
                             $as->movq_reg_xmm( 'xmm0', 'r10' );
                         }
@@ -344,3 +335,46 @@ package Brocken::Target::X64 {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Target::X64 - x64 CPU target implementation
+
+=head1 SYNOPSIS
+
+    my $target = Brocken::Target::X64->new( os => 'linux', arch => 'x64' );
+    my @regs = @{ $target->registers };
+    $target->emit_op($as, $inst, \%reg_map, $compiler);
+
+=head1 DESCRIPTION
+
+Implements the L<Brocken::Target> interface for the x86_64 architecture. Handles the mapping of Brocken IR to x64
+machine code, manages the x64 register pool, and implements System V and Windows x64 ABIs.
+
+=head1 METHODS
+
+=head2 registers
+
+Returns the list of available callee-saved general-purpose registers (excluding R14 which is reserved for Isolate
+context).
+
+=head2 fp_registers
+
+Returns the list of available XMM registers for floating-point operations.
+
+=head2 compile_intrinsic($as, $inst, $reg_map, $driver)
+
+Delegates intrinsic compilation to the current platform module.
+
+=head2 new_assembler
+
+Returns a new L<Brocken::Target::X64::Emit> instance.
+
+=head2 emit_op($as, $inst, $reg_map, $driver)
+
+The core code generation loop. Translates a single IR instruction into one or more x64 machine instructions.
+
+=cut

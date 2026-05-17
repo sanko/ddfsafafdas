@@ -1,4 +1,7 @@
 #!/usr/bin/env perl
+# eg/cross_compile.pl
+# Demonstrates cross-compiling Brocken source code into standalone native
+# executables for multiple target platforms.
 use v5.40;
 use lib '../lib';
 use Brocken::Compiler;

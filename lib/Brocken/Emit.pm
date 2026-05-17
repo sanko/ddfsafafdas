@@ -154,6 +154,11 @@ __END__
 
 Brocken::Emit::ARM64 - ARM64 emitter (alternate entry point)
 
+=head1 SYNOPSIS
+
+    my $as = Brocken::Emit::ARM64->new();
+    $as->mov_imm('x0', 42);
+
 =head1 DESCRIPTION
 
 Duplicate/shadow of Brocken::Target::ARM64::Emit. Provides the same A64 instruction encoding interface. May be

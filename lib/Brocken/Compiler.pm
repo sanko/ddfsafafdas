@@ -212,7 +212,8 @@ class Brocken::Compiler {
 
     # --- Top-Level Facade API ---
     my $_x = 0;
-    method compile_source($source, $output_file, $filename = 'eval_' .  ++$_x) {
+
+    method compile_source( $source, $output_file, $filename = 'eval_' . ++$_x ) {
         require Brocken::Lexer;
         require Brocken::Parser;
         require Brocken::Compiler::Lowering;
@@ -232,42 +233,35 @@ class Brocken::Compiler {
         $self->format->pre_layout( scalar(@instructions) * 32 + 8192, length( $ds->get_raw_data() ) + 8192, $self->arch, $self->os, $self->debug );
         my $codegen = Brocken::Codegen->new( arch => $self->arch );
         $codegen->compile( \@instructions, $self );
-         $self->as->resolve( $self->text_rva, $self->data_rva );
+        $self->as->resolve( $self->text_rva, $self->data_rva );
 
         # Wire up exported symbols and internal labels to the formatter
         $self->format->set_labels( $self->as->labels );
         $self->format->set_exported_funcs( $lowering->exported_funcs );
+        if ( $self->debug ) {
+            $self->format->set_func_ranges( [ $self->func_ranges ] );
+            require Brocken::Format::DWARF;
+            my $dwarf = Brocken::Format::DWARF->new(
+                source_locs    => [ $self->source_locs ],
+                text_base      => $self->format->image_base + $self->text_rva,
+                func_ranges    => [ $self->func_ranges ],
+                context_size   => $self->context_size,
+                arch           => $self->arch,
+                preserved_regs => $self->preserved_regs,
+                class_info     => { $lowering->class_info },
+                source_file    => $filename
+            );
+            my $dwarf_data = $dwarf->build_all();
+            $self->format->set_debug_data($dwarf_data);
 
-
-
-        if ($self->debug) {
-            $self->format->set_func_ranges( [$self->func_ranges] );
-                require Brocken::Format::DWARF;
-                my $dwarf = Brocken::Format::DWARF->new(
-                    source_locs    => [ $self->source_locs ],
-                    text_base      => $self->format->image_base + $self->text_rva,
-                    func_ranges    => [ $self->func_ranges ],
-                    context_size   => $self->context_size,
-                    arch           => $self->arch,
-                    preserved_regs => $self->preserved_regs,
-                    class_info     => { $lowering->class_info },
-                    source_file    => $filename
-                );
-
-                my $dwarf_data = $dwarf->build_all();
-                $self->format->set_debug_data( $dwarf_data );
-
-                # Shrink/grow layout sections to match precise DWARF output
-                for my $sec_name (keys %$dwarf_data) {
-                    eval { $self->format->layout->get($sec_name)->{size} = length($dwarf_data->{$sec_name}); };
-                }
-
-                # Recalculate layout RVAs safely
-                $self->format->layout->calculate( $self->os eq 'macos' ? 0x4000 : 0x1000 );
+            # Shrink/grow layout sections to match precise DWARF output
+            for my $sec_name ( keys %$dwarf_data ) {
+                eval { $self->format->layout->get($sec_name)->{size} = length( $dwarf_data->{$sec_name} ); };
             }
 
-
-
+            # Recalculate layout RVAs safely
+            $self->format->layout->calculate( $self->os eq 'macos' ? 0x4000 : 0x1000 );
+        }
         $self->format->write_bin( $output_file, $self->as->code, $ds->get_raw_data(), $self->arch, $self->os, $self->type );
         return $output_file;
     }
@@ -288,6 +282,19 @@ __END__
 =head1 NAME
 
 Brocken::Compiler - Platform detection and ABI driver
+
+=head1 SYNOPSIS
+
+    use Brocken::Compiler;
+
+    my $compiler = Brocken::Compiler->new(
+        arch  => 'x64',
+        os    => 'win64',
+        type  => 'exe',
+        debug => 1,
+    );
+
+    $compiler->compile_file('hello.brocken', 'hello.exe');
 
 =head1 DESCRIPTION
 
@@ -317,7 +324,7 @@ Controls emission of debug information sections in the output binary.
 
 =item B<0> - No debug sections. Lean binary, no source mapping.
 
-=item B<1> - Emit all DWARF debug sections (C<.debug_line>, C<.debug_info>, C<.debug_abbrev>, C<.debug_frame>, C<.debug_aranges>, C<.debug_pubnames>). On win64, also emit SEH C<.pdata> / C<.xdata> unwind tables. On ELF, also emit C<.eh_frame> section. Launch GDB after compilation.
+=item B<1> - Emit all DWARF debug sections (C<.debug_line>, C<.debug_info>, C<.debug_abbrev>, C<.debug_frame>, C<.debug_aranges>, C<.debug_pubnames>). On win64, also emit SEH C<.pdata> / C<.xdata> unwind tables. On ELF, also emit C<.eh_frame> section.
 
 =item B<2> - Same as level 1, plus hex dumps of C<.debug_info>, C<.debug_abbrev>, C<.debug_aranges>, C<.debug_pubnames>.
 
@@ -329,13 +336,15 @@ See L<Brocken::Format::DWARF> and L<docs/debugging.md> for details on each debug
 
 =item arch (optional, auto-detected)
 
-Target CPU architecture. Currently only C<'x64'> is supported. C<'arm64'> detection is implemented but the codegen
-backend is not yet wired in.
+Target CPU architecture. Currently C<'x64'> and C<'arm64'> are supported.
 
 =item os (optional, auto-detected)
 
-Target operating system. One of C<'win64'>, C<'linux'>, or C<'macos'>. C<'macos'> is detected but dies with a "support
-pending" message.
+Target operating system. One of C<'win64'>, C<'linux'>, or C<'macos'>.
+
+=item type (optional, default 'exe')
+
+Output binary type: C<'exe'> or C<'shared'> (DLL/SO).
 
 =back
 
@@ -345,9 +354,41 @@ pending" message.
 
 Returns callee-saved register names for the current OS/arch.
 
+=head2 context_size
+
+Returns the total size in bytes needed to save preserved registers.
+
+=head2 context_offset($reg_name)
+
+Returns the offset within the saved context for a specific register.
+
 =head2 frame_local_size
 
 Total frame size including context save, return address, shadow space, and local variables, aligned to 16 bytes.
+
+=head2 text_rva / data_rva
+
+Returns the Relative Virtual Address (RVA) for the C<.text> and C<.data> sections.
+
+=head2 import_rva($name)
+
+Returns the RVA for a named imported function.
+
+=head2 source_locs / push_source_loc($offset, $line, $col)
+
+Manages source location mapping for debug info.
+
+=head2 func_ranges / push_func_range($r) / close_last_func_range($end_offset)
+
+Manages function address ranges for DWARF unwind info.
+
+=head2 local_ptr / set_local_ptr($v) / reset_locals
+
+Manages the stack slot allocator for local variables.
+
+=head2 alloc_local_slot
+
+Allocates an 8-byte slot on the stack and returns its offset.
 
 =head2 iso_offset($name) / fcb_offset($name)
 
@@ -356,5 +397,13 @@ Field offsets within the Isolate control block and Fiber Control Block.
 =head2 cc($name)
 
 Condition code mapping for branch instructions.
+
+=head2 compile_source($source, $output_file, $filename)
+
+Compiles Brocken source code string to a binary file.
+
+=head2 compile_file($filename, $output_file)
+
+Compiles a Brocken source file to a binary file.
 
 =cut

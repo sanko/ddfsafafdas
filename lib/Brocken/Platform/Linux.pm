@@ -270,3 +270,36 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Platform::Linux - Linux platform support
+
+=head1 SYNOPSIS
+
+    my $platform = Brocken::Platform::Linux->new( os => 'linux' );
+    my $name = $platform->format_name; # 'ELF'
+
+=head1 DESCRIPTION
+
+Implements the L<Brocken::Platform> interface for Linux (x64 and ARM64). Handles the ELF binary format and translates
+intrinsics into direct Linux system calls (mmap, write, open, fstat, etc.).
+
+=head1 METHODS
+
+=head2 format_name
+
+Returns C<'ELF'>.
+
+=head2 shadow_space
+
+Returns C<0>, as the System V ABI does not require shadow space.
+
+=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
+
+Emits machine code for intrinsics using architecture-specific system call numbers and registers.
+
+=cut

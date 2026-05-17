@@ -1,3 +1,6 @@
+# eg/simple_exe.pl
+# Compiles a Brocken script into a native executable for the current
+# platform and executes it immediately.
 use v5.40;
 use lib '../lib';
 use Brocken::Compiler;

@@ -244,3 +244,62 @@ package Brocken::Format::DWARF {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Format::DWARF - DWARFv2 debug information generator
+
+=head1 SYNOPSIS
+
+  my $dw = Brocken::Format::DWARF->new(
+      source_locs => \@locs,
+      text_base   => $base_addr,
+      func_ranges => \@ranges,
+      arch        => 'x64'
+  );
+  my $sections = $dw->build_all();
+
+=head1 DESCRIPTION
+
+Generates DWARF version 2 debugging sections for integration into binary files (PE, ELF, Mach-O). Produces: -
+.debug_line: Line number programs (source file, line -> address mapping). - .debug_info: Debug Information Entries
+(DIEs) for compile units, subprograms, and variables. - .debug_abbrev: Abbreviations for DIE structures. -
+.debug_aranges: Address range mapping for fast lookup. - .debug_pubnames: Public name index. - .debug_frame: Call Frame
+Information (CFI) for stack unwinding.
+
+=head1 FIELDS
+
+=over
+
+=item source_locs
+
+Arrayref of C<{ offset, line, col }> mapping machine code offsets to source locations.
+
+=item text_base
+
+The base address of the code segment.
+
+=item func_ranges
+
+Arrayref of function metadata (start, end, name, params, locals).
+
+=item arch
+
+Target architecture ('x64' or 'arm64').
+
+=back
+
+=head1 METHODS
+
+=head2 build_all()
+
+Returns a hashref mapping section names to their binary payloads.
+
+=head2 build_debug_line() / build_debug_info() / ...
+
+Individual methods to generate specific DWARF sections.
+
+=cut

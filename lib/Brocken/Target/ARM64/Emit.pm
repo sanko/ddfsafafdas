@@ -311,9 +311,9 @@ package Brocken::Target::ARM64::Emit {
         method jmp($l)        { push @fixups, { offset => length($code), target => $l, type => 'uncond' }; $code .= pack( 'L<', 0x14000000 ) }
         method mark_label($n) { $labels{$n} = length $code }
 
-method resolve($text_rva = 0, $data_rva = 0) {
-    for (@fixups) {
- my $target = $_->{target};
+        method resolve( $text_rva = 0, $data_rva = 0 ) {
+            for (@fixups) {
+                my $target = $_->{target};
                 my $t;
                 if ( $target =~ /^DATA:(\d+)$/ ) {
                     $t = $1 + $data_rva - $text_rva;
@@ -348,3 +348,84 @@ method resolve($text_rva = 0, $data_rva = 0) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Target::ARM64::Emit - ARM64 Instruction Emitter (Assembler)
+
+=head1 SYNOPSIS
+
+    my $as = Brocken::Target::ARM64::Emit->new();
+    $as->mov_imm('x0', 42);
+    $as->push_reg('x0');
+    $as->call_label('M_print_int');
+    $as->resolve($text_rva, $data_rva);
+    my $binary_code = $as->code;
+
+=head1 DESCRIPTION
+
+Low-level machine code generator for ARM64 (AArch64). Provides methods for emitting A64 instructions, managing labels,
+and performing PC-relative address resolution.
+
+=head1 METHODS
+
+=head2 code
+
+Returns the generated machine code as a byte string.
+
+=head2 labels
+
+Returns a hash mapping label names to their byte offsets.
+
+=head2 mark_label($name)
+
+Defines a label at the current code offset.
+
+=head2 mov_imm($reg, $imm) / mov_reg($dst, $src)
+
+Emits MOV instructions. C<mov_imm> handles 64-bit values via multiple C<MOVZ>/C<MOVK> instructions.
+
+=head2 push_reg($reg) / pop_reg($reg)
+
+Emits load/store instructions that simulate stack push/pop with 16-byte alignment preservation.
+
+=head2 add_imm / sub_imm / add_reg / sub_reg / mul_reg / sdiv_reg
+
+Arithmetic operations.
+
+=head2 lsl_imm / lsr_imm / lsl_reg / lsr_reg
+
+Logical shift operations.
+
+=head2 and_reg / or_reg / xor_reg
+
+Bitwise operations.
+
+=head2 cmp_reg_reg / cmp_reg_imm / test_reg_reg
+
+Comparison and test instructions.
+
+=head2 jmp($label) / jcc($condition, $label) / call_label($label)
+
+Branch and link instructions.
+
+=head2 load_reg_mem / store_mem_disp_reg / ldur_reg_mem / stur_mem_disp_reg
+
+Memory access using scaled and unscaled offsets.
+
+=head2 fadd_reg / fsub_reg / fmul_reg / fdiv_reg / fcmp_reg
+
+Scalar floating-point operations.
+
+=head2 fmov_reg / fmov_x_to_d / fmov_d_to_x
+
+Data movement between general-purpose and SIMD/FP registers.
+
+=head2 resolve($text_rva, $data_rva)
+
+Resolves all branch and PC-relative address fixups.
+
+=cut

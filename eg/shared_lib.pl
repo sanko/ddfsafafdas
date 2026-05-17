@@ -1,3 +1,6 @@
+# eg/shared_lib.pl
+# Demonstrates compiling Brocken code into a shared library and calling
+# its functions from Perl using the Affix FFI library.
 use v5.40;
 use lib '../lib';
 use Brocken::Compiler;

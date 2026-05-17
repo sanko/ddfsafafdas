@@ -34,10 +34,8 @@ sub test_brocken {
     $p->as->resolve();
     warn;
     my $ext = $p->os eq 'win64' ? '.exe' : '';
-
-my $exe = "test_bin$ext";
-
-    $p->compile_source($source, $exe);
+    my $exe = "test_bin$ext";
+    $p->compile_source( $source, $exe );
     warn;
     my $run = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
     warn;
@@ -106,3 +104,46 @@ sub with_temp_file {
     $code->( $file->filename );
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::TestHelpers - Utility functions for testing Brocken components
+
+=head1 SYNOPSIS
+
+    use Brocken::TestHelpers qw(test_brocken);
+
+    test_brocken(
+        name     => 'Simple Addition',
+        source   => 'say 1 + 2;',
+        expected => ['3'],
+    );
+
+=head1 DESCRIPTION
+
+Provides a set of helper functions to simplify unit and integration testing of the Brocken lexer, parser, and compiler.
+
+=head1 FUNCTIONS
+
+=head2 test_brocken(%args)
+
+Performs a full compilation and execution test. Arguments: - C<name>: Name of the test. - C<source>: Brocken source
+code. - C<expected>: Arrayref of expected output lines or a Regexp. - C<timeout>: Execution timeout in seconds (default
+30).
+
+=head2 make_fake_funcs
+
+Returns a sample array of function metadata hashrefs for testing debug info generation.
+
+=head2 make_source_locs
+
+Returns a sample array of source location hashrefs for testing debug info generation.
+
+=head2 with_temp_file($code, $suffix?)
+
+Creates a temporary file, calls the provided C<$code> sub with the filename, and automatically unlinks it after.
+
+=cut

@@ -51,20 +51,32 @@ __END__
 
 Brocken::Compiler::DataSegment - String constant storage with GC headers
 
+=head1 SYNOPSIS
+
+    my $ds = Brocken::Compiler::DataSegment->new();
+    my $offset = $ds->add_string("Hello, World!");
+    my $raw = $ds->get_raw_data();
+
 =head1 DESCRIPTION
 
-Holds all Brocken string constants in a flat byte buffer. Each string is preceded by a GC-compatible header:
+Holds all Brocken string constants and raw data in a flat byte buffer. Each string is preceded by a GC-compatible
+header:
 
-  [1 byte flags][4 bytes byte_len][4 bytes char_len][data...]
-
-Bit 0 of flags is the leaf bit (1 = no pointers inside).
+  [8 bytes GC header (Leaf bit | Byte Length)]
+  [8 bytes byte_len]
+  [8 bytes char_len]
+  [data...]
 
 =head1 METHODS
 
+=head2 add_raw_bytes($bytes)
+
+Adds raw bytes to the segment and returns the offset. Padded to 8-byte alignment.
+
 =head2 add_string($string)
 
-Enrolls a Perl string as a UTF-8 encoded constant. Returns the byte offset into the data segment (suitable for
-C<load_data_addr> IR instructions).
+Enrolls a Perl string as a UTF-8 encoded constant with GC headers. Returns the byte offset (skipping the GC header,
+pointing to metadata).
 
 =head2 get_raw_data
 

@@ -49,6 +49,14 @@ __END__
 
 Brocken::IR::Builder - Linear intermediate representation builder
 
+=head1 SYNOPSIS
+
+    my $builder = Brocken::IR::Builder->new();
+    my $v1 = $builder->emit('constant', 'i64', [10]);
+    my $v2 = $builder->emit('constant', 'i64', [20]);
+    my $res = $builder->emit('add', 'i64', [$v1, $v2]);
+    $builder->emit('leave_func', 'void', [$res]);
+
 =head1 DESCRIPTION
 
 Manages a linear sequence of IR instruction hashes. Each instruction:
@@ -68,18 +76,20 @@ Appends an instruction. Auto-generates a destination vreg if C<$type> is not C<v
 
 =head2 emit_label($name)
 
-TODO
+Appends a label instruction to the IR sequence.
 
 =head2 emit_jump($label)
 
-TODO
+Appends an unconditional jump instruction to the IR sequence.
 
 =head2 emit_cond_br($reg, $true_label, $false_label)
 
-TODO
+Appends a conditional branch instruction. Jumps to C<$true_label> if C<$reg> is non-zero (true), otherwise jumps to
+C<$false_label>.
 
 =head2 dump_ir($title?)
 
 Prints every instruction to stdout for debugging.
 
 =cut
+

@@ -264,3 +264,39 @@ package Brocken::Format::PE {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Format::PE - Windows PE+ (64-bit) binary format writer
+
+=head1 SYNOPSIS
+
+  my $pe = Brocken::Format::PE->new(type => 'executable');
+  $pe->write_bin("out.exe", $code, $data, "x64", "win64");
+
+=head1 DESCRIPTION
+
+Generates 64-bit Windows Portable Executable (PE32+) binaries.  Supports: - Executables and DLLs (shared libraries). -
+Import Address Table (IAT) for kernel32.dll functions. - Export Directory (.edata) for DLL exports. - Structured
+Exception Handling (SEH) with .pdata and .xdata sections. - DWARF debug sections.
+
+=head1 METHODS
+
+=head2 import_rva($name)
+
+Returns the RVA of the IAT entry for a given kernel32 function (e.g., 'ExitProcess').
+
+=head2 image_base()
+
+Returns the default load address 0x140000000.
+
+=head2 write_bin($filename, $text, $data, $arch, $os, $type)
+
+Constructs and writes the PE file: 1. Calculates layout and SEH data. 2. Writes MS-DOS stub and PE signature. 3. Writes
+COFF File Header and Optional Header (PE32+). 4. Writes Section Headers. 5. Appends all section payloads (.text, .data,
+.idata, .edata, .pdata, .xdata, .debug_*).
+
+=cut

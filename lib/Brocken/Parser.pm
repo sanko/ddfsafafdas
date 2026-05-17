@@ -656,6 +656,11 @@ __END__
 
 Brocken::Parser - Pratt parser for Brocken
 
+=head1 SYNOPSIS
+
+    my $parser = Brocken::Parser->new( tokens => $tokens );
+    my $ast = $parser->parse();
+
 =head1 DESCRIPTION
 
 Top-down operator precedence (Pratt) parser. Uses three registries:

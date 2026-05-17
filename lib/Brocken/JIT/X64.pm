@@ -189,12 +189,14 @@ package Brocken::JIT::X64 {
             }
         }
 
-        method mul_imm($dest, $imm) {
+        method mul_imm( $dest, $imm ) {
+
             # x64 doesn't have a simple 2-operand mul with immediate.
             # We load the immediate into scratch r11 and use the register multiplier.
-            $self->mov_imm('r11', $imm);
-            $self->mul_reg($dest, 'r11');
+            $self->mov_imm( 'r11', $imm );
+            $self->mul_reg( $dest, 'r11' );
         }
+
         method sub_reg( $d, $s ) {
             my $di = $self->reg($d);
             my $si = $self->reg($s);
@@ -402,13 +404,14 @@ package Brocken::JIT::X64 {
             $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'CC', 0xF7, 0xF8 | ( $ri & 7 ) );
         }
 
-         method mul_reg($dest, $src) {
+        method mul_reg( $dest, $src ) {
+
             # Brocken Target logic moves the first operand to RAX, then calls mul_reg(dest, src)
             # We map this to the x64 IMUL r, r instruction for simplicity
             my $di = $self->reg($dest);
             my $si = $self->reg($src);
             $code .= $self->_rex( 1, $di, 0, $si ) . pack( 'CCC', 0x0F, 0xAF, 0xC0 | ( ( $di & 7 ) << 3 ) | ( $si & 7 ) );
-}
+        }
 
         method call_label($label) {
             $code .= pack( 'C', 0xE8 );
@@ -464,9 +467,68 @@ __END__
 
 Brocken::JIT::X64 - JIT assembler for x64 architecture
 
+=head1 SYNOPSIS
+
+  my $as = Brocken::JIT::X64->new();
+  $as->mov_imm('rax', 42);
+  $as->ret();
+  my $code = $as->code;
+
 =head1 DESCRIPTION
 
-Standalone JIT assembler that generates x64 machine code without PE format dependencies.
+Standalone JIT assembler that generates x64 machine code without PE format dependencies. Supports a subset of x64
+instructions needed for the Brocken JIT.
+
+=head1 FIELDS
+
+=over
+
+=item code
+
+The generated machine code string. Use the C<code> reader to access it.
+
+=back
+
+=head1 METHODS
+
+=head2 reg($name)
+
+Maps a register name (e.g., 'rax', 'r11', 'xmm0') to its internal numeric ID. Dies if the register name is
+unrecognized.
+
+=head2 mov_reg($dest, $src)
+
+Emits a MOV instruction between registers (64-bit).
+
+=head2 mov_imm($dest, $imm)
+
+Emits a MOV instruction from a 64-bit immediate value to a register.
+
+=head2 push_reg($reg) / pop_reg($reg)
+
+Emits PUSH/POP instructions for 64-bit registers.
+
+=head2 add_reg / sub_reg / mul_reg / and_reg / or_reg / xor_reg
+
+Emits 2-operand arithmetic/logic instructions between registers.
+
+=head2 add_imm / sub_imm / and_imm / or_imm / xor_imm
+
+Emits arithmetic/logic instructions with an immediate operand.  If the immediate exceeds 32 bits, it is loaded into a
+scratch register first.
+
+=head2 jmp($label) / jcc($condition, $label)
+
+Emits relative jumps. C<$condition> can be 'nz', 'eq', 'lt', 'gt', 'le', 'ge'. Labels are resolved during the
+C<resolve()> phase.
+
+=head2 mark_label($name)
+
+Defines a label at the current code position.
+
+=head2 resolve($base_addr)
+
+Resolves all relative and absolute fixups using the provided base address. Should be called after all code has been
+emitted but before the code is copied to its final executable location.
 
 =cut
-1;

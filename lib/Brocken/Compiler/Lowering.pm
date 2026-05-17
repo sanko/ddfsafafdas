@@ -1602,22 +1602,24 @@ class Brocken::Compiler::Lowering {
         # Unbox arguments when calling C callbacks
         my $is_c_callback = ( $invocant_type =~ /^Callback/ );
         my @processed_args;
-    for my $arg ( @{ $node->args } ) {
-                 my ( $arg_reg, $arg_type ) = $self->lower($arg);
-                if ($is_c_callback) {
-                    # Unbox Brocken Smi to native C integer
-                    push @processed_args, $builder->emit( 'shr', 'i64', [ $arg_reg, 1 ] );
-                } else {
-                    push @processed_args, $arg_reg;
-                }
-             }
-                my $res = $builder->emit( 'call_reg', 'i64', [ $invocant_reg, @processed_args ] );
+        for my $arg ( @{ $node->args } ) {
+            my ( $arg_reg, $arg_type ) = $self->lower($arg);
             if ($is_c_callback) {
-                # Zero-extend the 32-bit C return value to clear RAX garbage, then Box it
-                $res = $builder->emit( 'and', 'i64', [ $res, 0xFFFFFFFF ] );
-                $res = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $res, 1 ] ), 1 ] );
-            }
 
+                # Unbox Brocken Smi to native C integer
+                push @processed_args, $builder->emit( 'shr', 'i64', [ $arg_reg, 1 ] );
+            }
+            else {
+                push @processed_args, $arg_reg;
+            }
+        }
+        my $res = $builder->emit( 'call_reg', 'i64', [ $invocant_reg, @processed_args ] );
+        if ($is_c_callback) {
+
+            # Zero-extend the 32-bit C return value to clear RAX garbage, then Box it
+            $res = $builder->emit( 'and', 'i64', [ $res, 0xFFFFFFFF ] );
+            $res = $builder->emit( 'or',  'i64', [ $builder->emit( 'shl', 'i64', [ $res, 1 ] ), 1 ] );
+        }
         return ( $res, 'Any' );
     }
 
@@ -1689,3 +1691,99 @@ class Brocken::Compiler::Lowering {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Compiler::Lowering - AST to IR transformation pass
+
+=head1 SYNOPSIS
+
+    my $lowering = Brocken::Compiler::Lowering->new(
+        driver       => $compiler_driver,
+        data_segment => $data_segment,
+    );
+
+    $lowering->lower_program($ast);
+    my @instructions = $lowering->builder->instructions;
+
+=head1 DESCRIPTION
+
+This module traverses the Brocken AST and emits corresponding linear IR instructions via L<Brocken::IR::Builder>. It
+handles:
+
+=over
+
+=item *
+
+Variable and state declarations and scoping.
+
+=item *
+
+Expression lowering (arithmetic, logical, calls).
+
+=item *
+
+Object-oriented features (classes, methods, fields).
+
+=item *
+
+Control flow (if, while, return, defer).
+
+=item *
+
+Fiber creation and switching.
+
+=item *
+
+Garbage collection runtime injection (marking, sweeping, allocation).
+
+=back
+
+=head1 FIELDS
+
+=over
+
+=item builder
+
+The L<Brocken::IR::Builder> instance used to emit instructions.
+
+=item driver
+
+The L<Brocken::Compiler> driver providing ABI and target information.
+
+=item data_segment
+
+The L<Brocken::Compiler::DataSegment> instance for managing constants.
+
+=back
+
+=head1 METHODS
+
+=head2 lower_program($ast_nodes)
+
+Top-level entry point. Injects runtime, registers classes, and lowers all top-level statements.
+
+=head2 lower($node)
+
+Generic dispatcher that calls the appropriate C<lower_NodeType> method for a given AST node.
+
+=head2 inject_runtime
+
+Emits IR for core runtime components: GC mark/sweep/alloc, isolate initialization, and fiber management.
+
+=head2 register_classes($ast_nodes)
+
+Scans the AST for class declarations and populates internal class metadata and VTable layouts.
+
+=head2 exported_funcs
+
+Returns a list of function names that are marked for export (e.g. methods defined at top-level).
+
+=head2 class_info
+
+Returns a hash of class metadata (IDs, method names, field offsets).
+
+=cut

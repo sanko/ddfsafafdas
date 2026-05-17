@@ -198,3 +198,38 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
     }
 }
 1;
+__END__
+
+=pod
+
+=head1 NAME
+
+Brocken::Platform::Windows - Windows platform support
+
+=head1 SYNOPSIS
+
+    my $platform = Brocken::Platform::Windows->new( os => 'win64' );
+    my $name = $platform->format_name; # 'PE'
+    my $ss = $platform->shadow_space;  # 32
+
+=head1 DESCRIPTION
+
+Implements the L<Brocken::Platform> interface for Windows (x64). Handles the PE binary format, Windows x64 ABI
+requirements (shadow space), and translates intrinsics into Win32 API calls (VirtualAlloc, WriteFile, CreateFileA,
+etc.).
+
+=head1 METHODS
+
+=head2 format_name
+
+Returns C<'PE'>.
+
+=head2 shadow_space
+
+Returns C<32>, as required by the Windows x64 ABI for register spill space.
+
+=head2 emit_intrinsic($target, $as, $inst, $reg_map, $driver)
+
+Emits machine code for intrinsics by calling Win32 APIs via the import table.
+
+=cut

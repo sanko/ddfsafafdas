@@ -115,6 +115,11 @@ __END__
 
 Brocken::Lexer - Tokenizer for Brocken source code
 
+=head1 SYNOPSIS
+
+    my $lexer = Brocken::Lexer->new( source => 'say 123;' );
+    my $tokens = $lexer->lex();
+
 =head1 DESCRIPTION
 
 Converts Brocken source text into an array of token hashes. Each token contains C<type>, C<value>, C<line>, and C<col>.

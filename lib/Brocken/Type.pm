@@ -146,6 +146,13 @@ __END__
 
 Brocken::Type - Type system mirroring Affix
 
+=head1 SYNOPSIS
+
+    use Brocken::Type;
+
+    my $int_type = Brocken::Type->new('Int');
+    my $ptr_type = Brocken::Type::Pointer($int_type);
+
 =head1 DESCRIPTION
 
 Provides a type system that mirrors the Affix FFI type system, supporting: - Primitive types (int, char, float, double,
