@@ -16,9 +16,8 @@ package Brocken::Compiler::DataSegment {
 
             # HEADER: Byte Length + 24 | Cycle 0 | Flags (Leaf/String=Bits 63-62)
             my $total_sz = $byte_len + 24;
-            my $header = $total_sz | hex("C000000000000000"); # Leaf bits set
-
-            my $offset = length($raw_data);
+            my $header   = $total_sz | hex("C000000000000000");    # Leaf bits set
+            my $offset   = length($raw_data);
             $raw_data .= pack( 'Q<',    $header );
             $raw_data .= pack( 'Q< Q<', $byte_len, length($str) );
             $raw_data .= $utf8_bytes;
@@ -26,9 +25,9 @@ package Brocken::Compiler::DataSegment {
             # Padding to 8-byte alignment
             my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;
             $raw_data .= "\0" x $pad;
-
             return $string_offsets{$str} = $offset + 8;
         }
+
         method add_raw_bytes($bytes) {
             my $offset = length($raw_data);
             $raw_data .= $bytes;

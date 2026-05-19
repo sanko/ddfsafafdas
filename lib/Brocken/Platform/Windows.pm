@@ -180,6 +180,16 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->append_code( pack( 'C', 0xC3 ) );
             $self->_emit_fiber_switch( $target, $as, $driver );
         }
+        elsif ( $op =~ /^call_/ ) {
+
+            # ... argument setup ...
+            if   ( $self->os eq 'win64' ) { $as->sub_imm( 'rsp', 32 ); }
+            if   ( $op eq 'call_func' )   { $as->call_label($target); }
+            else                          { $as->call_reg('r11'); }
+            if ( $self->os eq 'win64' ) { $as->add_imm( 'rsp', 32 ); }
+
+            # ... return value handling ...
+        }
     }
 
     method _emit_fiber_switch( $target, $as, $driver ) {

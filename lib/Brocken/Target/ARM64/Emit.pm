@@ -303,7 +303,7 @@ package Brocken::Target::ARM64::Emit {
         method lea_rva( $reg, $target, $txtrva = 0 ) {
             my $r = $self->reg($reg);
             if ( !defined $target ) { die "lea_rva: target is undefined" }
-            if ( $target =~ /^[A-Z_]/i ) {
+            if ( $target =~ /^([A-Z_]|DATA:)/i ) {
                 push @fixups, { offset => length($code), target => $target, type => 'adr' };
                 $code .= pack( 'L<', 0x10000000 | $r );
             }

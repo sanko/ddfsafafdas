@@ -32,7 +32,6 @@ package Brocken::Target::ARM64 {
             my $v        = sub { $self->val( $reg_map, shift ) };
             my $d_reg    = $reg_map->{ $inst->{dest} } if $inst->{dest};
             my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) );
-
             if    ( $op eq 'jmp' ) { $as->jmp( $inst->{target} ); }
             elsif ( $op eq 'cond_br' ) {
                 my $reg = $v->( $inst->{reg} );
@@ -381,6 +380,8 @@ package Brocken::Target::ARM64 {
                     $as->stur_mem_disp_reg( 'x16', $driver->fcb_offset('shadow_ptr'), $v->( $inst->{args}[0] ) );
                 }
             }
+
+            # Inside Brocken::Target::ARM64::emit_op
             elsif ( $op eq 'shadow_pop' ) {
                 $as->ldur_reg_mem( 'x15', 'x28', $driver->iso_offset('current_fcb') );
                 $as->ldur_reg_mem( 'x17', 'x15', $driver->fcb_offset('shadow_ptr') );
@@ -392,9 +393,8 @@ package Brocken::Target::ARM64 {
                 my $is_inc    = $2 eq 'inc';
                 my $obj       = $reg_map->{ $inst->{args}[0] };
                 $as->mov_reg( 'x15', $obj );
-                $as->sub_imm( 'x15', 8 );
+                $as->sub_imm( 'x15', 8 );    # Point to header
                 $as->mov_imm( 'x16', 1 << 48 );
-
                 if ($is_atomic) {
                     my $l_retry = "L_atomic_rc_" . $driver->next_label_id;
                     $as->mark_label($l_retry);
@@ -410,6 +410,9 @@ package Brocken::Target::ARM64 {
                     else         { $as->sub_reg( 'x17', 'x17', 'x16' ); }
                     $as->stur_mem_disp_reg( 'x15', 0, 'x17' );
                 }
+            }
+            elsif ( $op eq 'get_bp' ) {
+                $as->mov_reg( $d_reg, 'x29' );
             }
         }
 

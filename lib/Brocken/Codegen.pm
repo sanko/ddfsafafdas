@@ -79,7 +79,7 @@ package Brocken::Codegen {
         method _allocate_registers( $instructions, $driver ) {
             my $changed = 1;
             my %rmap;
-            my $safety = 200;
+            my $safety = 2000;
             while ( $changed && $safety-- > 0 ) {
                 $changed = 0;
                 my %live      = $self->_analyze_liveness($instructions);

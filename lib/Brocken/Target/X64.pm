@@ -126,12 +126,24 @@ package Brocken::Target::X64 {
                         else                   { $as->mul_reg( $d_reg, $rs ) }
                     }
                     else {
-                        if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $v->($r_raw) ) }
-                        elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $v->($r_raw) ) }
-                        elsif ( $op eq 'and' ) { $as->and_imm( $d_reg, $v->($r_raw) ) }
-                        elsif ( $op eq 'or' )  { $as->or_imm( $d_reg, $v->($r_raw) ) }
-                        elsif ( $op eq 'xor' ) { $as->xor_imm( $d_reg, $v->($r_raw) ) }
-                        else                   { $as->mov_imm( 'r11', $v->($r_raw) ); $as->mul_reg( $d_reg, 'r11' ); }
+                        my $imm = $v->($r_raw);
+                        if ( $imm > 2147483647 || $imm < -2147483648 ) {
+                            $as->mov_imm( 'r11', $imm );
+                            if    ( $op eq 'add' ) { $as->add_reg( $d_reg, 'r11' ) }
+                            elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, 'r11' ) }
+                            elsif ( $op eq 'and' ) { $as->and_reg( $d_reg, 'r11' ) }
+                            elsif ( $op eq 'or' )  { $as->or_reg( $d_reg, 'r11' ) }
+                            elsif ( $op eq 'xor' ) { $as->xor_reg( $d_reg, 'r11' ) }
+                            else                   { $as->mul_reg( $d_reg, 'r11' ) }
+                        }
+                        else {
+                            if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $imm ) }
+                            elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $imm ) }
+                            elsif ( $op eq 'and' ) { $as->and_imm( $d_reg, $imm ) }
+                            elsif ( $op eq 'or' )  { $as->or_imm( $d_reg, $imm ) }
+                            elsif ( $op eq 'xor' ) { $as->xor_imm( $d_reg, $imm ) }
+                            else                   { $as->mov_imm( 'r11', $imm ); $as->mul_reg( $d_reg, 'r11' ); }
+                        }
                     }
                 }
             }
@@ -173,8 +185,19 @@ package Brocken::Target::X64 {
                 else {
                     my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'r10';
                     $as->mov_imm( 'r10', $v->($l_raw) ) if $l_raw !~ /^%/;
-                    if ( $r_raw =~ /^%/ ) { $as->cmp_reg_reg( $l_reg, $reg_map->{$r_raw} ); }
-                    else                  { $as->cmp_reg_imm( $l_reg, $v->($r_raw) ); }
+                    if ( $r_raw =~ /^%/ ) {
+                        $as->cmp_reg_reg( $l_reg, $reg_map->{$r_raw} );
+                    }
+                    else {
+                        my $imm = $v->($r_raw);
+                        if ( $imm > 2147483647 || $imm < -2147483648 ) {
+                            $as->mov_imm( 'r11', $imm );
+                            $as->cmp_reg_reg( $l_reg, 'r11' );
+                        }
+                        else {
+                            $as->cmp_reg_imm( $l_reg, $imm );
+                        }
+                    }
                     $as->mov_imm( $d_reg, 0 );
                     my $cc = { eq => 0x94, ne => 0x95, lt => 0x9C, gt => 0x9F, le => 0x9E, ge => 0x9D }->{ substr( $op, 4 ) };
                     $as->setcc( $cc, $d_reg );
@@ -224,9 +247,7 @@ package Brocken::Target::X64 {
                 my $target = ( $op =~ /_func$/ ) ? shift @args : undef;
                 if ( $op =~ /_reg$/ ) {
                     my $first_arg = shift @args;
-                    my $src_reg = ( $first_arg =~ /^%/ && exists $reg_map->{$first_arg} )
-                        ? $reg_map->{$first_arg}
-                        : 'r11';
+                    my $src_reg   = ( $first_arg =~ /^%/ && exists $reg_map->{$first_arg} ) ? $reg_map->{$first_arg} : 'r11';
                     $as->mov_reg( 'r11', $src_reg );
                 }
                 for my $i ( 0 .. $#args ) {
@@ -246,6 +267,7 @@ package Brocken::Target::X64 {
                     }
                 }
                 if ( $op =~ /^tail_call_/ ) {
+
                     # Epilogue before jumping
                     $as->add_imm( 'rsp', $driver->frame_local_size );
                     for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
@@ -327,7 +349,11 @@ package Brocken::Target::X64 {
                     $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), $src );
                 }
             }
+
+            # Inside Brocken::Target::X64::emit_op
             elsif ( $op eq 'shadow_pop' ) {
+
+                # r14 = Isolate, current_fcb offset is 24, shadow_ptr offset in FCB is 32
                 $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
                 $as->load_reg_mem( 'r10', 'r11', $driver->fcb_offset('shadow_ptr') );
                 $as->sub_imm( 'r10', 8 );
@@ -337,10 +363,15 @@ package Brocken::Target::X64 {
                 my $is_atomic = $1 eq 'atomic';
                 my $is_inc    = $2 eq 'inc';
                 my $obj       = $reg_map->{ $inst->{args}[0] };
+
+                # RC is at bit 48. Incrementing by 1 << 48 adjusts the RC field.
                 $as->mov_imm( 'r11', 1 << 48 );
                 $as->lock() if $is_atomic;
                 if ($is_inc) { $as->add_mem_disp_reg( $obj, -8, 'r11' ); }
                 else         { $as->sub_mem_disp_reg( $obj, -8, 'r11' ); }
+            }
+            elsif ( $op eq 'get_bp' ) {
+                $as->mov_reg( $d_reg, 'rbp' );
             }
             elsif ( $op eq 'load_iso_disp' ) { $as->load_reg_mem( $d_reg, 'r14', $inst->{args}[0] ); }
             elsif ( $op eq 'store_iso_disp' ) {
