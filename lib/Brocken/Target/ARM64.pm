@@ -438,11 +438,22 @@ class Brocken::Target::ARM64 : isa(Brocken::Target) {
             return;
         }
         if ( $op eq 'intrinsic_restore_context' ) {
-            my $bp     = $reg_map->{ $inst->{args}[0] };
-            my $target = $reg_map->{ $inst->{args}[1] };
-            $as->mov_reg( 'x16', $target ) if $target ne 'x16';
-            $as->mov_reg( 'sp',  $bp );
-            for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
+            my $target_bp = $reg_map->{ $inst->{args}[0] };
+            my $target_pc = $reg_map->{ $inst->{args}[1] };
+            my $source_bp = $reg_map->{ $inst->{args}[2] };
+
+            $as->mov_reg( 'x16', $target_pc );
+            $as->mov_reg( 'sp',  $source_bp );
+
+            for my $r ( reverse @{ $driver->preserved_regs() } ) {
+                $as->pop_reg($r);
+            }
+
+            $as->mov_reg( 'x29', $target_bp );
+            my $size = $driver->frame_local_size;
+            $size = ( $size + 15 ) & ~15;
+            $as->sub_imm( 'sp', $size ) if $size > 0;
+
             $as->append_code( pack( 'L<', 0xD61F0200 ) );    # br x16
             return;
         }

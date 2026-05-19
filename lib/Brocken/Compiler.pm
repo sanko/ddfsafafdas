@@ -103,7 +103,18 @@ package Brocken::Compiler {
             }
             return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27 x29 x30)];
         }
-        method context_size() { return scalar( @{ $self->preserved_regs() } ) * 8; }
+        method context_size() {
+            my $multiplier = $arch eq 'arm64' ? 16 : 8;
+            return scalar( @{ $self->preserved_regs() } ) * $multiplier;
+        }
+
+        method rip_offset() {
+            return $arch eq 'arm64' ? 0 : $self->context_size();
+        }
+
+        method prev_bp_offset() {
+            return $arch eq 'arm64' ? 16 : $self->context_size() - 8;
+        }
 
         method frame_local_size() {
             my $locals = 4096;

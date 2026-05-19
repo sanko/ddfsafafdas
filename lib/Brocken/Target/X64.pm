@@ -65,27 +65,26 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
             $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('exception_obj'), 'r10' );
             return;
         }
-if ( $op eq 'intrinsic_restore_context' ) {
+        if ( $op eq 'intrinsic_restore_context' ) {
             my $target_bp = $reg_map->{ $inst->{args}[0] };
             my $target_pc = $reg_map->{ $inst->{args}[1] };
+            my $source_bp = $reg_map->{ $inst->{args}[2] };
 
-            # 1. Restore the Base Pointer for the target frame
+            # 1. Load target PC and set RSP to source_bp where registers are saved
             $as->mov_reg( 'r11', $target_pc );
-            $as->mov_reg( 'rbp', $target_bp );
+            $as->mov_reg( 'rsp', $source_bp );
 
-            # 2. Reset stack pointer to the point where preserved registers were pushed
-            $as->mov_reg( 'rsp', 'rbp' );
-
-            # 3. Restore callee-saved registers
+            # 2. Restore callee-saved registers from the source frame
+            # This restores the register state as it was when the source frame called its child.
             for my $r ( reverse @{ $driver->preserved_regs() } ) {
                 $as->pop_reg($r);
             }
 
-            # 4. Re-allocate the local variable workspace
-            # (Matches the 'sub rsp, size' in enter_func)
+            # 3. Now set the Frame Pointer to the target frame and adjust RSP for locals
+            $as->mov_reg( 'rbp', $target_bp );
             $as->sub_imm( 'rsp', $driver->frame_local_size );
 
-            # 5. Jump to catch/finally
+            # 4. Jump to catch/finally in the target frame
             $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xE3 ) ); # jmp r11
             return;
         }

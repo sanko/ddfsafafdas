@@ -227,7 +227,8 @@ package Brocken::Compiler::Lowering {
 
         my $bp_slot = $driver->alloc_local_slot();
         # Start walking from M_unwind's caller's frame
-        $builder->emit('local_store', 'void', [$bp_slot, $builder->emit('get_bp', 'ptr', [])]);
+        my $my_bp = $builder->emit('get_bp', 'ptr', []);
+        $builder->emit('local_store', 'void', [$bp_slot, $my_bp]);
 
         my $extab_ptr = $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('exception_table')]);
         my $text_base = $builder->emit('intrinsic_get_text_base', 'ptr', []);
@@ -244,8 +245,8 @@ package Brocken::Compiler::Lowering {
         $builder->emit('intrinsic_exit', 'void', [$builder->emit('constant', 'i64', [255])]);
 
         $builder->emit_label($l_search);
-        my $rip = $builder->emit('load_mem_disp', 'ptr', [$curr_bp, 8]);
-        my $prev_bp = $builder->emit('load_mem_disp', 'ptr', [$curr_bp, 0]);
+         my $rip = $builder->emit('load_mem_disp', 'ptr', [$curr_bp, $driver->rip_offset()]);
+        my $prev_bp = $builder->emit('load_mem_disp', 'ptr', [$curr_bp, $driver->prev_bp_offset()]);
         my $rva = $builder->emit('sub', 'i64', [$builder->emit('sub', 'i64', [$rip, $text_base]), 1]);
 
         my $num_funcs = $builder->emit('load_mem_disp', 'i64', [$extab_ptr, 0]);
@@ -291,7 +292,7 @@ package Brocken::Compiler::Lowering {
 
         $builder->emit_label($l_t_match);
         my $catch_pc = $builder->emit('load_mem_disp', 'i64', [$t_ptr, 16]);
-        $builder->emit('intrinsic_restore_context', 'void', [$curr_bp, $builder->emit('add', 'ptr', [$text_base, $catch_pc])]);
+        $builder->emit('intrinsic_restore_context', 'void', [$prev_bp, $builder->emit('add', 'ptr', [$text_base, $catch_pc]), $curr_bp]);
 
         $builder->emit_label($l_t_inc);
         $builder->emit('local_store', 'void', [$ti_s, $builder->emit('add', 'i64', [$ti, 1])]);
