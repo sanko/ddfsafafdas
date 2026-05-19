@@ -189,27 +189,43 @@ package Brocken::Format::PE {
         }
 
         method _build_xdata () {
-            my $locals      = 1024;
-            my $ctx         = 64;                  # 8 preserved regs on Win64
+            my $locals      = 4096;
             my $shadow      = 32;
-            my $target_size = $locals + $shadow;
-            my $rem         = ( 8 - $ctx ) % 16;
-            $rem += 16 if $rem < 0;
-            my $align_padding = ( $rem - ( $target_size % 16 ) ) % 16;
-            $align_padding += 16 if $align_padding < 0;
-            my $FRAME  = $target_size + $align_padding;
-            my $scaled = $FRAME / 8;
-            my $hdr    = pack( 'C C C C', 1, 22, 10, 0 );
-            my $codes  = pack( 'CC', 22, 0x01 );
+            my $total_local = $locals + $shadow;
+            my $scaled      = $total_local / 8;
+
+            # Header: Ver=1, PrologueSize=20 (0x14), NumCodes=10, FrameReg=5 (RBP), FrameOffset=0
+            my $hdr = pack( 'C C C C', 1, 0x14, 10, 5 );
+
+            # Unwind Codes (Reverse order of prologue instructions)
+            # 1. sub rsp, 4128 (Offset 0x0D, Op=1: UWOP_ALLOC_LARGE, Info=0)
+            my $codes = pack( 'CC', 0x0D, 0x01 );
             $codes .= pack( 'S<', $scaled );
-            $codes .= pack( 'CC', 12, 0xF0 );
-            $codes .= pack( 'CC', 10, 0xE0 );
-            $codes .= pack( 'CC', 8,  0xD0 );
-            $codes .= pack( 'CC', 6,  0xC0 );
-            $codes .= pack( 'CC', 4,  0x60 );
-            $codes .= pack( 'CC', 3,  0x70 );
-            $codes .= pack( 'CC', 2,  0x30 );
-            $codes .= pack( 'CC', 1,  0x50 );
+
+            # 2. mov rbp, rsp (Offset 0x0A, Op=3: UWOP_SET_FPREG, Info=0)
+            $codes .= pack( 'CC', 0x0A, 0x03 );
+
+            # 3. push r15 (Offset 0x08, Op=0: UWOP_PUSH_NONVOL, Info=15)
+            $codes .= pack( 'CC', 0x08, 0xF0 );
+
+            # 4. push r13 (Offset 0x06, Op=0, Info=13)
+            $codes .= pack( 'CC', 0x06, 0xD0 );
+
+            # 5. push r12 (Offset 0x04, Op=0, Info=12)
+            $codes .= pack( 'CC', 0x04, 0xC0 );
+
+            # 6. push rsi (Offset 0x03, Op=0, Info=6)
+            $codes .= pack( 'CC', 0x03, 0x60 );
+
+            # 7. push rdi (Offset 0x02, Op=0, Info=7)
+            $codes .= pack( 'CC', 0x02, 0x70 );
+
+            # 8. push rbx (Offset 0x01, Op=0, Info=3)
+            $codes .= pack( 'CC', 0x01, 0x30 );
+
+            # 9. push rbp (Offset 0x00, Op=0, Info=5)
+            $codes .= pack( 'CC', 0x00, 0x50 );
+
             return $hdr . $codes;
         }
 

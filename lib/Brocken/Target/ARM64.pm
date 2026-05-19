@@ -442,14 +442,19 @@ class Brocken::Target::ARM64 : isa(Brocken::Target) {
             my $target_pc = $reg_map->{ $inst->{args}[1] };
             my $source_bp = $reg_map->{ $inst->{args}[2] };
 
+            # 1. Load target context into scratch registers and set SP to source_bp where registers are saved
             $as->mov_reg( 'x16', $target_pc );
+            $as->mov_reg( 'x17', $target_bp );
             $as->mov_reg( 'sp',  $source_bp );
 
+            # 2. Restore callee-saved registers from the source frame
             for my $r ( reverse @{ $driver->preserved_regs() } ) {
                 $as->pop_reg($r);
             }
 
-            $as->mov_reg( 'x29', $target_bp );
+            # 3. Set Frame Pointer to target frame and adjust SP for locals
+            $as->mov_reg( 'x29', 'x17' );
+            $as->mov_reg( 'sp',  'x29' );
             my $size = $driver->frame_local_size;
             $size = ( $size + 15 ) & ~15;
             $as->sub_imm( 'sp', $size ) if $size > 0;

@@ -190,6 +190,7 @@ class Brocken::Target::X64::Emit {
     }
     method call_label($l) { $code .= pack( 'C', 0xE8 ); push @fixups, { offset => length($code), target => $l }; $code .= pack( 'L<', 0 ); }
     method call_reg($r)   { $code .= $self->_rex( 0, 0, 0, $self->reg($r) ) . pack( 'C', 0xFF ) . pack( 'C', 0xD0 + $self->reg($r) ); }
+    method jmp_reg($r)    { $code .= $self->_rex( 0, 0, 0, $self->reg($r) ) . pack( 'C', 0xFF ) . pack( 'C', 0xE0 + ( $self->reg($r) & 7 ) ); }
     method jmp($l)        { $code .= pack( 'C', 0xE9 ); push @fixups, { offset => length($code), target => $l }; $code .= pack( 'L<', 0 ); }
 
     method jcc( $cc, $l ) {

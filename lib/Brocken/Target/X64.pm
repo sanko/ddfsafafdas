@@ -70,8 +70,9 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
             my $target_pc = $reg_map->{ $inst->{args}[1] };
             my $source_bp = $reg_map->{ $inst->{args}[2] };
 
-            # 1. Load target PC and set RSP to source_bp where registers are saved
+            # 1. Load target context into scratch registers and set RSP to source_bp where registers are saved
             $as->mov_reg( 'r11', $target_pc );
+            $as->mov_reg( 'r10', $target_bp );
             $as->mov_reg( 'rsp', $source_bp );
 
             # 2. Restore callee-saved registers from the source frame
@@ -81,11 +82,12 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
             }
 
             # 3. Now set the Frame Pointer to the target frame and adjust RSP for locals
-            $as->mov_reg( 'rbp', $target_bp );
+            $as->mov_reg( 'rbp', 'r10' );
+            $as->mov_reg( 'rsp', 'rbp' );
             $as->sub_imm( 'rsp', $driver->frame_local_size );
 
             # 4. Jump to catch/finally in the target frame
-            $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xE3 ) ); # jmp r11
+            $as->jmp_reg('r11');
             return;
         }
         return $driver->platform->emit_intrinsic( $self, $as, $inst, $reg_map, $driver );
