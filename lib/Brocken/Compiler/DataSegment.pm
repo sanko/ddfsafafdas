@@ -14,10 +14,9 @@ package Brocken::Compiler::DataSegment {
             my $utf8_bytes = encode( 'UTF-8', $str );
             my $byte_len   = length($utf8_bytes);
 
-            # HEADER: Byte Length + 24 | Cycle 0 | Flags (Leaf=Bit 61)
-            # No Magic Number needed with Exact Roots.
+            # HEADER: Byte Length + 24 | Cycle 0 | Flags (Leaf/String=Bits 63-62)
             my $total_sz = $byte_len + 24;
-            my $header = $total_sz | hex("2000000000000000"); # Leaf bit set
+            my $header = $total_sz | hex("C000000000000000"); # Leaf bits set
 
             my $offset = length($raw_data);
             $raw_data .= pack( 'Q<',    $header );

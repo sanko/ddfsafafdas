@@ -221,8 +221,14 @@ package Brocken::Target::X64 {
             }
             elsif ( $op =~ /^call_/ || $op =~ /^tail_call_/ ) {
                 my @args   = @{ $inst->{args} };
-                my $target = ( $op =~ /_func$/ ) ? shift @args : $reg_map->{ shift @args };
-                $as->mov_reg( 'r11', $target ) if $op =~ /_reg$/;
+                my $target = ( $op =~ /_func$/ ) ? shift @args : undef;
+                if ( $op =~ /_reg$/ ) {
+                    my $first_arg = shift @args;
+                    my $src_reg = ( $first_arg =~ /^%/ && exists $reg_map->{$first_arg} )
+                        ? $reg_map->{$first_arg}
+                        : 'r11';
+                    $as->mov_reg( 'r11', $src_reg );
+                }
                 for my $i ( 0 .. $#args ) {
                     my $dst = $self->_abi_arg_reg($i);
                     my $src = ( $args[$i] =~ /^%/ ) ? $reg_map->{ $args[$i] } : 'r10';
@@ -320,6 +326,21 @@ package Brocken::Target::X64 {
                     $as->mov_imm( 'r10', $v->( $inst->{args}[0] ) ) if $inst->{args}[0] !~ /^%/;
                     $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), $src );
                 }
+            }
+            elsif ( $op eq 'shadow_pop' ) {
+                $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
+                $as->load_reg_mem( 'r10', 'r11', $driver->fcb_offset('shadow_ptr') );
+                $as->sub_imm( 'r10', 8 );
+                $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), 'r10' );
+            }
+            elsif ( $op =~ /^(local|atomic)_(inc|dec)_ref$/ ) {
+                my $is_atomic = $1 eq 'atomic';
+                my $is_inc    = $2 eq 'inc';
+                my $obj       = $reg_map->{ $inst->{args}[0] };
+                $as->mov_imm( 'r11', 1 << 48 );
+                $as->lock() if $is_atomic;
+                if ($is_inc) { $as->add_mem_disp_reg( $obj, -8, 'r11' ); }
+                else         { $as->sub_mem_disp_reg( $obj, -8, 'r11' ); }
             }
             elsif ( $op eq 'load_iso_disp' ) { $as->load_reg_mem( $d_reg, 'r14', $inst->{args}[0] ); }
             elsif ( $op eq 'store_iso_disp' ) {

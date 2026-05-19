@@ -381,6 +381,36 @@ package Brocken::Target::ARM64 {
                     $as->stur_mem_disp_reg( 'x16', $driver->fcb_offset('shadow_ptr'), $v->( $inst->{args}[0] ) );
                 }
             }
+            elsif ( $op eq 'shadow_pop' ) {
+                $as->ldur_reg_mem( 'x15', 'x28', $driver->iso_offset('current_fcb') );
+                $as->ldur_reg_mem( 'x17', 'x15', $driver->fcb_offset('shadow_ptr') );
+                $as->sub_imm( 'x17', 8 );
+                $as->stur_mem_disp_reg( 'x15', $driver->fcb_offset('shadow_ptr'), 'x17' );
+            }
+            elsif ( $op =~ /^(local|atomic)_(inc|dec)_ref$/ ) {
+                my $is_atomic = $1 eq 'atomic';
+                my $is_inc    = $2 eq 'inc';
+                my $obj       = $reg_map->{ $inst->{args}[0] };
+                $as->mov_reg( 'x15', $obj );
+                $as->sub_imm( 'x15', 8 );
+                $as->mov_imm( 'x16', 1 << 48 );
+
+                if ($is_atomic) {
+                    my $l_retry = "L_atomic_rc_" . $driver->next_label_id;
+                    $as->mark_label($l_retry);
+                    $as->ldxr_reg( 'x17', 'x15' );
+                    if ($is_inc) { $as->add_reg( 'x17', 'x17', 'x16' ); }
+                    else         { $as->sub_reg( 'x17', 'x17', 'x16' ); }
+                    $as->stxr_reg( 'w18', 'x17', 'x15' );
+                    $as->cbnz_label( 'w18', $l_retry );
+                }
+                else {
+                    $as->ldur_reg_mem( 'x17', 'x15', 0 );
+                    if ($is_inc) { $as->add_reg( 'x17', 'x17', 'x16' ); }
+                    else         { $as->sub_reg( 'x17', 'x17', 'x16' ); }
+                    $as->stur_mem_disp_reg( 'x15', 0, 'x17' );
+                }
+            }
         }
 
         method compile_intrinsic( $as, $inst, $reg_map, $driver ) {

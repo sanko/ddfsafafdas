@@ -239,6 +239,19 @@ package Brocken::Target::ARM64::Emit {
             $code .= pack( 'L<', 0xEA000000 | ( $rd << 16 ) | ( $ld << 5 ) | 31 );
         }
 
+        method ldxr_reg( $d, $n ) {
+            $code .= pack( 'L<', 0xC85F7C00 | ( $self->reg($n) << 5 ) | $self->reg($d) );
+        }
+
+        method stxr_reg( $s, $d, $n ) {
+            $code .= pack( 'L<', 0xC8007C00 | ( $self->reg($s) << 16 ) | ( $self->reg($n) << 5 ) | $self->reg($d) );
+        }
+
+        method cbnz_label( $r, $l ) {
+            push @fixups, { offset => length($code), target => $l, type => 'cond_br' };
+            $code .= pack( 'L<', 0xB5000000 | $self->reg($r) );
+        }
+
         method load_reg_mem( $dest, $src, $disp = 0 ) {
             my $d = $self->reg($dest);
             my $s = $self->reg($src);
@@ -324,7 +337,7 @@ package Brocken::Target::ARM64::Emit {
                 }
                 my $off   = ( $t - $_->{offset} );
                 my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
-                if ( $_->{type} eq 'cond' ) {
+                if ( $_->{type} eq 'cond' || $_->{type} eq 'cond_br' ) {
                     my $woff = $off / 4;
                     $instr |= ( $woff & 0x7FFFF ) << 5;
                 }

@@ -74,6 +74,7 @@ package Brocken::Target::X64::Emit {
         }
         method append_code($bin) { $code .= $bin }
         method mark_label($n)    { $labels{$n} = length $code }
+        method lock()            { $code .= pack( 'C', 0xF0 ) }
 
         method mov_reg( $d, $s ) {
             my $di = $self->reg($d);
@@ -167,6 +168,8 @@ package Brocken::Target::X64::Emit {
         method load_reg_mem( $d, $s, $off = 0 )      { $self->_emit_modrm( 0x8B, $d, $s, $off, 1 ); }
         method load_reg_mem_byte( $d, $s, $off = 0 ) { $self->_emit_modrm( 0xB6, $d, $s, $off, 1, pack( 'C', 0x0F ) ); }
         method lea_reg_disp( $d, $b, $off )          { $self->_emit_modrm( 0x8D, $d, $b, $off, 1 ); }
+        method add_mem_disp_reg( $b, $d, $s, $w = 1 ) { $self->_emit_modrm( 0x01, $s, $b, $d, $w ); }
+        method sub_mem_disp_reg( $b, $d, $s, $w = 1 ) { $self->_emit_modrm( 0x29, $s, $b, $d, $w ); }
 
         method lea_rva( $reg, $target, $txtrva = 0 ) {
             my $ri = $self->reg($reg);
@@ -186,6 +189,7 @@ package Brocken::Target::X64::Emit {
             $code .= pack( 'CC l<', 0xFF, 0x15, $trva - $next );
         }
         method call_label($l) { $code .= pack( 'C', 0xE8 ); push @fixups, { offset => length($code), target => $l }; $code .= pack( 'L<', 0 ); }
+        method call_reg($r) { $code .= $self->_rex( 0, 0, 0, $self->reg($r) ) . pack( 'C', 0xFF ) . pack( 'C', 0xD0 + $self->reg($r) ); }
         method jmp($l)        { $code .= pack( 'C', 0xE9 ); push @fixups, { offset => length($code), target => $l }; $code .= pack( 'L<', 0 ); }
 
         method jcc( $cc, $l ) {
