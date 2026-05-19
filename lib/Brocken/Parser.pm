@@ -38,6 +38,8 @@ class Brocken::Parser {
         'require'   => '_parse_require',
         'native'    => '_parse_native_decl',
         'eval'      => '_parse_eval',
+        'try'       => '_parse_try_catch',
+        'die'       => '_parse_die',
         'return'    => '_parse_return',
         'exit'      => '_parse_exit',
         'say'       => '_parse_builtin_call',
@@ -334,14 +336,56 @@ class Brocken::Parser {
         return Brocken::AST::Stmt::Eval->new( code => $code_expr, line => $tok->{line}, col => $tok->{col} );
     }
 
+   method _parse_die() {
+        my $tok = $self->current;
+        $self->advance;                                   # consume 'die';
+        my $code_expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
+        $self->_consume_stmt_terminator();
+        return Brocken::AST::Exception::Die->new( exception => $code_expr, line => $tok->{line}, col => $tok->{col} );
+    }
+
+    method _parse_try_catch() {
+        my $tok = $self->current;
+        $self->advance();                                 # consume 'try'
+        my $try = $self->_parse_block_stmt();
+        $self->expect('catch');
+        $self->expect('(');
+        my $catch_arg = $self->expect('VAR');
+        use Data::Dump;
+
+        #~ ddx $catch_arg;
+        $self->expect(')');
+        my $catch = $self->_parse_block_stmt();
+        ddx $self->current;
+        my $finally = undef;
+        if ( $self->current->{type} eq 'KEYWORD' && $self->current->{value} eq 'finally' ) {
+            $self->advance();    # consume 'finally'
+            $finally = $self->_parse_block_stmt();
+        }
+
+        #~ ddx [
+        #~ $try, $catch, $finally
+        #~ ];
+        #~ ddx $tok;
+        # TODO: track line/col for all 2/3 blocks
+        return Brocken::AST::Exception::TryCatch->new(
+            try_block     => $try,
+            catch_var     => $catch_arg,
+            catch_block   => $catch,
+            finally_block => $finally,
+            line          => $tok->{line},
+            col           => $tok->{col}
+        );
+    }
+
     method _parse_class() {
         my $tok = $self->current;
-        $self->advance();                                 # consume 'class'
+        $self->advance();    # consume 'class'
         my $name = $self->expect('IDENT')->{value};
 
         # Handle qualified names like Math::Utils
         while ( $self->current->{value} eq '::' ) {
-            $self->advance();                             # consume '::'
+            $self->advance();    # consume '::'
             $name .= '::' . $self->expect('IDENT')->{value};
         }
         $self->expect('{');

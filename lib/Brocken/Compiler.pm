@@ -32,20 +32,27 @@ package Brocken::Compiler {
     }
 
     class Brocken::Compiler {
-        field $arch     : param : reader = undef;
-        field $os       : param : reader = undef;
-        field $type     : param : reader = 'exe';
-        field $debug    : param : reader = 0;
+        field $arch  : param : reader = undef;
+        field $os    : param : reader = undef;
+        field $type  : param : reader = 'exe';
+        field $debug : param : reader = 0;
+        #
         field $target   : reader;
         field $platform : reader;
         field $as       : reader;
         field $format   : reader;
+        #
         field $local_ptr = 0;
         field @source_locs;
         field @func_ranges;
+        #
         field %debug_func_params;
         field %debug_func_locals;
-        field $global_iso_offset : reader : writer = undef;
+        #
+        field $global_iso_offset      : reader : writer = undef;
+        field $exception_table_offset : reader : writer = undef;
+        field $data_segment           : reader : writer = undef;
+        #
         ADJUST {
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
             $os //= $detected_os;
@@ -141,13 +148,16 @@ package Brocken::Compiler {
                 heap_max         => 96,
                 mark_stack_base  => 104,
                 mark_stack_ptr   => 112,
-                mark_stack_limit => 120
+                mark_stack_limit => 120,
+                exception_table  => 128
             };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }
 
-        method fcb_offset ($name) {
-            state $FCB = { sp => 0, stack_base => 8, shadow_base => 24, shadow_ptr => 32, caller => 40, next => 48, wait_handle => 56 };
+ method fcb_offset ($name) {
+            state $FCB = { sp => 0, stack_base => 8, shadow_base => 24, shadow_ptr => 32,
+                           caller => 40, next => 48, wait_handle => 56,
+                           exception_obj => 64 };
             return $FCB->{$name};
         }
 
@@ -155,49 +165,51 @@ package Brocken::Compiler {
             return $arch eq 'x64' ? { eq => 4, ne => 5, lt => 0xC, gt => 0xF, z => 4, nz => 5 }->{$name} :
                 { eq => 0, ne => 1, lt => 0xB, gt => 0xC }->{$name};
         }
-        my $_x = 0;
+        {
+            my $_x = 0;
 
-        method compile_source( $source, $output_file, $filename = 'eval_' . ++$_x ) {
-            require Brocken::Lexer;
-            require Brocken::Parser;
-            require Brocken::Compiler::Lowering;
-            require Brocken::Codegen;
-            require Brocken::Compiler::DataSegment;
-            my $tokens   = Brocken::Lexer->new( source => $source )->lex();
-            my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-            my $ds       = Brocken::Compiler::DataSegment->new();
-            my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
-            $lowering->lower_program($ast);
-            my @instructions = $lowering->builder->instructions();
-            $self->format->pre_layout( scalar(@instructions) * 64 + 8192, length( $ds->get_raw_data ) + 16384, $arch, $os, $debug );
-            my $codegen = Brocken::Codegen->new( arch => $arch );
-            $codegen->compile( \@instructions, $self );
-            $self->as->resolve( $self->text_rva, $self->data_rva );
-            $self->format->set_labels( $self->as->labels );
-            $self->format->set_exported_funcs( $lowering->exported_funcs );
+            method compile_source( $source, $output_file, $filename = 'eval_' . ++$_x ) {
+                require Brocken::Lexer;
+                require Brocken::Parser;
+                require Brocken::Compiler::Lowering;
+                require Brocken::Codegen;
+                require Brocken::Compiler::DataSegment;
+                my $tokens   = Brocken::Lexer->new( source => $source )->lex();
+                my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
+                my $ds       = Brocken::Compiler::DataSegment->new();
+                my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
+                $lowering->lower_program($ast);
+                my @instructions = $lowering->builder->instructions();
+                $self->format->pre_layout( scalar(@instructions) * 64 + 8192, length( $ds->raw_data ) + 16384, $arch, $os, $debug );
+                my $codegen = Brocken::Codegen->new( arch => $arch );
+                $codegen->compile( \@instructions, $self );
+                $self->as->resolve( $self->text_rva, $self->data_rva );
+                $self->format->set_labels( $self->as->labels );
+                $self->format->set_exported_funcs( $lowering->exported_funcs );
 
-            if ( $self->debug ) {
-                $self->format->set_func_ranges( [ $self->func_ranges ] );
-                require Brocken::Format::DWARF;
-                my $dwarf = Brocken::Format::DWARF->new(
-                    source_locs    => [ $self->source_locs ],
-                    text_base      => $self->format->image_base + $self->text_rva,
-                    func_ranges    => [ $self->func_ranges ],
-                    context_size   => $self->context_size,
-                    arch           => $self->arch,
-                    preserved_regs => $self->preserved_regs,
-                    class_info     => { $lowering->class_info },
-                    source_file    => $filename
-                );
-                my $dwarf_data = $dwarf->build_all();
-                $self->format->set_debug_data($dwarf_data);
-                for my $sec ( keys %$dwarf_data ) {
-                    eval { $self->format->layout->get($sec)->{size} = length( $dwarf_data->{$sec} ) };
+                if ( $self->debug ) {
+                    $self->format->set_func_ranges( [ $self->func_ranges ] );
+                    require Brocken::Format::DWARF;
+                    my $dwarf = Brocken::Format::DWARF->new(
+                        source_locs    => [ $self->source_locs ],
+                        text_base      => $self->format->image_base + $self->text_rva,
+                        func_ranges    => [ $self->func_ranges ],
+                        context_size   => $self->context_size,
+                        arch           => $self->arch,
+                        preserved_regs => $self->preserved_regs,
+                        class_info     => { $lowering->class_info },
+                        source_file    => $filename
+                    );
+                    my $dwarf_data = $dwarf->build_all();
+                    $self->format->set_debug_data($dwarf_data);
+                    for my $sec ( keys %$dwarf_data ) {
+                        eval { $self->format->layout->get($sec)->{size} = length( $dwarf_data->{$sec} ) };
+                    }
+                    $self->format->layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
                 }
-                $self->format->layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
+                $self->format->write_bin( $output_file, $self->as->code, $ds->raw_data(), $arch, $os, $type );
+                return $output_file;
             }
-            $self->format->write_bin( $output_file, $self->as->code, $ds->get_raw_data(), $arch, $os, $type );
-            return $output_file;
         }
     }
 }

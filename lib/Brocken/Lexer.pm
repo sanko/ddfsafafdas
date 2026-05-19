@@ -18,6 +18,8 @@ class Brocken::Lexer {
         native
         if else unless
         while for map
+        try catch finally
+        die
         say print
         use require eval
         Int String Any Bool Class Fiber Array Fun Pointer Struct Callback

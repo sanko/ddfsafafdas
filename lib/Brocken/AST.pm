@@ -5,6 +5,7 @@ package Brocken::AST {
     use Brocken::AST::Stmt;
     use Brocken::AST::OOP;
     use Brocken::AST::Async;
+    use Brocken::AST::Exception;
 }
 1;
 __END__
