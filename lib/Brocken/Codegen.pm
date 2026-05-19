@@ -38,13 +38,52 @@ package Brocken::Codegen {
 
         method _analyze_liveness($insts) {
             my %live;
+            my %label_idx;
             for ( my $i = 0; $i < @$insts; $i++ ) {
                 my $ins = $insts->[$i];
-                if ( defined $ins->{dest} && $ins->{dest} =~ /^%/ ) { $live{ $ins->{dest} }{start} //= $i; $live{ $ins->{dest} }{end} = $i; }
-                if ( $ins->{op} eq 'cond_br' && defined $ins->{reg} ) { $live{ $ins->{reg} }{end} = $i; }
+                if ( $ins->{op} eq 'label' ) {
+                    $label_idx{ $ins->{name} } = $i;
+                }
+                if ( defined $ins->{dest} && $ins->{dest} =~ /^%/ ) {
+                    $live{ $ins->{dest} }{start} //= $i;
+                    $live{ $ins->{dest} }{end} = $i;
+                }
+                if ( $ins->{op} eq 'cond_br' && defined $ins->{reg} && $ins->{reg} =~ /^%/ ) {
+                    $live{ $ins->{reg} }{start} //= $i;
+                    $live{ $ins->{reg} }{end} = $i;
+                }
                 if ( defined $ins->{args} ) {
                     for my $arg ( @{ $ins->{args} } ) {
-                        if ( defined $arg && !ref($arg) && $arg =~ /^%/ ) { $live{$arg}{start} //= $i; $live{$arg}{end} = $i; }
+                        if ( defined $arg && !ref($arg) && $arg =~ /^%/ ) {
+                            $live{$arg}{start} //= $i;
+                            $live{$arg}{end} = $i;
+                        }
+                    }
+                }
+            }
+            my $changed = 1;
+            while ($changed) {
+                $changed = 0;
+                for ( my $i = 0; $i < @$insts; $i++ ) {
+                    my $ins = $insts->[$i];
+                    if ( $ins->{op} eq 'jmp' || $ins->{op} eq 'cond_br' ) {
+                        my @targets;
+                        push @targets, $ins->{target}  if defined $ins->{target};
+                        push @targets, $ins->{true_l}  if defined $ins->{true_l};
+                        push @targets, $ins->{false_l} if defined $ins->{false_l};
+                        for my $t (@targets) {
+                            my $target_idx = $label_idx{$t};
+                            if ( defined $target_idx && $target_idx < $i ) {
+                                for my $v ( keys %live ) {
+                                    if ( $live{$v}{start} <= $target_idx && $live{$v}{end} >= $target_idx ) {
+                                        if ( $live{$v}{end} < $i ) {
+                                            $live{$v}{end} = $i;
+                                            $changed = 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -140,5 +179,3 @@ OS-specific ops).
 Allocates registers and emits machine code via the driver's target emitter.
 
 =cut
-}
-1;

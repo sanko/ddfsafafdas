@@ -5,77 +5,86 @@ package Brocken::Compiler {
     no warnings 'portable', 'experimental::class';
 
     class Brocken::Symbol {
-        field $name         : param : reader;
-        field $type         : param : reader;
-        field $is_state     : param : reader = 0;
-        field $state_idx    : param : reader = undef;
-        field $stack_offset : param : reader = undef;
+        field $name          : param : reader;
+        field $type          : param : reader;
+        field $is_state      : param : reader = 0;
+        field $state_idx     : param : reader = undef;
+        field $stack_offset  : param : reader = undef;
         field $shadow_offset : param : reader = undef;
     }
 
     class Brocken::Scope {
         field $parent : param : reader = undef;
         field %symbols;
+
         method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef, $shadow_offset = undef ) {
             die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
             return $symbols{$name} = Brocken::Symbol->new(
-                name => $name, type => $type, is_state => $is_state,
-                state_idx => $state_idx, stack_offset => $stack_offset, shadow_offset => $shadow_offset
+                name          => $name,
+                type          => $type,
+                is_state      => $is_state,
+                state_idx     => $state_idx,
+                stack_offset  => $stack_offset,
+                shadow_offset => $shadow_offset
             );
         }
         method resolve($name) { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
     }
 
     class Brocken::Compiler {
-        field $arch  : param : reader = undef;
-        field $os    : param : reader = undef;
-        field $type  : param : reader = 'exe';
-        field $debug : param : reader = 0;
-
+        field $arch     : param : reader = undef;
+        field $os       : param : reader = undef;
+        field $type     : param : reader = 'exe';
+        field $debug    : param : reader = 0;
         field $target   : reader;
         field $platform : reader;
         field $as       : reader;
         field $format   : reader;
-
         field $local_ptr = 0;
         field @source_locs;
         field @func_ranges;
         field %debug_func_params;
         field %debug_func_locals;
         field $global_iso_offset : reader : writer = undef;
-
         ADJUST {
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
             $os //= $detected_os;
             my $detected_arch = 'x64';
             if ( $^O eq 'MSWin32' ) {
                 $detected_arch = ( ( $ENV{PROCESSOR_ARCHITECTURE} // '' ) =~ /ARM64/i ) ? 'arm64' : 'x64';
-            } else {
+            }
+            else {
                 my $m = `uname -m` // 'x86_64';
                 $detected_arch = 'arm64' if $m =~ /aarch64|arm64|armv8/i;
             }
             $arch //= $detected_arch;
-
             if ( $os eq 'win64' ) {
-                require Brocken::Platform::Windows; require Brocken::Format::PE;
+                require Brocken::Platform::Windows;
+                require Brocken::Format::PE;
                 $platform = Brocken::Platform::Windows->new( os => $os );
                 $format   = Brocken::Format::PE->new( type => $type );
-            } elsif ( $os =~ /^(linux|freebsd|openbsd|netbsd|dragonfly)$/ ) {
-                require Brocken::Platform::Linux; require Brocken::Format::ELF;
+            }
+            elsif ( $os =~ /^(linux|freebsd|openbsd|netbsd|dragonfly)$/ ) {
+                require Brocken::Platform::Linux;
+                require Brocken::Format::ELF;
                 $platform = Brocken::Platform::Linux->new( os => $os );
                 $format   = Brocken::Format::ELF->new( type => $type );
-            } elsif ( $os eq 'macos' ) {
-                require Brocken::Platform::Darwin; require Brocken::Format::MachO;
+            }
+            elsif ( $os eq 'macos' ) {
+                require Brocken::Platform::Darwin;
+                require Brocken::Format::MachO;
                 $platform = Brocken::Platform::Darwin->new( os => $os );
                 $format   = Brocken::Format::MachO->new( type => $type );
             }
-
             if ( $arch eq 'x64' ) {
-                require Brocken::Target::X64; require Brocken::Target::X64::Emit;
+                require Brocken::Target::X64;
+                require Brocken::Target::X64::Emit;
                 $target = Brocken::Target::X64->new( os => $os, arch => $arch );
                 $as     = Brocken::Target::X64::Emit->new();
-            } else {
-                require Brocken::Target::ARM64; require Brocken::Target::ARM64::Emit;
+            }
+            else {
+                require Brocken::Target::ARM64;
+                require Brocken::Target::ARM64::Emit;
                 $target = Brocken::Target::ARM64->new( os => $os, arch => $arch );
                 $as     = Brocken::Target::ARM64::Emit->new();
             }
@@ -87,33 +96,32 @@ package Brocken::Compiler {
             }
             return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27 x29 x30)];
         }
-
         method context_size() { return scalar( @{ $self->preserved_regs() } ) * 8; }
 
         method frame_local_size() {
             my $locals = 4096;
-            my $ctx = $self->context_size();
+            my $ctx    = $self->context_size();
             my $shadow = $platform->shadow_space();
-            my $total = $locals + $shadow;
+            my $total  = $locals + $shadow;
             return ( $total + 15 ) & ~15;
         }
-
-        method text_rva ()        { $format->rva_for('.text') }
-        method data_rva ()        { $format->rva_for('.data') }
-        method import_rva ($name) { $format->import_rva($name) }
-        method source_locs ()     { return @source_locs; }
+        method text_rva ()                    { $format->rva_for('.text') }
+        method data_rva ()                    { $format->rva_for('.data') }
+        method import_rva ($name)             { $format->import_rva($name) }
+        method source_locs ()                 { return @source_locs; }
         method push_source_loc ( $o, $l, $c ) { push @source_locs, { offset => $o, line => $l, col => $c }; }
-        method func_ranges ()     { return @func_ranges; }
-        method push_func_range ($r) { push @func_ranges, $r; }
-        method clear_func_ranges () { @func_ranges = (); }
+        method func_ranges ()                 { return @func_ranges; }
+        method push_func_range ($r)           { push @func_ranges, $r; }
+        method clear_func_ranges ()           { @func_ranges = (); }
         method set_debug_func_params ( $n, $p ) { $debug_func_params{$n} = $p; }
-        method get_debug_func_params ($n)        { $debug_func_params{$n} // [] }
+        method get_debug_func_params ($n)       { $debug_func_params{$n} // [] }
         method set_debug_func_locals ( $n, $l ) { $debug_func_locals{$n} = $l; }
-        method get_debug_func_locals ($n)        { $debug_func_locals{$n} // [] }
+        method get_debug_func_locals ($n)       { $debug_func_locals{$n} // [] }
         method close_last_func_range ($e)       { $func_ranges[-1]{end} = $e if @func_ranges; }
-        method local_ptr ()       { $local_ptr }
+        method local_ptr ()       {$local_ptr}
         method set_local_ptr ($v) { $local_ptr = $v }
         method reset_locals ()    { $local_ptr = 0 }
+
         method alloc_local_slot () {
             $local_ptr += 8;
             die 'Stack Overflow: Local area exceeded 4096 bytes' if $local_ptr > 4096;
@@ -122,9 +130,18 @@ package Brocken::Compiler {
 
         method iso_offset ($name) {
             state $ISO = {
-                heap_ptr => 0, heap_limit => 8, state_ptr => 16, current_fcb => 24, fiber_head => 32,
-                heap_base => 40, gc_cycle => 80, heap_min => 88, heap_max => 96,
-                mark_stack_base => 104, mark_stack_ptr => 112, mark_stack_limit => 120
+                heap_ptr         => 0,
+                heap_limit       => 8,
+                state_ptr        => 16,
+                current_fcb      => 24,
+                fiber_head       => 32,
+                heap_base        => 40,
+                gc_cycle         => 80,
+                heap_min         => 88,
+                heap_max         => 96,
+                mark_stack_base  => 104,
+                mark_stack_ptr   => 112,
+                mark_stack_limit => 120
             };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }
@@ -135,53 +152,50 @@ package Brocken::Compiler {
         }
 
         method cc ($name) {
-            return $arch eq 'x64'
-                ? { eq => 4, ne => 5, lt => 0xC, gt => 0xF, z => 4, nz => 5 }->{$name}
-                : { eq => 0, ne => 1, lt => 0xB, gt => 0xC }->{$name};
+            return $arch eq 'x64' ? { eq => 4, ne => 5, lt => 0xC, gt => 0xF, z => 4, nz => 5 }->{$name} :
+                { eq => 0, ne => 1, lt => 0xB, gt => 0xC }->{$name};
         }
-
         my $_x = 0;
-        method compile_source( $source, $output_file, $filename = 'eval_' . ++$_x ) {
-            require Brocken::Lexer; require Brocken::Parser;
-            require Brocken::Compiler::Lowering; require Brocken::Codegen;
-            require Brocken::Compiler::DataSegment;
 
-            my $tokens = Brocken::Lexer->new( source => $source )->lex();
-            my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
-            my $ds     = Brocken::Compiler::DataSegment->new();
+        method compile_source( $source, $output_file, $filename = 'eval_' . ++$_x ) {
+            require Brocken::Lexer;
+            require Brocken::Parser;
+            require Brocken::Compiler::Lowering;
+            require Brocken::Codegen;
+            require Brocken::Compiler::DataSegment;
+            my $tokens   = Brocken::Lexer->new( source => $source )->lex();
+            my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
+            my $ds       = Brocken::Compiler::DataSegment->new();
             my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
             $lowering->lower_program($ast);
             my @instructions = $lowering->builder->instructions();
-
-            $self->format->pre_layout( scalar(@instructions) * 64 + 8192, length($ds->get_raw_data) + 16384, $arch, $os, $debug );
+            $self->format->pre_layout( scalar(@instructions) * 64 + 8192, length( $ds->get_raw_data ) + 16384, $arch, $os, $debug );
             my $codegen = Brocken::Codegen->new( arch => $arch );
             $codegen->compile( \@instructions, $self );
             $self->as->resolve( $self->text_rva, $self->data_rva );
-
             $self->format->set_labels( $self->as->labels );
             $self->format->set_exported_funcs( $lowering->exported_funcs );
 
-            if ($self->debug) {
-                $self->format->set_func_ranges([$self->func_ranges]);
+            if ( $self->debug ) {
+                $self->format->set_func_ranges( [ $self->func_ranges ] );
                 require Brocken::Format::DWARF;
                 my $dwarf = Brocken::Format::DWARF->new(
-                    source_locs => [$self->source_locs],
-                    text_base => $self->format->image_base + $self->text_rva,
-                    func_ranges => [$self->func_ranges],
-                    context_size => $self->context_size,
-                    arch => $self->arch,
+                    source_locs    => [ $self->source_locs ],
+                    text_base      => $self->format->image_base + $self->text_rva,
+                    func_ranges    => [ $self->func_ranges ],
+                    context_size   => $self->context_size,
+                    arch           => $self->arch,
                     preserved_regs => $self->preserved_regs,
-                    class_info => {$lowering->class_info},
-                    source_file => $filename
+                    class_info     => { $lowering->class_info },
+                    source_file    => $filename
                 );
                 my $dwarf_data = $dwarf->build_all();
                 $self->format->set_debug_data($dwarf_data);
-                for my $sec (keys %$dwarf_data) {
-                    eval { $self->format->layout->get($sec)->{size} = length($dwarf_data->{$sec}) };
+                for my $sec ( keys %$dwarf_data ) {
+                    eval { $self->format->layout->get($sec)->{size} = length( $dwarf_data->{$sec} ) };
                 }
-                $self->format->layout->calculate($os eq 'macos' ? 0x4000 : 0x1000);
+                $self->format->layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
             }
-
             $self->format->write_bin( $output_file, $self->as->code, $ds->get_raw_data(), $arch, $os, $type );
             return $output_file;
         }
