@@ -135,7 +135,9 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
             $dynamic .= pack( 'Q< Q<', 11, 24 );
             my $main_lbl = $self->labels->{'L_MAIN_START'};
 
-            if ( defined $main_lbl ) {
+            # Only add DT_INIT for executables, not shared libraries
+            # For shared libraries, the init would run on dlopen and can cause issues
+            if ( defined $main_lbl && $self->type ne 'shared' ) {
                 $dynamic .= pack( 'Q< Q<', 12, $base + $l->get('.text')->{rva} + $main_lbl );    # DT_INIT
             }
             $dynamic .= pack( 'Q< Q<', 0, 0 );

@@ -475,24 +475,30 @@ $optimizer->optimize( $lowering->builder );
 # $lowering->builder->dump_ir("FINAL IR");
 my $insts    = $lowering->builder->instructions;
 my $est_text = scalar(@$insts) * 32 + 4096;
-my $est_data = length( $ds->get_raw_data() ) + 4096;
+my $est_data = length( $ds->raw_data ) + 4096;
 $p->format->pre_layout( $est_text, $est_data, $p->arch, $p->os, $p->debug );
 my $codegen = Brocken::Codegen->new( arch => $p->arch );
 $codegen->compile( [ $lowering->builder->instructions() ], $p );
 $p->as->resolve( $p->text_rva, $p->data_rva );
-my %labels = $p->as->labels;
-$p->format->set_labels( \%labels );
+my $labels = $p->as->labels;
+$p->format->set_labels($labels);
 
 if ( $p->type eq 'shared' ) {
     my @exports;
-    for my $l ( keys %labels ) {
+    for my $l ( keys %$labels ) {
         if ( $l =~ /^M_([a-zA-Z0-9_]+)$/ ) {
             push @exports, $1;
         }
     }
 
-    # Pass exports to format if it's PE
+    # Pass exports to format (PE, ELF, MachO)
     if ( $p->format isa Brocken::Format::PE ) {
+        $p->format->set_exported_funcs( \@exports );
+    }
+    elsif ( $p->format isa Brocken::Format::ELF ) {
+        $p->format->set_exported_funcs( \@exports );
+    }
+    elsif ( $p->format isa Brocken::Format::MachO ) {
         $p->format->set_exported_funcs( \@exports );
     }
 }
@@ -572,7 +578,7 @@ if ( $p->debug >= 1 ) {
 }
 my $ext = $p->os eq 'win64' ? ( $p->type eq 'shared' ? '.dll' : '.exe' ) : ( $p->type eq 'shared' ? '.so' : '' );
 $ext = '.dylib' if $p->os eq 'macos' && $p->type eq 'shared';
-my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->get_raw_data(), $p->arch, $p->os, $p->type );
+my $exe = $p->format->write_bin( "brocken_out$ext", $p->as->code, $ds->raw_data, $p->arch, $p->os, $p->type );
 say "Executing Native Binary...";
 my $run = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
 if ( $^O eq 'darwin' ) {

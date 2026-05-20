@@ -6,7 +6,7 @@ package Brocken::Compiler::DataSegment {
     use Encode qw(encode);
 
     class Brocken::Compiler::DataSegment {
-        field $raw_data :reader:writer= '';
+        field $raw_data : reader : writer = '';
         field %string_offsets;
 
         method add_string($str) {
@@ -50,7 +50,7 @@ Brocken::Compiler::DataSegment - String constant storage with GC headers
 
     my $ds = Brocken::Compiler::DataSegment->new();
     my $offset = $ds->add_string("Hello, World!");
-    my $raw = $ds->get_raw_data();
+    my $raw = $ds->raw_data();
 
 =head1 DESCRIPTION
 
@@ -73,9 +73,8 @@ Adds raw bytes to the segment and returns the offset. Padded to 8-byte alignment
 Enrolls a Perl string as a UTF-8 encoded constant with GC headers. Returns the byte offset (skipping the GC header,
 pointing to metadata).
 
-=head2 get_raw_data
+=head2 raw_data
 
 Returns the complete byte buffer for writing into the binary's .data section.
 
 =cut
-

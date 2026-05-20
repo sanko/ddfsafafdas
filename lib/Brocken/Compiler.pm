@@ -101,6 +101,7 @@ package Brocken::Compiler {
             }
             return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27 x29 x30)];
         }
+
         method context_size() {
             my $multiplier = $arch eq 'arm64' ? 16 : 8;
             return scalar( @{ $self->preserved_regs() } ) * $multiplier;
@@ -161,22 +162,22 @@ package Brocken::Compiler {
                 heap_max          => 96,
                 mark_stack_base   => 104,
                 mark_stack_ptr    => 112,
+
                 # sandbox starts here
-                fuel              => 120, # Remaining instruction/tick count
-                mem_limit         => 128, # Maximum allowed heap bytes
-                mem_used          => 136, # Current total heap bytes mapped
-                capabilities      => 144, # A 64-bit bitmask of allowed operations
-                err_code          => 152, # Reason for sandbox termination (0=Success, 1=OOM, 2=NoFuel, 3=Security)
-                mark_stack_limit  => 160,
-                exception_table   => 168
+                fuel             => 120,    # Remaining instruction/tick count
+                mem_limit        => 128,    # Maximum allowed heap bytes
+                mem_used         => 136,    # Current total heap bytes mapped
+                capabilities     => 144,    # A 64-bit bitmask of allowed operations
+                err_code         => 152,    # Reason for sandbox termination (0=Success, 1=OOM, 2=NoFuel, 3=Security)
+                mark_stack_limit => 160,
+                exception_table  => 168
             };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }
 
- method fcb_offset ($name) {
-            state $FCB = { sp => 0, stack_base => 8, shadow_base => 24, shadow_ptr => 32,
-                           caller => 40, next => 48, wait_handle => 56,
-                           exception_obj => 64 };
+        method fcb_offset ($name) {
+            state $FCB
+                = { sp => 0, stack_base => 8, shadow_base => 24, shadow_ptr => 32, caller => 40, next => 48, wait_handle => 56, exception_obj => 64 };
             return $FCB->{$name};
         }
 
@@ -203,6 +204,8 @@ package Brocken::Compiler {
                 my $codegen = Brocken::Codegen->new( arch => $arch );
                 $codegen->compile( \@instructions, $self );
                 $self->as->resolve( $self->text_rva, $self->data_rva );
+                $self->format->set_func_ranges( [ $self->func_ranges ] );
+                $self->format->set_labels( $self->as->labels );
                 $self->format->set_labels( $self->as->labels );
                 $self->format->set_exported_funcs( $lowering->exported_funcs );
 

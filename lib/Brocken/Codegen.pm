@@ -19,8 +19,10 @@ class Brocken::Codegen {
                 my $is_func = $i + 1 < @$instructions && $instructions->[ $i + 1 ]{op} eq 'enter_func';
                 if ($is_func) {
                     $driver->close_last_func_range( length( $as->code ) );
- # INITIALIZE try_ranges here
-                    my $fr     = { name => $inst->{name}, start => length( $as->code ), ctx_size => $driver->context_size, try_ranges => [] };                    my $params = $driver->get_debug_func_params( $inst->{name} );
+
+                    # INITIALIZE try_ranges here
+                    my $fr     = { name => $inst->{name}, start => length( $as->code ), ctx_size => $driver->context_size, try_ranges => [] };
+                    my $params = $driver->get_debug_func_params( $inst->{name} );
                     $fr->{params} = $params if @$params;
                     my $locals = $driver->get_debug_func_locals( $inst->{name} );
                     $fr->{locals} = $locals if @$locals;
@@ -47,21 +49,25 @@ class Brocken::Codegen {
         }
         $driver->close_last_func_range( length( $as->code ) );
 
-         # Finalize Exception Table in Data Segment
-            if ($driver->data_segment) {
-                my $extab = pack('Q<', scalar($driver->func_ranges));
-                for my $fr ($driver->func_ranges) {
-                    $extab .= pack('Q< Q< Q<', $fr->{start}, $fr->{end}, scalar(@{$fr->{try_ranges}}));
-                    for my $tr (reverse @{$fr->{try_ranges}}) {
-                        $extab .= pack('Q< Q< Q< Q<', $tr->{start}, $tr->{end}, ($tr->{catch_label} ? $as->labels->{$tr->{catch_label}} : 0), ($tr->{finally_label} ? $as->labels->{$tr->{finally_label}} : 0));
-                    }
+        # Finalize Exception Table in Data Segment
+        if ( $driver->data_segment ) {
+            my $extab = pack( 'Q<', scalar( $driver->func_ranges ) );
+            for my $fr ( $driver->func_ranges ) {
+                $extab .= pack( 'Q< Q< Q<', $fr->{start}, $fr->{end}, scalar( @{ $fr->{try_ranges} } ) );
+                for my $tr ( reverse @{ $fr->{try_ranges} } ) {
+                    $extab .= pack( 'Q< Q< Q< Q<',
+                        $tr->{start}, $tr->{end},
+                        ( $tr->{catch_label}   ? $as->labels->{ $tr->{catch_label} }   : 0 ),
+                        ( $tr->{finally_label} ? $as->labels->{ $tr->{finally_label} } : 0 ) );
                 }
-                my $off = $driver->data_segment->add_raw_bytes($extab);
-                my $raw = $driver->data_segment->raw_data();
-                # Patch the pointer to the exception table
-                substr($raw, $driver->exception_table_offset, 8, pack('Q<', $off));
-                $driver->data_segment->set_raw_data($raw);
             }
+            my $off = $driver->data_segment->add_raw_bytes($extab);
+            my $raw = $driver->data_segment->raw_data();
+
+            # Patch the pointer to the exception table
+            substr( $raw, $driver->exception_table_offset, 8, pack( 'Q<', $off ) );
+            $driver->data_segment->set_raw_data($raw);
+        }
     }
 
     method _analyze_liveness($insts) {
@@ -94,27 +100,28 @@ class Brocken::Codegen {
             $changed = 0;
             for ( my $i = 0; $i < @$insts; $i++ ) {
                 my $ins = $insts->[$i];
-                     if ( $ins->{op} eq 'jmp' || $ins->{op} eq 'cond_br' ) {
-                my @targets;
-                push @targets, $ins->{target}  if defined $ins->{target};
-                push @targets, $ins->{true_l}  if defined $ins->{true_l};
-                push @targets, $ins->{false_l} if defined $ins->{false_l};
-                for my $t (@targets) {
-                    my $target_idx = $label_idx{$t};
-                    # If this is a backward jump, all registers live at the target
-                    # must remain live until the jump point
-                    if ( defined $target_idx && $target_idx < $i ) {
-                        for my $v ( keys %live ) {
-                            if ( $live{$v}{start} <= $target_idx && $live{$v}{end} >= $target_idx ) {
-                                if ( $live{$v}{end} < $i ) {
-                                    $live{$v}{end} = $i;
-                                    $changed = 1;
+                if ( $ins->{op} eq 'jmp' || $ins->{op} eq 'cond_br' ) {
+                    my @targets;
+                    push @targets, $ins->{target}  if defined $ins->{target};
+                    push @targets, $ins->{true_l}  if defined $ins->{true_l};
+                    push @targets, $ins->{false_l} if defined $ins->{false_l};
+                    for my $t (@targets) {
+                        my $target_idx = $label_idx{$t};
+
+                        # If this is a backward jump, all registers live at the target
+                        # must remain live until the jump point
+                        if ( defined $target_idx && $target_idx < $i ) {
+                            for my $v ( keys %live ) {
+                                if ( $live{$v}{start} <= $target_idx && $live{$v}{end} >= $target_idx ) {
+                                    if ( $live{$v}{end} < $i ) {
+                                        $live{$v}{end} = $i;
+                                        $changed = 1;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
             }
         }
         return %live;

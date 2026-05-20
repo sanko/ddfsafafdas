@@ -336,7 +336,7 @@ class Brocken::Parser {
         return Brocken::AST::Stmt::Eval->new( code => $code_expr, line => $tok->{line}, col => $tok->{col} );
     }
 
-   method _parse_die() {
+    method _parse_die() {
         my $tok = $self->current;
         $self->advance;                                   # consume 'die';
         my $code_expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;

@@ -1,11 +1,10 @@
-#!/usr/bin/env perl
-# eg/callback.pl
 # Demonstrates passing a Perl callback to a Brocken function and having
 # Brocken call back into Perl, using shared library interop via Affix.
 use v5.40;
 use lib '../lib';
 use Brocken::Compiler;
 use Affix;
+$|++;
 my $source = <<'BROCKEN';
 # Brocken accepts a callback and an integer
 sub map_value(Callback[[Int] => Int] $cb, Int $val) {
@@ -24,7 +23,9 @@ say "Compiling $lib_name...";
 my $compiler = Brocken::Compiler->new( type => 'shared' );
 $compiler->compile_source( $source, $lib_name );
 say "Binding to Affix...";
-affix $lib_name, 'map_value', [ Callback [ [Int] => Int ], Int ] => Int;
+warn `nm -D $lib_name`;
+warn `objdump -p $lib_name`;
+warn affix $lib_name, 'map_value', [ Callback [ [Int] => Int ], Int ] => Int;
 say "Executing...";
 
 # The Perl callback to pass into Brocken
