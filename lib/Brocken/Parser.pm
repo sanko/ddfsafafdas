@@ -462,7 +462,7 @@ class Brocken::Parser {
 
     method _parse_undef_literal($tok) {
         $self->advance();
-        Brocken::AST::Expr::Const->new( value => 0, type => 'Any', line => $tok->{line}, col => $tok->{col} );
+        Brocken::AST::Expr::Const->new( value => 'undef', type => 'Undef', line => $tok->{line}, col => $tok->{col} );
     }
     method _parse_var_ref($tok) { $self->advance(); Brocken::AST::Expr::Var->new( name => $tok->{value}, line => $tok->{line}, col => $tok->{col} ) }
 
