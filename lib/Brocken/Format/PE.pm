@@ -31,10 +31,11 @@ package Brocken::Format::PE {
             $l->add_section( '.data',  ( $d > 0 ? $d : 512 ), 0xC0000040 );
             $l->add_section( '.idata', 2048,                  0xC0000040 );
             #
-              if ( $o eq 'win64' ) {
-                    $l->add_section( '.pdata', 4096, 0x42000040 );
-                    $l->add_section( '.xdata', 4096, 0x42000040 );
-                }   if ( $self->type eq 'shared' ) {
+            if ( $o eq 'win64' ) {
+                $l->add_section( '.pdata', 4096, 0x42000040 );
+                $l->add_section( '.xdata', 4096, 0x42000040 );
+            }
+            if ( $self->type eq 'shared' ) {
                 warn "PE: Adding .edata section\n" if $ENV{BROCKEN_JIT_DEBUG};
                 $l->add_section( '.edata', 2048, 0x40000040 );
             }
@@ -45,7 +46,6 @@ package Brocken::Format::PE {
                 $l->add_section( '.debug_frame',    8192, 0x42000040 );
                 $l->add_section( '.debug_aranges',  4096, 0x42000040 );
                 $l->add_section( '.debug_pubnames', 4096, 0x42000040 );
-
             }
         }
         method image_base () { return 0x140000000; }
@@ -76,7 +76,7 @@ package Brocken::Format::PE {
             my $pdata_rva  = 0;
             my $pdata_size = 0;
             if ( $os eq 'win64' && $self->func_ranges && @{ $self->func_ranges } ) {
-                warn "PE: Building .pdata for " . scalar(@{ $self->func_ranges }) . " functions.\n";
+                warn "PE: Building .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n";
                 warn "PE: building SEH...\n" if $ENV{BROCKEN_JIT_DEBUG};
                 $xdata_data               = $self->_build_xdata;
                 $pdata_data               = $self->_build_pdata( $l->get('.text')->{rva}, $l->get('.xdata')->{rva} );
@@ -121,7 +121,7 @@ package Brocken::Format::PE {
             print $fh pack(
                 'S< C C L< L< L< L< L< Q< L< L< S< S< S< S< S< S< L< L< L< L< S< S< Q< Q< Q< Q< L< L<',
                 0x20B, 14, 0, $soc, $soid, 0,
-                 ( $self->type eq 'shared' ) ? 0 : $l->get('.text')->{rva},
+                ( $self->type eq 'shared' ) ? 0 : $l->get('.text')->{rva},
                 $l->get('.text')->{rva},
                 $base, $sa, $fa, 6, 0, 0, 0, 6, 0, 0, $image_size, $l->header_size, 0, 3, 0x8100, 0x100000, $sa, 0x100000, $sa, 0, 16
             );
@@ -225,26 +225,22 @@ package Brocken::Format::PE {
 
             # 9. push rbp (Offset 0x00, Op=0, Info=5)
             $codes .= pack( 'CC', 0x00, 0x50 );
-
             return $hdr . $codes;
         }
 
-      # In Brocken::Format::PE
-method _build_pdata ( $text_rva, $xdata_rva ) {
-    my $data = '';
-    # Use the ranges passed from the compiler
-    for my $fn ( sort { $a->{start} <=> $b->{start} } @{ $self->func_ranges } ) {
-        $data .= pack( 'L< L< L<',
-            $text_rva + $fn->{start},
-            $text_rva + ($fn->{end} // ($fn->{start} + 1)),
-            $xdata_rva
-        );
-    }
-    return $data;
-}
+        # In Brocken::Format::PE
+        method _build_pdata ( $text_rva, $xdata_rva ) {
+            my $data = '';
+
+            # Use the ranges passed from the compiler
+            for my $fn ( sort { $a->{start} <=> $b->{start} } @{ $self->func_ranges } ) {
+                $data .= pack( 'L< L< L<', $text_rva + $fn->{start}, $text_rva + ( $fn->{end} // ( $fn->{start} + 1 ) ), $xdata_rva );
+            }
+            return $data;
+        }
 
         method _build_edata_raw( $base_rva, $filename ) {
-            my @exports     = @{ $self->exported_funcs // [] };
+            my @exports = @{ $self->exported_funcs // [] };
             warn "PE: _build_edata_raw - exports found: " . scalar(@exports) . "\n" if $ENV{BROCKEN_JIT_DEBUG};
             my $num_exports = scalar @exports;
             return ( "\0" x 2048 ) if $num_exports == 0;
@@ -264,7 +260,7 @@ method _build_pdata ( $text_rva, $xdata_rva ) {
             my $npt          = '';
             my $ot           = '';
             my $name_data    = basename($filename) . "\0";
-            my $name_ptr_off = length($name_data);    # Running offset to current name
+            my $name_ptr_off = length($name_data);           # Running offset to current name
 
             for my $i ( 0 .. $#exports ) {
                 my $name         = $exports[$i];

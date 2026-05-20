@@ -21,10 +21,18 @@ package Brocken::AST::Expr {
 
     class Brocken::AST::Expr::ArrayLiteral : isa(Brocken::AST::Node) { field $elements : param : reader; }
 
+    class Brocken::AST::Expr::TupleLiteral : isa(Brocken::AST::Node) { field $elements : param : reader; }
+
+    class Brocken::AST::Expr::HashLiteral : isa(Brocken::AST::Node) { field $pairs : param : reader; }
+
     class Brocken::AST::Expr::IndexExpr : isa(Brocken::AST::Node) { field $source : param : reader; field $index : param : reader; }
 
     class Brocken::AST::Expr::MethodCall : isa(Brocken::AST::Node)
     { field $object : param : reader; field $method : param : reader; field $args : param : reader; }
+
+    class Brocken::AST::Expr::Exists : isa(Brocken::AST::Node) { field $expr : param : reader; }
+
+    class Brocken::AST::Expr::Delete : isa(Brocken::AST::Node) { field $expr : param : reader; }
 }
 1;
 __END__

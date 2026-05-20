@@ -458,7 +458,6 @@ class Brocken::Target::ARM64 : isa(Brocken::Target) {
             my $size = $driver->frame_local_size;
             $size = ( $size + 15 ) & ~15;
             $as->sub_imm( 'sp', $size ) if $size > 0;
-
             $as->append_code( pack( 'L<', 0xD61F0200 ) );    # br x16
             return;
         }

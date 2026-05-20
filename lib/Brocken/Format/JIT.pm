@@ -32,6 +32,7 @@ package Brocken::Format::JIT {
         }
 
         method write_bin( $filename, $text, $data, $arch, $os, $type ) {
+
             # No-op or return raw data for JIT
             return "";
         }

@@ -22,6 +22,8 @@ class Brocken::Lexer {
         die
         say print
         use require eval
+        exists delete
+        eq ne lt gt le ge
         Int String Any Bool Class Fiber Array Fun Pointer Struct Callback
         Float double
         int8 int16 int32 int64

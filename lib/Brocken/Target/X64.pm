@@ -344,19 +344,16 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
             if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
-    # Guard: Only load from memory if R14 isn't already set.
-    # This allows M_runtime_init to set R14 once and have it persist.
-    my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_local_slot(); # generic unique label
-    $as->test_reg_reg('r14', 'r14');
-    $as->jcc($driver->cc('nz'), $l_has_iso);
 
-    $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
-    $as->load_reg_mem( 'r14', 'r11', 0 );
-
-    $as->mark_label($l_has_iso);
-}
-
-
+                # Guard: Only load from memory if R14 isn't already set.
+                # This allows M_runtime_init to set R14 once and have it persist.
+                my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_local_slot();    # generic unique label
+                $as->test_reg_reg( 'r14', 'r14' );
+                $as->jcc( $driver->cc('nz'), $l_has_iso );
+                $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
+                $as->load_reg_mem( 'r14', 'r11', 0 );
+                $as->mark_label($l_has_iso);
+            }
             if ( $op eq 'enter_func' ) {
                 for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
                 $as->mov_reg( 'rbp', 'rsp' );
@@ -533,17 +530,15 @@ class Brocken::Target::X64::Emit {
         return ( $rex == 0x40 && !$w ) ? '' : pack( 'C', $rex );
     }
 
-
-        method _emit_modrm( $opcode, $reg_name, $base_name, $disp, $w = 1, $prefix = '' ) {
-            my $ri  = $self->reg($reg_name);
-            my $bi  = $self->reg($base_name);
-            my $mod = ( $disp == 0 && ( $bi & 7 ) != 5 ) ? 0 : ( $disp >= -128 && $disp <= 127 ? 1 : 2 );
-            $code
-                .= $self->_rex( $w, $ri, 0, $bi ) . $prefix . pack( 'C', $opcode ) . pack( 'C', ( $mod << 6 ) | ( ( $ri & 7 ) << 3 ) | ( $bi & 7 ) );
-            $code .= pack( 'C', 0x24 ) if ( ( $bi & 7 ) == 4 );
-            if    ( $mod == 1 )                                      { $code .= pack( 'c',  $disp ); }
-            elsif ( $mod == 2 || ( $mod == 0 && ( $bi & 7 ) == 5 ) ) { $code .= pack( 'l<', $disp ); }
-        }
+    method _emit_modrm( $opcode, $reg_name, $base_name, $disp, $w = 1, $prefix = '' ) {
+        my $ri  = $self->reg($reg_name);
+        my $bi  = $self->reg($base_name);
+        my $mod = ( $disp == 0 && ( $bi & 7 ) != 5 ) ? 0 : ( $disp >= -128 && $disp <= 127 ? 1 : 2 );
+        $code .= $self->_rex( $w, $ri, 0, $bi ) . $prefix . pack( 'C', $opcode ) . pack( 'C', ( $mod << 6 ) | ( ( $ri & 7 ) << 3 ) | ( $bi & 7 ) );
+        $code .= pack( 'C', 0x24 ) if ( ( $bi & 7 ) == 4 );
+        if    ( $mod == 1 )                                      { $code .= pack( 'c',  $disp ); }
+        elsif ( $mod == 2 || ( $mod == 0 && ( $bi & 7 ) == 5 ) ) { $code .= pack( 'l<', $disp ); }
+    }
     method append_code($bin) { $code .= $bin }
     method mark_label($n)    { $labels{$n} = length $code }
     method lock()            { $code .= pack( 'C', 0xF0 ) }
@@ -751,7 +746,6 @@ class Brocken::Target::X64::Emit {
         }
     }
 }
-
 1;
 __END__
 
