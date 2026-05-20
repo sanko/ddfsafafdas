@@ -85,13 +85,11 @@ package Brocken::Compiler {
             }
             if ( $arch eq 'x64' ) {
                 require Brocken::Target::X64;
-                require Brocken::Target::X64::Emit;
                 $target = Brocken::Target::X64->new( os => $os, arch => $arch );
                 $as     = Brocken::Target::X64::Emit->new();
             }
             else {
                 require Brocken::Target::ARM64;
-                require Brocken::Target::ARM64::Emit;
                 $target = Brocken::Target::ARM64->new( os => $os, arch => $arch );
                 $as     = Brocken::Target::ARM64::Emit->new();
             }
@@ -148,19 +146,29 @@ package Brocken::Compiler {
 
         method iso_offset ($name) {
             state $ISO = {
-                heap_ptr         => 0,
-                heap_limit       => 8,
-                state_ptr        => 16,
-                current_fcb      => 24,
-                fiber_head       => 32,
-                heap_base        => 40,
-                gc_cycle         => 80,
-                heap_min         => 88,
-                heap_max         => 96,
-                mark_stack_base  => 104,
-                mark_stack_ptr   => 112,
-                mark_stack_limit => 120,
-                exception_table  => 128
+                heap_ptr          => 0,
+                heap_limit        => 8,
+                state_ptr         => 16,
+                current_fcb       => 24,
+                fiber_head        => 32,
+                heap_base         => 40,
+                block_cursor      => 48,
+                block_limit       => 56,
+                free_blocks       => 64,
+                recyclable_blocks => 72,
+                gc_cycle          => 80,
+                heap_min          => 88,
+                heap_max          => 96,
+                mark_stack_base   => 104,
+                mark_stack_ptr    => 112,
+                # sandbox starts here
+                fuel              => 120, # Remaining instruction/tick count
+                mem_limit         => 128, # Maximum allowed heap bytes
+                mem_used          => 136, # Current total heap bytes mapped
+                capabilities      => 144, # A 64-bit bitmask of allowed operations
+                err_code          => 152, # Reason for sandbox termination (0=Success, 1=OOM, 2=NoFuel, 3=Security)
+                mark_stack_limit  => 160,
+                exception_table   => 168
             };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }

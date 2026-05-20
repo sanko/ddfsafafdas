@@ -6,7 +6,7 @@ package Brocken::Compiler::Lowering {
     use Brocken::IR;
     use Brocken::AST;
     use Brocken::Type;
-    use Brocken::JIT;
+    #use Brocken::JIT;
 
     class Brocken::Compiler::Lowering {
         field $builder      : reader : param = Brocken::IR::Builder->new();
@@ -320,23 +320,23 @@ package Brocken::Compiler::Lowering {
             my $root_slot = $driver->alloc_local_slot();
             $builder->emit('local_store', 'void', [$root_slot, $builder->emit('get_arg', 'ptr', [0])]);
 
-            my $ms_ptr = $builder->emit('load_iso_disp', 'ptr', [112]);
+            my $ms_ptr = $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('mark_stack_ptr')]);
             $builder->emit('store_mem_disp', 'void', [$ms_ptr, 0, $builder->emit('local_load','ptr',[$root_slot])]);
-            $builder->emit('store_iso_disp', 'void', [112, $builder->emit('add','ptr',[$ms_ptr, 8])]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('mark_stack_ptr'), $builder->emit('add','ptr',[$ms_ptr, 8])]);
 
             my $l_mark_start = $builder->new_label();
             my $l_mark_done  = $builder->new_label();
             $builder->emit_label($l_mark_start);
 
-            my $curr_ms = $builder->emit('load_iso_disp', 'ptr', [112]);
-            my $ms_base = $builder->emit('load_iso_disp', 'ptr', [104]);
+            my $curr_ms = $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('mark_stack_ptr')]);
+            my $ms_base = $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('mark_stack_base')]);
             my $l_stack_not_empty = $builder->new_label();
             $builder->emit_cond_br($builder->emit('cmp_le', 'Int', [$curr_ms, $ms_base]), $l_mark_done, $l_stack_not_empty);
             $builder->emit_label($l_stack_not_empty);
 
             my $pop_ptr = $builder->emit('sub', 'ptr', [$curr_ms, 8]);
             $builder->emit('local_store', 'void', [$root_slot, $builder->emit('load_mem_disp', 'ptr', [$pop_ptr, 0])]);
-            $builder->emit('store_iso_disp', 'void', [112, $pop_ptr]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('mark_stack_ptr'), $pop_ptr]);
 
             my $l_next = $l_mark_start;
             my $l_not_null = $builder->new_label();
@@ -350,7 +350,7 @@ package Brocken::Compiler::Lowering {
             my $hdr_slot = $driver->alloc_local_slot();
             $builder->emit('local_store', 'i64', [$hdr_slot, $builder->emit('load_mem_disp', 'i64', [$builder->emit('local_load','ptr',[$root_slot]), -8])]);
 
-            my $cyc = $builder->emit('load_iso_disp', 'i64', [80]);
+            my $cyc = $builder->emit('load_iso_disp', 'i64', [$driver->iso_offset('gc_cycle')]);
             my $obj_cyc = $builder->emit('and', 'i64', [$builder->emit('shr','i64',[$builder->emit('local_load','i64',[$hdr_slot]), 40]), 0xFF]);
 
             my $l_not_marked = $builder->new_label();
@@ -408,9 +408,9 @@ package Brocken::Compiler::Lowering {
 
             my $el_ptr = $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$root_slot]), $builder->emit('add','i64',[$builder->emit('mul','i64',[$ai, 8]), 8])]);
             my $el = $builder->emit('load_mem_disp', 'ptr', [$el_ptr, 0]);
-            my $p_ptr = $builder->emit('load_iso_disp', 'ptr', [112]);
+            my $p_ptr = $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('mark_stack_ptr')]);
             $builder->emit('store_mem_disp', 'void', [$p_ptr, 0, $el]);
-            $builder->emit('store_iso_disp', 'void', [112, $builder->emit('add','ptr',[$p_ptr, 8])]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('mark_stack_ptr'), $builder->emit('add','ptr',[$p_ptr, 8])]);
             $builder->emit('local_store','void',[$ai_s, $builder->emit('add','i64',[$ai, 1])]);
             $builder->emit_jump($l_al);
 
@@ -429,9 +429,9 @@ package Brocken::Compiler::Lowering {
             my $voff_ptr = $builder->emit('sub','ptr',[$first, $builder->emit('add','i64',[$builder->emit('mul','i64',[$pi, 8]), 16])]);
             my $voff = $builder->emit('load_mem_disp', 'i64', [$voff_ptr, 0]);
             my $ch = $builder->emit('load_mem_disp', 'ptr', [$builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$root_slot]), $voff]), 0]);
-            my $o_ptr = $builder->emit('load_iso_disp', 'ptr', [112]);
+            my $o_ptr = $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('mark_stack_ptr')]);
             $builder->emit('store_mem_disp', 'void', [$o_ptr, 0, $ch]);
-            $builder->emit('store_iso_disp', 'void', [112, $builder->emit('add','ptr',[$o_ptr, 8])]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('mark_stack_ptr'), $builder->emit('add','ptr',[$o_ptr, 8])]);
             $builder->emit('local_store','void',[$pi_s, $builder->emit('add','i64',[$pi, 1])]);
             $builder->emit_jump($l_ol);
 
@@ -444,7 +444,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit_label('M_gc_sweep');
             $builder->emit('enter_func', 'void', []);
             my $bh_s = $driver->alloc_local_slot();
-            $builder->emit('local_store', 'void', [$bh_s, $builder->emit('load_iso_disp', 'ptr', [40])]);
+            $builder->emit('local_store', 'void', [$bh_s, $builder->emit('load_iso_disp', 'ptr', [$driver->iso_offset('heap_base')])]);
             my $l_bl = $builder->new_label();
             my $l_bd = $builder->new_label();
             $builder->emit_label($l_bl);
@@ -472,7 +472,7 @@ package Brocken::Compiler::Lowering {
 
             $builder->emit_label($l_hole);
             my $hp = $builder->emit('add', 'ptr', [$cbh, $builder->emit('mul','i64',[$idx, 128])]);
-            $builder->emit('store_iso_disp', 'void', [0, $hp]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('heap_ptr'), $hp]);
             my $eidx_s = $driver->alloc_local_slot();
             $builder->emit('local_store', 'void', [$eidx_s, $builder->emit('add','i64',[$idx, 1])]);
             my $l_el = $builder->new_label();
@@ -490,7 +490,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit_jump($l_el);
             $builder->emit_label($l_ed);
             my $final_idx = $builder->emit('local_load', 'i64', [$eidx_s]);
-            $builder->emit('store_iso_disp', 'void', [8, $builder->emit('add','ptr',[$cbh, $builder->emit('mul','i64',[$final_idx, 128])])]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('heap_limit'), $builder->emit('add','ptr',[$cbh, $builder->emit('mul','i64',[$final_idx, 128])])]);
             $builder->emit('leave_func', 'void', [0]);
 
             $builder->emit_label($l_no_hole);
@@ -502,8 +502,8 @@ package Brocken::Compiler::Lowering {
             $builder->emit_jump($l_bl);
 
             $builder->emit_label($l_bd);
-            $builder->emit('store_iso_disp', 'void', [0, 0]);
-            $builder->emit('store_iso_disp', 'void', [8, 0]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('heap_ptr'), 0]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('heap_limit'), 0]);
             $builder->emit('leave_func', 'void', [0]);
         }
 
@@ -511,9 +511,9 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('M_gc_collect');
             $builder->emit('enter_func', 'void', []);
-            $builder->emit('store_iso_disp', 'void', [80, $builder->emit('add','i64',[$builder->emit('load_iso_disp', 'i64', [80]), 1])]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('gc_cycle'), $builder->emit('add','i64',[$builder->emit('load_iso_disp', 'i64', [$driver->iso_offset('gc_cycle')]), 1])]);
             my $bh_s = $driver->alloc_local_slot();
-            $builder->emit('local_store', 'void', [$bh_s, $builder->emit('load_iso_disp','ptr',[40])]);
+            $builder->emit('local_store', 'void', [$bh_s, $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('heap_base')])]);
 
             my $l_c1 = $builder->new_label();
             my $l_c2 = $builder->new_label();
@@ -545,7 +545,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit_label($l_c2);
 
             my $fs = $driver->alloc_local_slot();
-            $builder->emit('local_store', 'void', [$fs, $builder->emit('load_iso_disp','ptr',[32])]);
+            $builder->emit('local_store', 'void', [$fs, $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('fiber_head')])]);
             my $l_fl = $builder->new_label();
             my $l_fd = $builder->new_label();
             $builder->emit_label($l_fl);
@@ -577,7 +577,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit_jump($l_fl);
             $builder->emit_label($l_fd);
 
-            my $stm = $builder->emit('load_iso_disp','ptr',[16]);
+            my $stm = $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('state_ptr')]);
             for(my $i=0; $i<$state_count; $i++){
                 $builder->emit('call_func','void',['M_gc_mark_obj',$builder->emit('load_mem_disp','ptr',[$stm, 4096+($i*8)])]);
             }
@@ -595,7 +595,7 @@ package Brocken::Compiler::Lowering {
             my $sz_raw = $builder->emit('and', 'i64', [$builder->emit('add','i64',[$builder->emit('and', 'i64', [$psz, $builder->emit('constant','i64',[hex("FFFFFFFFFF")])]), 15]), $builder->emit('constant','i64',[-8])]);
             $builder->emit('local_store', 'void', [$sz_slot, $sz_raw]);
 
-            my $cyc = $builder->emit('and', 'i64', [$builder->emit('load_iso_disp','i64',[80]), 0xFF]);
+            my $cyc = $builder->emit('and', 'i64', [$builder->emit('load_iso_disp','i64',[$driver->iso_offset('gc_cycle')]), 0xFF]);
             my $hdr = $builder->emit('or', 'i64', [$builder->emit('local_load','i64',[$sz_slot]), $builder->emit('shl','i64',[$cyc, 40])]);
             my $fhdr_slot = $driver->alloc_local_slot();
             $builder->emit('local_store', 'void', [$fhdr_slot, $builder->emit('or', 'i64', [$hdr, $builder->emit('and','i64',[$psz, $builder->emit('constant','i64',[hex("C000000000000000")])])])]);
@@ -604,25 +604,25 @@ package Brocken::Compiler::Lowering {
             my $l_f = $builder->new_label(); my $l_s = $builder->new_label();
 
             my $ap_slot = $driver->alloc_local_slot();
-            $builder->emit('local_store', 'void', [$ap_slot, $builder->emit('load_iso_disp','ptr',[0])]);
+            $builder->emit('local_store', 'void', [$ap_slot, $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('heap_ptr')])]);
 
-            $builder->emit_cond_br($builder->emit('cmp_lt','Int',[$builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]), $builder->emit('local_load','i64',[$sz_slot])]), $builder->emit('load_iso_disp','ptr',[8])]), $l_f, $l_s);
+            $builder->emit_cond_br($builder->emit('cmp_lt','Int',[$builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]), $builder->emit('local_load','i64',[$sz_slot])]), $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('heap_limit')])]), $l_f, $l_s);
             $builder->emit_label($l_f);
 
-            $builder->emit('store_iso_disp','void',[0, $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]),$builder->emit('local_load','i64',[$sz_slot])])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_ptr'), $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]),$builder->emit('local_load','i64',[$sz_slot])])]);
             $builder->emit('store_mem_disp','void',[$builder->emit('local_load','ptr',[$ap_slot]),0,$builder->emit('local_load','i64',[$fhdr_slot])]);
             $builder->emit('local_store', 'void', [$rs, $builder->emit('local_load','ptr',[$ap_slot])]);
             my $l_z = $builder->new_label(); $builder->emit_jump($l_z);
 
             $builder->emit_label($l_s);
             $builder->emit('call_func', 'void', ['M_gc_collect']);
-            $builder->emit('local_store', 'void', [$ap_slot, $builder->emit('load_iso_disp','ptr',[0])]);
+            $builder->emit('local_store', 'void', [$ap_slot, $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('heap_ptr')])]);
 
             my $l_f2 = $builder->new_label(); my $l_s2 = $builder->new_label();
-            $builder->emit_cond_br($builder->emit('cmp_lt','Int',[$builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]), $builder->emit('local_load','i64',[$sz_slot])]), $builder->emit('load_iso_disp','ptr',[8])]), $l_f2, $l_s2);
+            $builder->emit_cond_br($builder->emit('cmp_lt','Int',[$builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]), $builder->emit('local_load','i64',[$sz_slot])]), $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('heap_limit')])]), $l_f2, $l_s2);
             $builder->emit_label($l_f2);
 
-            $builder->emit('store_iso_disp','void',[0, $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]),$builder->emit('local_load','i64',[$sz_slot])])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_ptr'), $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$ap_slot]),$builder->emit('local_load','i64',[$sz_slot])])]);
             $builder->emit('store_mem_disp','void',[$builder->emit('local_load','ptr',[$ap_slot]),0,$builder->emit('local_load','i64',[$fhdr_slot])]);
             $builder->emit('local_store', 'void', [$rs, $builder->emit('local_load','ptr',[$ap_slot])]);
             $builder->emit_jump($l_z);
@@ -632,8 +632,8 @@ package Brocken::Compiler::Lowering {
             $builder->emit('local_store', 'void', [$raw_slot, $builder->emit('intrinsic_alloc', 'ptr', [131072])]);
             my $fr_slot = $driver->alloc_local_slot();
             $builder->emit('local_store', 'void', [$fr_slot, $builder->emit('and', 'i64', [$builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$raw_slot]), 65535]), $builder->emit('constant', 'i64', [hex("FFFFFFFFFFFF0000")])])]);
-            $builder->emit('store_mem_disp','void',[$builder->emit('local_load','ptr',[$fr_slot]), 0, $builder->emit('load_iso_disp','ptr',[40])]);
-            $builder->emit('store_iso_disp', 'void', [40, $builder->emit('local_load','ptr',[$fr_slot])]);
+            $builder->emit('store_mem_disp','void',[$builder->emit('local_load','ptr',[$fr_slot]), 0, $builder->emit('load_iso_disp','ptr',[$driver->iso_offset('heap_base')])]);
+            $builder->emit('store_iso_disp', 'void', [$driver->iso_offset('heap_base'), $builder->emit('local_load','ptr',[$fr_slot])]);
 
             my $mz = $driver->alloc_local_slot(); $builder->emit('local_store', 'void', [$mz, $builder->emit('local_load','ptr',[$fr_slot])]);
             my $l_mzl = $builder->new_label(); my $l_mze = $builder->new_label();
@@ -652,8 +652,8 @@ package Brocken::Compiler::Lowering {
             my $st_slot = $driver->alloc_local_slot();
             $builder->emit('local_store', 'void', [$st_slot, $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$fr_slot]), 1024])]);
             $builder->emit('store_mem_disp','void',[$builder->emit('local_load','ptr',[$st_slot]), 0, $builder->emit('local_load','i64',[$fhdr_slot])]);
-            $builder->emit('store_iso_disp','void',[0, $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$st_slot]),$builder->emit('local_load','i64',[$sz_slot])])]);
-            $builder->emit('store_iso_disp','void',[8, $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$fr_slot]), 65536])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_ptr'), $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$st_slot]),$builder->emit('local_load','i64',[$sz_slot])])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_limit'), $builder->emit('add','ptr',[$builder->emit('local_load','ptr',[$fr_slot]), 65536])]);
             $builder->emit('local_store', 'void', [$rs, $builder->emit('local_load','ptr',[$st_slot])]);
 
             $builder->emit_label($l_z);
@@ -876,25 +876,25 @@ package Brocken::Compiler::Lowering {
             $builder->emit('store_mem_disp','void',[$giso_ptr,0,$iso]);
 
             my $ms=$builder->emit('intrinsic_alloc','ptr',[1048576]);
-            $builder->emit('store_iso_disp','void',[104,$ms]);
-            $builder->emit('store_iso_disp','void',[112,$ms]);
-            $builder->emit('store_iso_disp','void',[120,$builder->emit('add','ptr',[$ms,1048576])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('mark_stack_base'),$ms]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('mark_stack_ptr'),$ms]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('mark_stack_limit'),$builder->emit('add','ptr',[$ms,1048576])]);
 
             my $raw_heap=$builder->emit('intrinsic_alloc','ptr',[131072]);
             my $mask = $builder->emit('constant', 'i64', [ hex("FFFFFFFFFFFF0000") ]);
             my $hp=$builder->emit('and','i64',[$builder->emit('add','ptr',[$raw_heap,65535]), $mask]);
-            $builder->emit('store_iso_disp','void',[40,$hp]);
-            $builder->emit('store_iso_disp','void',[88,$hp]);
-            $builder->emit('store_iso_disp','void',[96,$builder->emit('add','ptr',[$hp,65536])]);
-            $builder->emit('store_iso_disp','void',[0,$builder->emit('add','ptr',[$hp,1024])]);
-            $builder->emit('store_iso_disp','void',[8,$builder->emit('add','ptr',[$hp,65536])]);
-            $builder->emit('store_iso_disp','void',[80,$builder->emit('constant','i64',[1])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_base'),$hp]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_min'),$hp]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_max'),$builder->emit('add','ptr',[$hp,65536])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_ptr'),$builder->emit('add','ptr',[$hp,1024])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('heap_limit'),$builder->emit('add','ptr',[$hp,65536])]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('gc_cycle'),$builder->emit('constant','i64',[1])]);
 
             my $stm=$builder->emit('intrinsic_alloc','ptr',[1048576]);
-            $builder->emit('store_iso_disp','void',[16,$stm]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('state_ptr'),$stm]);
             my $fcb=$builder->emit('call_func','ptr',['M_gc_alloc',$builder->emit('constant','i64',[64 | hex("C000000000000000")])]);
-            $builder->emit('store_iso_disp','void',[24,$fcb]);
-            $builder->emit('store_mem_disp','void',[$iso,32,$fcb]);
+            $builder->emit('store_iso_disp','void',[$driver->iso_offset('current_fcb'),$fcb]);
+            $builder->emit('store_mem_disp','void',[$iso,$driver->iso_offset('fiber_head'),$fcb]);
             my $sh=$builder->emit('intrinsic_alloc','ptr',[1048576]);
             $builder->emit('store_mem_disp','void',[$fcb,24,$sh]);
             $builder->emit('store_mem_disp','void',[$fcb,32,$sh]);
