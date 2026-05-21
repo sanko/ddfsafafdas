@@ -48,6 +48,10 @@ package Brocken::Compiler {
         field @source_locs;
         field @func_ranges;
         #
+        field $source_file            : reader : writer = 'source.brocken';
+        field $line_table_ptr_offset  : reader : writer = undef;
+        field $line_table_size_offset : reader : writer = undef;
+        #
         field %debug_func_params;
         field %debug_func_locals;
         #
@@ -204,6 +208,7 @@ package Brocken::Compiler {
                 require Brocken::Compiler::Lowering;
                 require Brocken::Codegen;
                 require Brocken::Compiler::DataSegment;
+                $source_file = $filename;
                 my $tokens   = Brocken::Lexer->new( source => $source )->lex();
                 my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
                 my $ds       = Brocken::Compiler::DataSegment->new();

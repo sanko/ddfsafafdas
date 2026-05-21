@@ -28,6 +28,8 @@ package Brocken::Compiler::Lowering {
         field $defer_active_depth = 0;
         field $_skip_runtime      = 0;
         field @exported_funcs;
+        field $line_table_ptr_offset  = undef;
+        field $line_table_size_offset = undef;
 
         # --- First-class undef pointer ---
         field $undef_ptr_offset = undef;
@@ -278,16 +280,102 @@ package Brocken::Compiler::Lowering {
             my $bp_slot = $driver->alloc_local_slot();
             my $my_bp   = $builder->emit( 'get_bp', 'ptr', [] );
             $builder->emit( 'local_store', 'void', [ $bp_slot, $my_bp ] );
-            my $extab_ptr    = $builder->emit( 'load_iso_disp',           'ptr', [ $driver->iso_offset('exception_table') ] );
-            my $text_base    = $builder->emit( 'intrinsic_get_text_base', 'ptr', [] );
+            my $extab_ptr = $builder->emit( 'load_iso_disp',           'ptr', [ $driver->iso_offset('exception_table') ] );
+            my $text_base = $builder->emit( 'intrinsic_get_text_base', 'ptr', [] );
+
+            # Search Depth setup to prevent stack overflow crashes
+            my $search_depth_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $search_depth_s, 0 ] );
             my $l_frame_loop = $builder->new_label();
             $builder->emit_label($l_frame_loop);
             my $curr_bp  = $builder->emit( 'local_load', 'ptr', [$bp_slot] );
+            my $s_depth  = $builder->emit( 'local_load', 'i64', [$search_depth_s] );
             my $l_search = $builder->new_label();
-            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $curr_bp, 0 ] ), $builder->new_label(), $l_search );
-            $builder->emit_label( $builder->last_instruction->{true_l} );
+            my $l_fatal  = $builder->new_label();
+
+            # Or-combine termination conditions (curr_bp == 0 OR depth >= 30)
+            my $is_done = $builder->emit( 'or', 'i64',
+                [ $builder->emit( 'cmp_eq', 'Int', [ $curr_bp, 0 ] ), $builder->emit( 'cmp_ge', 'Int', [ $s_depth, 30 ] ) ] );
+            $builder->emit_cond_br( $is_done, $l_fatal, $l_search );
+            $builder->emit_label($l_fatal);
             $builder->emit( 'intrinsic_print', 'void',
                 [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("FATAL: Unhandled Exception\n") ] ) ] );
+
+            # --- Start Unhandled Exception Stack-Trace Backtrace ---
+            my $fn_rva     = $data_segment->add_string( $driver->source_file // "source.brocken" );
+            my $trace_bp_s = $driver->alloc_local_slot();
+            my $orig_my_bp = $builder->emit( 'get_bp', 'ptr', [] );
+            $builder->emit( 'local_store', 'void', [ $trace_bp_s, $orig_my_bp ] );
+            my $trace_depth_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $trace_depth_s, 0 ] );
+            my $l_trace_loop = $builder->new_label();
+            my $l_trace_done = $builder->new_label();
+            $builder->emit_label($l_trace_loop);
+            my $t_bp          = $builder->emit( 'local_load', 'ptr', [$trace_bp_s] );
+            my $t_depth       = $builder->emit( 'local_load', 'i64', [$trace_depth_s] );
+            my $l_trace_next  = $builder->new_label();
+            my $is_trace_done = $builder->emit( 'or', 'i64',
+                [ $builder->emit( 'cmp_eq', 'Int', [ $t_bp, 0 ] ), $builder->emit( 'cmp_ge', 'Int', [ $t_depth, 30 ] ) ] );
+            $builder->emit_cond_br( $is_trace_done, $l_trace_done, $l_trace_next );
+            $builder->emit_label($l_trace_next);
+            my $t_rip        = $builder->emit( 'load_mem_disp', 'ptr', [ $t_bp, $driver->rip_offset() ] );
+            my $t_prev       = $builder->emit( 'load_mem_disp', 'ptr', [ $t_bp, $driver->prev_bp_offset() ] );
+            my $t_rva        = $builder->emit( 'sub',            'i64', [ $builder->emit( 'sub', 'i64', [ $t_rip, $text_base ] ), 1 ] );
+            my $rlt_ptr_addr = $builder->emit( 'load_data_addr', 'ptr', [$line_table_ptr_offset] );
+            my $rlt_ptr      = $builder->emit( 'load_mem_disp',  'ptr', [ $rlt_ptr_addr, 0 ] );
+            my $rlt_sz_addr  = $builder->emit( 'load_data_addr', 'ptr', [$line_table_size_offset] );
+            my $rlt_sz       = $builder->emit( 'load_mem_disp',  'i64', [ $rlt_sz_addr, 0 ] );
+            my $best_line_s  = $driver->alloc_local_slot();
+            my $best_col_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $best_line_s, 0 ] );
+            $builder->emit( 'local_store', 'void', [ $best_col_s,  0 ] );
+            my $idx_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $idx_s, 0 ] );
+            my $l_scan_loop = $builder->new_label();
+            my $l_scan_done = $builder->new_label();
+            $builder->emit_label($l_scan_loop);
+            my $idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $idx, $rlt_sz ] ), $l_scan_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $idx_offset = $builder->emit( 'mul',           'i64', [ $idx,        24 ] );
+            my $entry_addr = $builder->emit( 'add',           'ptr', [ $rlt_ptr,    $idx_offset ] );
+            my $entry_off  = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 0 ] );
+            my $entry_line = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 8 ] );
+            my $entry_col  = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 16 ] );
+            my $l_match    = $builder->new_label();
+            my $l_no_match = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_le', 'Int', [ $entry_off, $t_rva ] ), $l_match, $l_no_match );
+            $builder->emit_label($l_match);
+            $builder->emit( 'local_store', 'void', [ $best_line_s, $entry_line ] );
+            $builder->emit( 'local_store', 'void', [ $best_col_s,  $entry_col ] );
+            $builder->emit( 'local_store', 'void', [ $idx_s,       $builder->emit( 'add', 'i64', [ $idx, 1 ] ) ] );
+            $builder->emit_jump($l_scan_loop);
+            $builder->emit_label($l_no_match);
+            $builder->emit_jump($l_scan_done);
+            $builder->emit_label($l_scan_done);
+            my $best_line    = $builder->emit( 'local_load', 'i64', [$best_line_s] );
+            my $best_col     = $builder->emit( 'local_load', 'i64', [$best_col_s] );
+            my $l_print_loc  = $builder->new_label();
+            my $l_skip_print = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $best_line, 0 ] ), $l_print_loc, $l_skip_print );
+            $builder->emit_label($l_print_loc);
+            my $fn_addr = $builder->emit( 'load_data_addr', 'ptr', [$fn_rva] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("  at ") ] ) ] );
+            $builder->emit( 'intrinsic_print', 'void', [$fn_addr] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(" line ") ] ) ] );
+            $builder->emit( 'call_func', 'void',
+                [ 'M_print_int', $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $best_line, 1 ] ), 1 ] ) ] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(", col ") ] ) ] );
+            $builder->emit( 'call_func', 'void',
+                [ 'M_print_int', $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $best_col, 1 ] ), 1 ] ) ] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
+            $builder->emit_label($l_skip_print);
+            $builder->emit( 'local_store', 'void', [ $trace_bp_s,    $t_prev ] );
+            $builder->emit( 'local_store', 'void', [ $trace_depth_s, $builder->emit( 'add', 'i64', [ $t_depth, 1 ] ) ] );
+            $builder->emit_jump($l_trace_loop);
+            $builder->emit_label($l_trace_done);
+
+            # --- End Unhandled Exception Stack-Trace Backtrace ---
             $builder->emit( 'intrinsic_exit', 'void', [ $builder->emit( 'constant', 'i64', [255] ) ] );
             $builder->emit_label($l_search);
             my $rip       = $builder->emit( 'load_mem_disp', 'ptr', [ $curr_bp, $driver->rip_offset() ] );
@@ -344,7 +432,8 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'local_store', 'void', [ $f_ptr_s, $builder->emit( 'add', 'ptr', [ $f_ptr, $f_skip ] ) ] );
             $builder->emit_jump($l_f_loop);
             $builder->emit_label($l_f_done);
-            $builder->emit( 'local_store', 'void', [ $bp_slot, $prev_bp ] );
+            $builder->emit( 'local_store', 'void', [ $bp_slot,        $prev_bp ] );
+            $builder->emit( 'local_store', 'void', [ $search_depth_s, $builder->emit( 'add', 'i64', [ $s_depth, 1 ] ) ] );
             $builder->emit_jump($l_frame_loop);
             $builder->emit( 'leave_func', 'void', [] );
         }
@@ -1184,6 +1273,10 @@ package Brocken::Compiler::Lowering {
             my $data_base     = $builder->emit( 'load_data_addr', 'ptr', [0] );
             my $extab_ptr     = $builder->emit( 'add',            'ptr', [ $data_base, $extab_off ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('exception_table'), $extab_ptr ] );
+            my $rlt_off_ptr = $builder->emit( 'load_data_addr', 'ptr', [$line_table_ptr_offset] );
+            my $rlt_off     = $builder->emit( 'load_mem_disp',  'i64', [ $rlt_off_ptr, 0 ] );
+            my $rlt_ptr     = $builder->emit( 'add',            'ptr', [ $data_base,   $rlt_off ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $rlt_off_ptr, 0, $rlt_ptr ] );
             my $ms = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_base'),  $ms ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_ptr'),   $ms ] );
@@ -1907,8 +2000,13 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'local_store', 'void', [ $cursor_s, 0 ] );
             my $l_block_loop = $builder->new_label();
             my $l_block_done = $builder->new_label();
+            my $l_block_null = $builder->new_label();
             $builder->emit_label($l_block_loop);
-            my $block  = $builder->emit( 'local_load', 'ptr', [$block_s] );
+            my $block = $builder->emit( 'local_load', 'ptr', [$block_s] );
+
+            # --- Guard against NULL environment block pointer ---
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $block, 0 ] ), $l_block_null, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
             my $cursor = $builder->emit( 'local_load', 'i64', [$cursor_s] );
 
             # Check if double null (end of environment block)
@@ -1968,13 +2066,12 @@ package Brocken::Compiler::Lowering {
             # Advance cursor past the null-terminator of "Key=Value\0"
             $builder->emit( 'local_store', 'void',
                 [ $cursor_s, $builder->emit( 'add', 'i64', [ $builder->emit( 'add', 'i64', [ $cursor, $total_len ] ), 1 ] ) ] );
-            $builder->emit( 'local_store', 'void',
-                [ $cursor_s, $builder->emit( 'add', 'i64', [ $builder->emit( 'add', 'i64', [ $cursor, $total_len ] ), 1 ] ) ] );
             $builder->emit_jump($l_block_loop);
             $builder->emit_label($l_block_done);
             $builder->emit( 'intrinsic_free_env_block', 'void', [$block] );
-            $builder->emit( 'shadow_pop',               'void', [] );         # pop env_hash
-            $builder->emit( 'leave_func',               'void', [] );
+            $builder->emit_label($l_block_null);
+            $builder->emit( 'shadow_pop', 'void', [] );    # pop env_hash
+            $builder->emit( 'leave_func', 'void', [] );
         }
 
         method inject_runtime_init_env_unix() {
@@ -2290,6 +2387,11 @@ package Brocken::Compiler::Lowering {
             return ( undef, 'void' ) unless defined $node;
             my $nt = ref($node);
             $nt =~ s/.*:://;
+
+            # Emit source location trace if line number is present
+            if ( $node->line > 0 ) {
+                $builder->emit( 'source_loc', 'void', [ $node->line, $node->col ] );
+            }
             my $m = "lower_$nt";
             return $self->$m($node) if $self->can($m);
             die "Lowering Error: No handler for node type $nt";
@@ -2305,11 +2407,18 @@ package Brocken::Compiler::Lowering {
 
             # --- Initialize stack_ptr_offset ---
             $stack_ptr_offset = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
+
+            # --- Initialize line-table offsets ---
+            $line_table_ptr_offset  = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
+            $line_table_size_offset = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
+            $driver->set_line_table_ptr_offset($line_table_ptr_offset);
+            $driver->set_line_table_size_offset($line_table_size_offset);
             $builder->emit_jump('L_MAIN_START');
             $self->inject_runtime();
             $self->_emit_runtime_init_sub();
             $self->register_classes($nodes);
             my @main_statements;
+
             for my $n (@$nodes) {
                 if ( $n isa Brocken::AST::OOP::Method || $n isa Brocken::AST::OOP::ClassDecl || $n isa Brocken::AST::NativeDecl ) {
                     $self->lower($n);
@@ -2349,7 +2458,17 @@ package Brocken::Compiler::Lowering {
                         [ $method_base, -16 - ( $i * 8 ), $builder->emit( 'constant', 'i64', [ $c->{ptr_offsets}[$i] ] ) ] );
                 }
                 for my $mn ( @{ $c->{method_names} } ) {
-                    my $m_addr = $builder->emit( 'load_func_addr', 'ptr', ["M_${cn}::$mn"] );
+                    my $owner = $cn;
+                    my $curr  = $cn;
+                    while ( defined $curr ) {
+                        my $p_info = $class_info{$curr};
+                        if ( exists $p_info->{own_methods}{$mn} || exists $p_info->{own_fields}{$mn} ) {
+                            $owner = $curr;
+                            last;
+                        }
+                        $curr = $p_info->{parent_class};
+                    }
+                    my $m_addr = $builder->emit( 'load_func_addr', 'ptr', ["M_${owner}::$mn"] );
                     $builder->emit( 'store_mem_disp', 'void', [ $method_base, $global_methods{$mn} * 8, $m_addr ] );
                 }
                 $builder->emit( 'store_mem_disp', 'void', [ $stm, $c->{id} * 8, $method_base ] );
@@ -3134,8 +3253,7 @@ package Brocken::Compiler::Lowering {
 
         method lower_ClassDecl($node) {
             my $ci  = $class_info{ $node->name };
-            my $off = 16;
-            for my $f ( @{ $node->fields } ) { $off += 8 }
+            my $off = $ci->{field_end_offset};
             $driver->reset_locals();
             $builder->emit_label( "M_" . $node->name . "::new" );
             $builder->emit( 'enter_func', 'void', [] );
@@ -3153,6 +3271,9 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func',     'void', [$obj] );
             my $field_offset = 16;
 
+            if ( defined $ci->{parent_class} ) {
+                $field_offset = $class_info{ $ci->{parent_class} }{field_end_offset};
+            }
             for my $f ( @{ $node->fields } ) {
                 ( my $clean_name = $f->name ) =~ s/^[\$@%]//;
                 $driver->reset_locals();
@@ -3196,9 +3317,21 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'local_store', 'void', [ $ss, $builder->emit( 'get_arg', 'ptr', [0] ) ] );
                 my $ai = 1;
                 my $fo = 16;
-                for my $field ( @{ $node->fields } ) { $current_scope->define( $field->name, 'Any', 0, undef, -$fo ); $fo += 8 }
+                my @ancestors;
+                my $curr = $ci->{parent_class};
 
-                for my $p ( @{ $m->params } ) {
+                while ( defined $curr ) {
+                    unshift @ancestors, $curr;
+                    $curr = $class_info{$curr}{parent_class};
+                }
+                for my $anc (@ancestors) {
+                    for my $field ( @{ $class_info{$anc}{fields} } ) {
+                        $current_scope->define( $field->name, 'Any', 0, undef, -$fo );
+                        $fo += 8;
+                    }
+                }
+                for my $field ( @{ $node->fields } ) { $current_scope->define( $field->name, 'Any', 0, undef, -$fo ); $fo += 8 }
+                for my $p     ( @{ $m->params } ) {
                     my $l = $driver->alloc_local_slot();
                     $current_scope->define( $p->{name}, $p->{type}, 0, undef, $l );
                     $builder->emit( 'local_store', 'void', [ $l, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
@@ -3220,23 +3353,65 @@ package Brocken::Compiler::Lowering {
         }
 
         method register_classes($nodes) {
-            for my $node (@$nodes) {
-                if ( $node isa Brocken::AST::OOP::ClassDecl ) {
-                    my @mn;
-                    my @po;
-                    my $co = 16;
-                    for my $m ( @{ $node->methods } ) { push @mn, $m->name; $global_methods{ $m->name } //= $global_method_count++ }
-                    for my $f ( @{ $node->fields } ) {
-                        push @po, $co if $f->type =~ /^(Any|String|Array|Hash|Tuple|Fiber|Class|Undef)$/;
-                        ( my $clean_name = $f->name ) =~ s/^[\$@%]//;
-                        push @mn, $clean_name;
-                        $global_methods{$clean_name} //= $global_method_count++;
-                        push @mn, "set_" . $clean_name;
-                        $global_methods{ "set_" . $clean_name } //= $global_method_count++;
-                        $co += 8;
+            my @pending  = @$nodes;
+            my $progress = 1;
+            while ( @pending && $progress ) {
+                $progress = 0;
+                my @next_pending;
+                for my $node (@pending) {
+                    if ( $node isa Brocken::AST::OOP::ClassDecl ) {
+                        my $parent_class = undef;
+                        for my $attr ( @{ $node->attributes // [] } ) {
+                            if ( $attr->{name} eq 'isa' ) { $parent_class = $attr->{args}; }
+                        }
+                        if ( defined $parent_class && !exists $class_info{$parent_class} ) {
+                            push @next_pending, $node;
+                            next;
+                        }
+                        $progress = 1;
+                        my @mn;
+                        my @po;
+                        my $co = 16;
+                        if ( defined $parent_class ) {
+                            my $p = $class_info{$parent_class};
+                            push @mn, @{ $p->{method_names} };
+                            push @po, @{ $p->{ptr_offsets} };
+                            $co = $p->{field_end_offset};
+                        }
+                        my %own_methods = map { $_->name => 1 } @{ $node->methods };
+                        my %own_fields;
+                        for my $f ( @{ $node->fields } ) {
+                            push @po, $co if $f->type =~ /^(Any|String|Array|Hash|Tuple|Fiber|Class|Undef)$/;
+                            ( my $clean_name = $f->name ) =~ s/^[\$@%]//;
+                            $own_fields{$clean_name} = 1;
+                            $own_fields{ "set_" . $clean_name } = 1;
+                            for my $mname ( $clean_name, "set_" . $clean_name ) {
+                                if ( !grep { $_ eq $mname } @mn ) {
+                                    push @mn, $mname;
+                                    $global_methods{$mname} //= $global_method_count++;
+                                }
+                            }
+                            $co += 8;
+                        }
+                        for my $m ( @{ $node->methods } ) {
+                            if ( !grep { $_ eq $m->name } @mn ) {
+                                push @mn, $m->name;
+                                $global_methods{ $m->name } //= $global_method_count++;
+                            }
+                        }
+                        $class_info{ $node->name } = {
+                            id               => $class_id_counter++,
+                            method_names     => \@mn,
+                            ptr_offsets      => \@po,
+                            field_end_offset => $co,
+                            parent_class     => $parent_class,
+                            fields           => $node->fields,
+                            own_methods      => \%own_methods,
+                            own_fields       => \%own_fields
+                        };
                     }
-                    $class_info{ $node->name } = { id => $class_id_counter++, method_names => \@mn, ptr_offsets => \@po };
                 }
+                @pending = @next_pending;
             }
         }
 

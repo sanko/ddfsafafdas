@@ -4,12 +4,13 @@ package Brocken::AST::OOP {
     no warnings 'experimental::class';
     #
     class Brocken::AST::OOP::ClassDecl : isa(Brocken::AST::Node)
-    { field $name : param : reader; field $fields : param : reader; field $methods : param : reader; }
+    { field $name : param : reader; field $fields : param : reader; field $methods : param : reader; field $attributes : param : reader = []; }
 
-    class Brocken::AST::OOP::FieldDecl : isa(Brocken::AST::Node) { field $name : param : reader; field $type : param : reader; }
+    class Brocken::AST::OOP::FieldDecl : isa(Brocken::AST::Node)
+    { field $name : param : reader; field $type : param : reader; field $attributes : param : reader = []; }
 
     class Brocken::AST::OOP::Method : isa(Brocken::AST::Node)
-    { field $name : param : reader; field $params : param : reader; field $body : param : reader; }
+    { field $name : param : reader; field $params : param : reader; field $body : param : reader; field $attributes : param : reader = []; }
 
     class Brocken::AST::OOP::MethodCall : isa(Brocken::AST::Node)
     { field $invocant : param : reader; field $name : param : reader; field $args : param : reader; }

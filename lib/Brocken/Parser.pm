@@ -104,6 +104,26 @@ class Brocken::Parser {
         '{'  => '_parse_index_expr'
     );
 
+    method _parse_attributes() {
+        my @attrs;
+        while ( $self->current->{value} eq ':' ) {
+            my $col_tok  = $self->advance();         # consume ':'
+            my $name_tok = $self->expect('IDENT');
+            my $name     = $name_tok->{value};
+            my $args     = undef;
+            if ( $self->current->{value} eq '(' ) {
+                $self->advance();                    # consume '('
+                my $arg_tok = $self->current;
+                if ( $arg_tok->{type} eq 'IDENT' || $arg_tok->{type} eq 'STRING' || $arg_tok->{type} eq 'VAR' ) {
+                    $args = $self->advance()->{value};
+                }
+                $self->expect(')');
+            }
+            push @attrs, { name => $name, args => $args, line => $col_tok->{line}, col => $col_tok->{col} };
+        }
+        return \@attrs;
+    }
+
     # Core Navigation
     method current() { $tokens->[$pos]       // { type => 'EOF', value => 'EOF' } }
     method peek()    { $tokens->[ $pos + 1 ] // { type => 'EOF', value => 'EOF' } }
@@ -369,35 +389,53 @@ class Brocken::Parser {
             $self->advance();
             $name .= '::' . $self->expect('IDENT')->{value};
         }
+        my $attrs = $self->_parse_attributes();
         $self->expect('{');
         my ( @fields, @methods );
         while ( $self->current->{value} ne '}' ) {
             my $v = $self->current->{value};
             if ( $v eq 'field' ) {
                 $self->advance();
-                my $type = $self->_parse_type_spec();
-                my $ftok = $self->expect('VAR');
+                my $type   = $self->_parse_type_spec();
+                my $ftok   = $self->expect('VAR');
+                my $fattrs = $self->_parse_attributes();
                 $self->expect(';');
-                push @fields, Brocken::AST::OOP::FieldDecl->new( name => $ftok->{value}, type => $type, line => $ftok->{line}, col => $ftok->{col} );
+                push @fields,
+                    Brocken::AST::OOP::FieldDecl->new(
+                    name       => $ftok->{value},
+                    type       => $type,
+                    attributes => $fattrs,
+                    line       => $ftok->{line},
+                    col        => $ftok->{col}
+                    );
             }
             elsif ( $v eq 'method' ) {
                 my $mtok = $self->current;
                 $self->advance();
                 my $mname  = $self->expect('IDENT')->{value};
                 my $params = $self->_parse_routine_params();
+                my $mattrs = $self->_parse_attributes();
                 push @methods,
                     Brocken::AST::OOP::Method->new(
-                    name   => $mname,
-                    params => $params,
-                    body   => $self->_parse_block_stmt(),
-                    line   => $mtok->{line},
-                    col    => $mtok->{col}
+                    name       => $mname,
+                    params     => $params,
+                    attributes => $mattrs,
+                    body       => $self->_parse_block_stmt(),
+                    line       => $mtok->{line},
+                    col        => $mtok->{col}
                     );
             }
             else { die "Unexpected token in class $name: " . $self->current->{value}; }
         }
         $self->expect('}');
-        return Brocken::AST::OOP::ClassDecl->new( name => $name, fields => \@fields, methods => \@methods, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::OOP::ClassDecl->new(
+            name       => $name,
+            fields     => \@fields,
+            methods    => \@methods,
+            attributes => $attrs,
+            line       => $tok->{line},
+            col        => $tok->{col}
+        );
     }
 
     method _parse_block_stmt() {

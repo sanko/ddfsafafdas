@@ -20,7 +20,7 @@
 - [x] Futhark-style map merging (Loop Fusion).
 - [x] Tail call & Leaf optimizations.
 - [ ] Inlining pass (inline small functions to eliminate call overhead).
-- [ ] Constant Folding & Dead Code Elimination (DCE).
+- [x] Constant Folding & Dead Code Elimination (DCE).
 - [ ] Arithmetic expansion (IMUL, DIV, SSE/AVX for floats).
 
 ## Milestone 2: Memory & The "Variant" Type
@@ -34,7 +34,7 @@
 
 ## Milestone 3: Data Structures (The "Perl" Experience)
 - [x] Arrays: Heap-allocated contiguous memory with bounds checking.
-- [ ] String Ops: Implement `eq`, `ne`, `lt`, `gt` using string-byte comparison.
+- [x] String Ops: Implement `eq`, `ne`, `lt`, `gt` using string-byte comparison.
 - [x] Tuples: Immutable, fixed-size structures (candidates for stack allocation).
 - [x] Hashes & Indexing: Hash allocation and dynamic lookup. Built-in DJB2 or MurmurHash implementation
 - [x] Hash Keywords: Implement built-in IR calls for...
@@ -42,9 +42,9 @@
   - [x] `values(%h)`
   - [x] `exists $h{k}`
   - [x] `delete $h{k}`
-- [ ] Core Globals: Map `@ARGV`, `%ENV`, and `$_` to fixed Isolate State indices. Write runtime startup hooks to populate them from the OS.
-- [ ] Standard I/O Handles: Expose `STDIN`, `STDOUT`, and `STDERR` as globally available `FileHandle` objects mapped to fd 0, 1, and 2.
-- [/] Classes & User-Defined Types: `class`, method dispatch, inheritance, roles, type aliasing.
+- [x] Core Globals: Map `@ARGV`, `%ENV`, and `$_` to fixed Isolate State indices. Write runtime startup hooks to populate them from the OS.
+- [x] Standard I/O Handles: Expose `STDIN`, `STDOUT`, and `STDERR` as globally available `FileHandle` objects mapped to fd 0, 1, and 2.
+- [x] Classes & User-Defined Types: `class`, method dispatch, inheritance, roles, type aliasing.
 
 ## Milestone 4: Advanced Runtime (Concurrency)
 - [x] Fibers: Context switching by saving/restoring `rsp`/`sp` and registers.

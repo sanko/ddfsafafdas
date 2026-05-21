@@ -135,13 +135,13 @@ package Brocken::Format::PE {
             # Data Directory Entries (16 standard entries)
             my $iat_len = ( scalar( keys %IMPORTS ) + 1 ) * 8;
             my $dir_rva = $idata_rva + $iat_len * 2;
-            print $fh pack( 'L< L<', $edata_rva, $edata_size );     # 0: Export
-            print $fh pack( 'L< L<', $dir_rva,   40 );              # 1: Import
-            print $fh pack( 'L< L<', 0,          0 );               # 2: Resource
-            print $fh pack( 'L< L<', $pdata_rva, $pdata_size );     # 3: Exception (.pdata)
-            print $fh ( pack( 'L< L<', 0, 0 ) x 8 );                # 4-11: reserved
-            print $fh pack( 'L< L<', $idata_rva, $iat_len - 8 );    # 12: IAT
-            print $fh ( pack( 'L< L<', 0, 0 ) x 3 );                # 13-15: reserved
+            print $fh pack( 'L< L<', $edata_rva, $edata_size );    # 0: Export
+            print $fh pack( 'L< L<', $dir_rva,   40 );             # 1: Import
+            print $fh pack( 'L< L<', 0,          0 );              # 2: Resource
+            print $fh pack( 'L< L<', $pdata_rva, $pdata_size );    # 3: Exception (.pdata)
+            print $fh pack( 'L< L<', 0,          0 ) x 8;          # 4-11: reserved
+            print $fh pack( 'L< L<', $idata_rva, $iat_len );       # 12: IAT
+            print $fh pack( 'L< L<', 0,          0 ) x 3;          # 13-15: reserved
 
             for my $s ( $l->sections ) {
                 my $raw_size = ( $s->{size} + $fa - 1 ) & ~( $fa - 1 );

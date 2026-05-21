@@ -7,6 +7,9 @@ class Brocken::Codegen {
     field $arch : param;
     field $spill_count = 0;
 
+    # Start spills at a high offset to avoid clashing with function locals
+    field $spill_slot_ptr = 2048;
+
     method compile( $instructions, $driver ) {
         my $target  = $driver->target;
         my $as      = $driver->as;
@@ -62,10 +65,26 @@ class Brocken::Codegen {
                 }
             }
             my $off = $driver->data_segment->add_raw_bytes($extab);
-            my $raw = $driver->data_segment->raw_data();
+
+            # --- Serialize and Append Runtime Line Table ---
+            my @locs     = sort { $a->{offset} <=> $b->{offset} } $driver->source_locs;
+            my $rlt_data = '';
+            for my $loc (@locs) {
+                $rlt_data .= pack( 'Q< Q< Q<', $loc->{offset}, $loc->{line}, $loc->{col} );
+            }
+            my $rlt_off = $driver->data_segment->add_raw_bytes($rlt_data);
+            my $raw     = $driver->data_segment->raw_data();
 
             # Patch the pointer to the exception table
             substr( $raw, $driver->exception_table_offset, 8, pack( 'Q<', $off ) );
+
+            # Patch line table ptr and size offsets
+            if ( defined $driver->line_table_ptr_offset ) {
+                substr( $raw, $driver->line_table_ptr_offset, 8, pack( 'Q<', $rlt_off ) );
+            }
+            if ( defined $driver->line_table_size_offset ) {
+                substr( $raw, $driver->line_table_size_offset, 8, pack( 'Q<', scalar(@locs) ) );
+            }
             $driver->data_segment->set_raw_data($raw);
         }
     }
@@ -107,9 +126,6 @@ class Brocken::Codegen {
                     push @targets, $ins->{false_l} if defined $ins->{false_l};
                     for my $t (@targets) {
                         my $target_idx = $label_idx{$t};
-
-                        # If this is a backward jump, all registers live at the target
-                        # must remain live until the jump point
                         if ( defined $target_idx && $target_idx < $i ) {
                             for my $v ( keys %live ) {
                                 if ( $live{$v}{start} <= $target_idx && $live{$v}{end} >= $target_idx ) {
@@ -128,7 +144,9 @@ class Brocken::Codegen {
     }
 
     method _spill_vreg( $insts, $vreg, $driver ) {
-        my $slot = $driver->alloc_local_slot();
+        my $slot = $spill_slot_ptr;
+        $spill_slot_ptr += 8;
+        die "Stack Overflow: Spill area exceeded frame size" if $spill_slot_ptr > 4000;
         my @new;
         for my $old (@$insts) {
             my %ins = %$old;
