@@ -89,7 +89,8 @@ package Brocken::Type {
         my $align = 1;
         for my $f (@$fields) {
             my $field_align = $f->{type}{align};
-            $size  = ( $size + $field_align - 1 ) & ~( $field_align - 1 );
+            $size = ( $size + $field_align - 1 ) & ~( $field_align - 1 );
+            $size += $f->{type}{size};
             $align = $align > $field_align ? $align : $field_align;
         }
         $size = ( $size + $align - 1 ) & ~( $align - 1 );
