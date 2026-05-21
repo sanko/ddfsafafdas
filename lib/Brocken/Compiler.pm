@@ -30,7 +30,8 @@ package Brocken::Compiler {
                 isolate_offset => $isolate_offset
             );
         }
-        method resolve($name) { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
+        method has_local_symbol($name) { return exists $symbols{$name}; }
+        method resolve($name)          { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
     }
 
     class Brocken::Compiler {
@@ -128,14 +129,14 @@ package Brocken::Compiler {
             my $total  = $locals + $shadow;
             return ( $total + 15 ) & ~15;
         }
-        method text_rva ()                    { $format->rva_for('.text') }
-        method data_rva ()                    { $format->rva_for('.data') }
-        method import_rva ($name)             { $format->import_rva($name) }
-        method source_locs ()                 { return @source_locs; }
-        method push_source_loc ( $o, $l, $c ) { push @source_locs, { offset => $o, line => $l, col => $c }; }
-        method func_ranges ()                 { return @func_ranges; }
-        method push_func_range ($r)           { push @func_ranges, $r; }
-        method clear_func_ranges ()           { @func_ranges = (); }
+        method text_rva ()                                { $format->rva_for('.text') }
+        method data_rva ()                                { $format->rva_for('.data') }
+        method import_rva ($name)                         { $format->import_rva($name) }
+        method source_locs ()                             { return @source_locs; }
+        method push_source_loc ( $o, $l, $c, $f = undef ) { push @source_locs, { offset => $o, line => $l, col => $c, file => $f }; }
+        method func_ranges ()                             { return @func_ranges; }
+        method push_func_range ($r)                       { push @func_ranges, $r; }
+        method clear_func_ranges ()                       { @func_ranges = (); }
         method set_debug_func_params ( $n, $p ) { $debug_func_params{$n} = $p; }
         method get_debug_func_params ($n)       { $debug_func_params{$n} // [] }
         method set_debug_func_locals ( $n, $l ) { $debug_func_locals{$n} = $l; }

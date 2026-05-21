@@ -15,6 +15,7 @@ class Brocken::Parser {
         '?'  => 11,                                                                #
         '||' => 12, '//' => 12,                                                    #
         '&&' => 13,                                                                #
+        '..' => 17, '...' => 17,                                                   # Range ops
         '==' => 15, '!=' => 15, '<'  => 15, '>'  => 15, '<=' => 15, '>=' => 15,    # Numeric ops
         'eq' => 15, 'ne' => 15, 'lt' => 15, 'gt' => 15, 'le' => 15, 'ge' => 15,    # String ops
         '+'  => 20, '-'  => 20, '.'  => 20,                                        #
@@ -27,11 +28,16 @@ class Brocken::Parser {
     # Statement Registry (Keyword -> Method)
     my %STMT_HANDLERS = (
         'my'        => '_parse_var_decl',
+        'our'       => '_parse_our_decl',
         'state'     => '_parse_state_decl',
         'if'        => '_parse_if',
         'unless'    => '_parse_unless',
         'while'     => '_parse_while',
         'until'     => '_parse_until',
+        'for'       => '_parse_for',
+        'next'      => '_parse_next_last_redo',
+        'last'      => '_parse_next_last_redo',
+        'redo'      => '_parse_next_last_redo',
         'class'     => '_parse_class',
         'sub'       => '_parse_sub_stmt',
         'defer'     => '_parse_defer',
@@ -45,6 +51,7 @@ class Brocken::Parser {
         'exit'      => '_parse_exit',
         'say'       => '_parse_builtin_call',
         'print'     => '_parse_builtin_call',
+        'dump'      => '_parse_builtin_call',
         'sleep'     => '_parse_builtin_call',
         'interrupt' => '_parse_builtin_call',
         '{'         => '_parse_block_stmt'
@@ -71,7 +78,8 @@ class Brocken::Parser {
         'map'           => '_parse_map',
         'sleep'         => '_parse_sleep',
         'exists'        => '_parse_exists',
-        'delete'        => '_parse_delete'
+        'delete'        => '_parse_delete',
+        '...'           => '_parse_yada'
     );
 
     # Expression Infix Registry (Connects two expressions)
@@ -98,6 +106,8 @@ class Brocken::Parser {
         '||' => '_parse_bin_op',
         '//' => '_parse_bin_op',
         '='  => '_parse_bin_op',
+        '..'  => '_parse_bin_op',
+        '...' => '_parse_bin_op',
         '->' => '_parse_deref',
         '?'  => '_parse_ternary',
         '['  => '_parse_index_expr',
@@ -119,7 +129,7 @@ class Brocken::Parser {
                 }
                 $self->expect(')');
             }
-            push @attrs, { name => $name, args => $args, line => $col_tok->{line}, col => $col_tok->{col} };
+            push @attrs, { name => $name, args => $args, line => $col_tok->{line}, col => $col_tok->{col}, file => $col_tok->{file} };
         }
         return \@attrs;
     }
@@ -200,7 +210,31 @@ class Brocken::Parser {
         $self->expect('=');
         my $val = $self->parse_expression(0);
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Stmt::VarDecl->new( name => $ntok->{value}, type => $type, value => $val, line => $ntok->{line}, col => $ntok->{col} );
+        return Brocken::AST::Stmt::VarDecl->new(
+            name  => $ntok->{value},
+            type  => $type,
+            value => $val,
+            line  => $ntok->{line},
+            col   => $ntok->{col},
+            file  => $ntok->{file}
+        );
+    }
+
+    method _parse_our_decl() {
+        $self->advance();
+        my $type = $self->_parse_type_spec();
+        my $ntok = $self->expect('VAR');
+        $self->expect('=');
+        my $val = $self->parse_expression(0);
+        $self->_consume_stmt_terminator();
+        return Brocken::AST::Stmt::OurDecl->new(
+            name  => $ntok->{value},
+            type  => $type,
+            value => $val,
+            line  => $ntok->{line},
+            col   => $ntok->{col},
+            file  => $ntok->{file}
+        );
     }
 
     method _parse_state_decl() {
@@ -210,7 +244,14 @@ class Brocken::Parser {
         $self->expect('=');
         my $val = $self->parse_expression(0);
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Stmt::StateDecl->new( name => $ntok->{value}, type => $type, value => $val, line => $ntok->{line}, col => $ntok->{col} );
+        return Brocken::AST::Stmt::StateDecl->new(
+            name  => $ntok->{value},
+            type  => $type,
+            value => $val,
+            line  => $ntok->{line},
+            col   => $ntok->{col},
+            file  => $ntok->{file}
+        );
     }
 
     method _parse_if() {
@@ -225,16 +266,35 @@ class Brocken::Parser {
             $self->advance();
             $else = ( $self->current->{value} eq 'if' ) ? $self->_parse_if() : $self->_parse_block_stmt();
         }
-        return Brocken::AST::Stmt::If->new( condition => $cond, then_block => $then, else_block => $else, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::If->new(
+            condition  => $cond,
+            then_block => $then,
+            else_block => $else,
+            line       => $tok->{line},
+            col        => $tok->{col},
+            file       => $tok->{file}
+        );
     }
 
     method _parse_unless() {
         my $tok = $self->current;
         $self->advance();
         $self->expect('(');
-        my $cond = Brocken::AST::Expr::UnaryOp->new( op => '!', expr => $self->parse_expression(0), line => $tok->{line}, col => $tok->{col} );
+        my $cond = Brocken::AST::Expr::UnaryOp->new(
+            op   => '!',
+            expr => $self->parse_expression(0),
+            line => $tok->{line},
+            col  => $tok->{col},
+            file => $tok->{file}
+        );
         $self->expect(')');
-        return Brocken::AST::Stmt::If->new( condition => $cond, then_block => $self->_parse_block_stmt(), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::If->new(
+            condition  => $cond,
+            then_block => $self->_parse_block_stmt(),
+            line       => $tok->{line},
+            col        => $tok->{col},
+            file       => $tok->{file}
+        );
     }
 
     method _parse_while() {
@@ -243,16 +303,88 @@ class Brocken::Parser {
         $self->expect('(');
         my $cond = $self->parse_expression(0);
         $self->expect(')');
-        return Brocken::AST::Stmt::While->new( condition => $cond, body => $self->_parse_block_stmt(), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::While->new(
+            condition => $cond,
+            body      => $self->_parse_block_stmt(),
+            line      => $tok->{line},
+            col       => $tok->{col},
+            file      => $tok->{file}
+        );
     }
 
     method _parse_until() {
         my $tok = $self->current;
         $self->advance();
         $self->expect('(');
-        my $cond = Brocken::AST::Expr::UnaryOp->new( op => '!', expr => $self->parse_expression(0), line => $tok->{line}, col => $tok->{col} );
+        my $cond = Brocken::AST::Expr::UnaryOp->new(
+            op   => '!',
+            expr => $self->parse_expression(0),
+            line => $tok->{line},
+            col  => $tok->{col},
+            file => $tok->{file}
+        );
         $self->expect(')');
-        return Brocken::AST::Stmt::While->new( condition => $cond, body => $self->_parse_block_stmt(), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::While->new(
+            condition => $cond,
+            body      => $self->_parse_block_stmt(),
+            line      => $tok->{line},
+            col       => $tok->{col},
+            file      => $tok->{file}
+        );
+    }
+
+    method _parse_for() {
+        my $tok = $self->current;
+        $self->advance(); # 'for'
+        my $is_my = 0;
+        my $var = '$_'; # default
+        
+        if ($self->current->{value} eq 'my') {
+            $is_my = 1;
+            $self->advance();
+            if ($self->current->{value} eq '(') {
+                $self->advance();
+                $var = [];
+                while ($self->current->{value} ne ')') {
+                    push @$var, $self->expect('VAR')->{value};
+                    if ($self->current->{value} eq ',') { $self->advance(); }
+                }
+                $self->expect(')');
+            } else {
+                $var = $self->expect('VAR')->{value};
+            }
+        } elsif ($self->current->{type} eq 'VAR') {
+            $var = $self->current->{value};
+            $self->advance();
+        }
+        
+        my $source;
+        if ($self->current->{value} eq '(') {
+            $self->advance();
+            $source = $self->parse_expression(0);
+            $self->expect(')');
+        } else {
+            $source = $self->parse_expression(0);
+        }
+        
+        my $body = $self->_parse_block_stmt();
+        return Brocken::AST::Stmt::For->new(
+            var => $var,
+            source => $source,
+            body => $body,
+            is_my => $is_my,
+            line => $tok->{line},
+            col => $tok->{col},
+            file => $tok->{file}
+        );
+    }
+
+    method _parse_next_last_redo() {
+        my $tok = $self->current;
+        my $type = $self->advance()->{value};
+        $self->_consume_stmt_terminator();
+        my $class = "Brocken::AST::Stmt::" . ucfirst($type);
+        return $class->new(line => $tok->{line}, col => $tok->{col}, file => $tok->{file});
     }
 
     method _parse_return() {
@@ -260,7 +392,7 @@ class Brocken::Parser {
         $self->advance();
         my $expr = ( $self->current->{value} ne ';' ) ? $self->parse_expression(0) : undef;
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Stmt::Return->new( expr => $expr, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Return->new( expr => $expr, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_exit() {
@@ -268,7 +400,7 @@ class Brocken::Parser {
         $self->advance();
         my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Stmt::Exit->new( expr => $expr, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Exit->new( expr => $expr, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_builtin_call() {
@@ -286,7 +418,7 @@ class Brocken::Parser {
             }
         }
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Expr::Call->new( name => $name, args => \@args, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Call->new( name => $name, args => \@args, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_sub_stmt() {
@@ -295,14 +427,21 @@ class Brocken::Parser {
         my $name   = $self->expect('IDENT')->{value};
         my $params = $self->_parse_routine_params();
         my $body   = $self->_parse_block_stmt();
-        return Brocken::AST::OOP::Method->new( name => $name, params => $params, body => $body, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::OOP::Method->new(
+            name   => $name,
+            params => $params,
+            body   => $body,
+            line   => $tok->{line},
+            col    => $tok->{col},
+            file   => $tok->{file}
+        );
     }
 
     method _parse_defer() {
         my $tok = $self->current;
         $self->advance();
         my $block = $self->_parse_block_stmt();
-        return Brocken::AST::Stmt::Defer->new( block => $block, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Defer->new( block => $block, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_use() {
@@ -314,7 +453,7 @@ class Brocken::Parser {
             $package .= '::' . $self->expect('IDENT')->{value};
         }
         $self->expect(';');
-        return Brocken::AST::Stmt::Use->new( package => $package, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Use->new( package => $package, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_require() {
@@ -326,7 +465,7 @@ class Brocken::Parser {
             $package .= '::' . $self->expect('IDENT')->{value};
         }
         $self->expect(';');
-        return Brocken::AST::Stmt::Require->new( package => $package, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Require->new( package => $package, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_native_decl() {
@@ -337,7 +476,14 @@ class Brocken::Parser {
         $self->expect(',');
         my $signature = $self->expect('STRING')->{value};
         $self->_consume_stmt_terminator();
-        return Brocken::AST::NativeDecl->new( library => $library, name => $name, signature => $signature, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::NativeDecl->new(
+            library   => $library,
+            name      => $name,
+            signature => $signature,
+            line      => $tok->{line},
+            col       => $tok->{col},
+            file      => $tok->{file}
+        );
     }
 
     method _parse_eval() {
@@ -345,7 +491,7 @@ class Brocken::Parser {
         $self->advance();
         my $code_expr = $self->parse_expression(0);
         $self->expect(';');
-        return Brocken::AST::Stmt::Eval->new( code => $code_expr, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Eval->new( code => $code_expr, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_die() {
@@ -353,7 +499,7 @@ class Brocken::Parser {
         $self->advance;
         my $code_expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
         $self->_consume_stmt_terminator();
-        return Brocken::AST::Exception::Die->new( exception => $code_expr, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Exception::Die->new( exception => $code_expr, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_try_catch() {
@@ -377,7 +523,8 @@ class Brocken::Parser {
             catch_block   => $catch,
             finally_block => $finally,
             line          => $tok->{line},
-            col           => $tok->{col}
+            col           => $tok->{col},
+            file          => $tok->{file}
         );
     }
 
@@ -406,7 +553,8 @@ class Brocken::Parser {
                     type       => $type,
                     attributes => $fattrs,
                     line       => $ftok->{line},
-                    col        => $ftok->{col}
+                    col        => $ftok->{col},
+                    file       => $ftok->{file}
                     );
             }
             elsif ( $v eq 'method' ) {
@@ -422,7 +570,8 @@ class Brocken::Parser {
                     attributes => $mattrs,
                     body       => $self->_parse_block_stmt(),
                     line       => $mtok->{line},
-                    col        => $mtok->{col}
+                    col        => $mtok->{col},
+                    file       => $mtok->{file}
                     );
             }
             else { die "Unexpected token in class $name: " . $self->current->{value}; }
@@ -434,7 +583,8 @@ class Brocken::Parser {
             methods    => \@methods,
             attributes => $attrs,
             line       => $tok->{line},
-            col        => $tok->{col}
+            col        => $tok->{col},
+            file       => $tok->{file}
         );
     }
 
@@ -447,28 +597,33 @@ class Brocken::Parser {
             push @stmts, $node if defined $node;
         }
         $self->expect('}');
-        return Brocken::AST::Stmt::Block->new( statements => \@stmts, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Block->new( statements => \@stmts, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     # --- Expression Prefix Handlers ---
     method _parse_exists($tok) {
         $self->advance();
-        return Brocken::AST::Expr::Exists->new( expr => $self->parse_expression(0), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Exists->new( expr => $self->parse_expression(0), line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_delete($tok) {
         $self->advance();
-        return Brocken::AST::Expr::Delete->new( expr => $self->parse_expression(0), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Delete->new( expr => $self->parse_expression(0), line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
+    }
+
+    method _parse_yada($tok) {
+        $self->advance();
+        return Brocken::AST::Stmt::Yada->new( line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_num_literal($tok) {
         $self->advance();
-        Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'Int', line => $tok->{line}, col => $tok->{col} );
+        Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'Int', line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_string_literal($tok) {
         $self->advance();
-        Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'String', line => $tok->{line}, col => $tok->{col} );
+        Brocken::AST::Expr::Const->new( value => $tok->{value}, type => 'String', line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_interpolated_string($tok) {
@@ -478,31 +633,55 @@ class Brocken::Parser {
         for my $part (@$parts) {
             my $node;
             if ( $part->[0] eq 'STRING' ) {
-                $node = Brocken::AST::Expr::Const->new( value => $part->[1], type => 'String', line => $tok->{line}, col => $tok->{col} );
+                $node = Brocken::AST::Expr::Const->new(
+                    value => $part->[1],
+                    type  => 'String',
+                    line  => $tok->{line},
+                    col   => $tok->{col},
+                    file  => $tok->{file}
+                );
             }
             else {
-                $node = Brocken::AST::Expr::Var->new( name => $part->[1], line => $tok->{line}, col => $tok->{col} );
+                $node = Brocken::AST::Expr::Var->new( name => $part->[1], line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
             }
             if ( defined $expr ) {
-                $expr = Brocken::AST::Expr::BinOp->new( op => '.', left => $expr, right => $node, line => $tok->{line}, col => $tok->{col} );
+                $expr = Brocken::AST::Expr::BinOp->new(
+                    op    => '.',
+                    left  => $expr,
+                    right => $node,
+                    line  => $tok->{line},
+                    col   => $tok->{col},
+                    file  => $tok->{file}
+                );
             }
             else {
                 $expr = $node;
             }
         }
-        return $expr // Brocken::AST::Expr::Const->new( value => '', type => 'String', line => $tok->{line}, col => $tok->{col} );
+        return $expr
+            // Brocken::AST::Expr::Const->new( value => '', type => 'String', line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_bool_literal($tok) {
         $self->advance();
-        Brocken::AST::Expr::Const->new( value => ( $tok->{value} eq 'true' ? 1 : 0 ), type => 'Int', line => $tok->{line}, col => $tok->{col} );
+        Brocken::AST::Expr::Const->new(
+            value => ( $tok->{value} eq 'true' ? 1 : 0 ),
+            type  => 'Int',
+            line  => $tok->{line},
+            col   => $tok->{col},
+            file  => $tok->{file}
+        );
     }
 
     method _parse_undef_literal($tok) {
         $self->advance();
-        return Brocken::AST::Expr::Const->new( value => 'undef', type => 'Undef', line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Const->new( value => 'undef', type => 'Undef', line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
-    method _parse_var_ref($tok) { $self->advance(); Brocken::AST::Expr::Var->new( name => $tok->{value}, line => $tok->{line}, col => $tok->{col} ) }
+
+    method _parse_var_ref($tok) {
+        $self->advance();
+        Brocken::AST::Expr::Var->new( name => $tok->{value}, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
+    }
 
     method _parse_ident_or_call($tok) {
         my $name = $tok->{value};
@@ -512,34 +691,42 @@ class Brocken::Parser {
             $name .= '::' . $self->expect('IDENT')->{value};
         }
         if ( $self->current->{value} eq '(' ) {
-            return Brocken::AST::Expr::Call->new( name => $name, args => $self->_parse_args(), line => $tok->{line}, col => $tok->{col} );
+            return Brocken::AST::Expr::Call->new(
+                name => $name,
+                args => $self->_parse_args(),
+                line => $tok->{line},
+                col  => $tok->{col},
+                file => $tok->{file}
+            );
         }
         if ( $self->current->{value} eq '->' ) {
             $self->advance();
             my $method_name = $self->expect('IDENT')->{value};
             my $args        = $self->current->{value} eq '(' ? $self->_parse_args() : [];
-            my $class_const = Brocken::AST::Expr::Const->new( value => $name, type => 'Class', line => $tok->{line}, col => $tok->{col} );
+            my $class_const
+                = Brocken::AST::Expr::Const->new( value => $name, type => 'Class', line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
             return Brocken::AST::Expr::MethodCall->new(
                 object => $class_const,
                 method => $method_name,
                 args   => $args,
                 line   => $tok->{line},
-                col    => $tok->{col}
+                col    => $tok->{col},
+                file   => $tok->{file}
             );
         }
 
         # --- UPDATE: Map bareword standard I/O handles directly to Var nodes ---
         if ( $name =~ /^(STDOUT|STDERR|STDIN)$/ ) {
-            return Brocken::AST::Expr::Var->new( name => $name, line => $tok->{line}, col => $tok->{col} );
+            return Brocken::AST::Expr::Var->new( name => $name, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
         }
-        return Brocken::AST::Expr::Const->new( value => $name, type => 'Class', line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Const->new( value => $name, type => 'Class', line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_grouped_expr($tok) {
         $self->advance();
         if ( $self->current->{value} eq ')' ) {
             $self->advance();
-            return Brocken::AST::Expr::TupleLiteral->new( elements => [], line => $tok->{line}, col => $tok->{col} );
+            return Brocken::AST::Expr::TupleLiteral->new( elements => [], line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
         }
         my $expr = $self->parse_expression(0);
         if ( $self->current->{value} eq ',' ) {
@@ -550,7 +737,7 @@ class Brocken::Parser {
                 push @elements, $self->parse_expression(0);
             }
             $self->expect(')');
-            return Brocken::AST::Expr::TupleLiteral->new( elements => \@elements, line => $tok->{line}, col => $tok->{col} );
+            return Brocken::AST::Expr::TupleLiteral->new( elements => \@elements, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
         }
         $self->expect(')');
         return $expr;
@@ -558,7 +745,13 @@ class Brocken::Parser {
 
     method _parse_unary_op($tok) {
         $self->advance();
-        return Brocken::AST::Expr::UnaryOp->new( op => $tok->{value}, expr => $self->parse_expression(40), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::UnaryOp->new(
+            op   => $tok->{value},
+            expr => $self->parse_expression(40),
+            line => $tok->{line},
+            col  => $tok->{col},
+            file => $tok->{file}
+        );
     }
 
     method _parse_array_literal($tok) {
@@ -570,33 +763,38 @@ class Brocken::Parser {
             $self->expect(',');
         }
         $self->expect(']');
-        return Brocken::AST::Expr::ArrayLiteral->new( elements => \@el, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::ArrayLiteral->new( elements => \@el, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_anon_sub($tok) {
         $self->advance();
         my $params = $self->_parse_routine_params();
         my $body   = $self->_parse_block_stmt();
-        return Brocken::AST::OOP::AnonSub->new( params => $params, body => $body, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::OOP::AnonSub->new( params => $params, body => $body, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_fiber($tok) {
         $self->advance();
         my $params = ( $self->current->{value} eq '(' ) ? $self->_parse_routine_params() : [];
-        return Brocken::AST::Async::FiberBlock->new( params => $params, body => $self->_parse_block_stmt(), line => $tok->{line},
-            col => $tok->{col} );
+        return Brocken::AST::Async::FiberBlock->new(
+            params => $params,
+            body   => $self->_parse_block_stmt(),
+            line   => $tok->{line},
+            col    => $tok->{col},
+            file   => $tok->{file}
+        );
     }
 
     method _parse_yield($tok) {
         $self->advance();
         my $expr = $self->current->{value} ne ';' ? $self->parse_expression(0) : undef;
-        return Brocken::AST::Async::Yield->new( expr => $expr, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Async::Yield->new( expr => $expr, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_sleep($tok) {
         $self->advance();
         my $expr = $self->parse_expression(0);
-        return Brocken::AST::Async::Sleep->new( expr => $expr, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Async::Sleep->new( expr => $expr, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_map($tok) {
@@ -604,7 +802,13 @@ class Brocken::Parser {
         $self->expect('{');
         my $expr = $self->parse_expression(0);
         $self->expect('}');
-        return Brocken::AST::Stmt::Map->new( expr => $expr, source => $self->parse_expression(25), line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Stmt::Map->new(
+            expr   => $expr,
+            source => $self->parse_expression(25),
+            line   => $tok->{line},
+            col    => $tok->{col},
+            file   => $tok->{file}
+        );
     }
 
     # --- Expression Infix Handlers ---
@@ -614,24 +818,50 @@ class Brocken::Parser {
         my $right = $self->parse_expression($p);
         if ( $op eq '=' ) {
             if ( $left isa Brocken::AST::Expr::Var ) {
-                return Brocken::AST::Stmt::Assignment->new( name => $left->name, value => $right, line => $left->line, col => $left->col );
+                return Brocken::AST::Stmt::Assignment->new(
+                    name  => $left->name,
+                    value => $right,
+                    line  => $left->line,
+                    col   => $left->col,
+                    file  => $left->file
+                );
             }
             if ( $left isa Brocken::AST::Expr::IndexExpr ) {
-                return Brocken::AST::Stmt::Assignment->new( name => $left, value => $right, line => $left->line, col => $left->col );
+                return Brocken::AST::Stmt::Assignment->new(
+                    name  => $left,
+                    value => $right,
+                    line  => $left->line,
+                    col   => $left->col,
+                    file  => $left->file
+                );
             }
             if ( $left isa Brocken::AST::Expr::MethodCall ) {
-                return Brocken::AST::Stmt::Assignment->new( name => $left, value => $right, line => $left->line, col => $left->col );
+                return Brocken::AST::Stmt::Assignment->new(
+                    name  => $left,
+                    value => $right,
+                    line  => $left->line,
+                    col   => $left->col,
+                    file  => $left->file
+                );
             }
             die "Parse Error L:" . $left->line . " C:" . $left->col . ": Left side of assignment must be a variable, index, or field expression";
         }
-        return Brocken::AST::Expr::BinOp->new( op => $op, left => $left, right => $right, line => $left->line, col => $left->col );
+        return Brocken::AST::Expr::BinOp->new( op => $op, left => $left, right => $right, line => $left->line, col => $left->col,
+            file => $left->file );
     }
 
     method _parse_ternary( $left, $op ) {
         my $then = $self->parse_expression(0);
         $self->expect(':');
         my $else = $self->parse_expression(0);
-        return Brocken::AST::Expr::Ternary->new( cond => $left, then => $then, else => $else, line => $left->line, col => $left->col );
+        return Brocken::AST::Expr::Ternary->new(
+            cond => $left,
+            then => $then,
+            else => $else,
+            line => $left->line,
+            col  => $left->col,
+            file => $left->file
+        );
     }
 
     method _parse_index_expr( $left, $op ) {
@@ -643,14 +873,15 @@ class Brocken::Parser {
                 value => $ident_tok->{value},
                 type  => 'String',
                 line  => $ident_tok->{line},
-                col   => $ident_tok->{col}
+                col   => $ident_tok->{col},
+                file  => $ident_tok->{file}
             );
         }
         else {
             $index = $self->parse_expression(0);
         }
         $self->expect( $op eq '{' ? '}' : ']' );
-        return Brocken::AST::Expr::IndexExpr->new( source => $left, index => $index, line => $left->line, col => $left->col );
+        return Brocken::AST::Expr::IndexExpr->new( source => $left, index => $index, line => $left->line, col => $left->col, file => $left->file );
     }
 
     method _parse_hash_literal($tok) {
@@ -665,7 +896,8 @@ class Brocken::Parser {
                     value => $ident_tok->{value},
                     type  => 'String',
                     line  => $ident_tok->{line},
-                    col   => $ident_tok->{col}
+                    col   => $ident_tok->{col},
+                    file  => $ident_tok->{file}
                 );
             }
             else {
@@ -678,12 +910,18 @@ class Brocken::Parser {
             $self->expect(',');
         }
         $self->expect('}');
-        return Brocken::AST::Expr::HashLiteral->new( pairs => \@pairs, line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::HashLiteral->new( pairs => \@pairs, line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_deref( $left, $op ) {
         if ( $self->current->{value} eq '(' ) {
-            return Brocken::AST::Expr::AnonCall->new( invocant => $left, args => $self->_parse_args(), line => $left->line, col => $left->col );
+            return Brocken::AST::Expr::AnonCall->new(
+                invocant => $left,
+                args     => $self->_parse_args(),
+                line     => $left->line,
+                col      => $left->col,
+                file     => $left->file
+            );
         }
         my $mname = $self->expect('IDENT')->{value};
         return Brocken::AST::Expr::MethodCall->new(
@@ -691,7 +929,8 @@ class Brocken::Parser {
             method => $mname,
             args   => $self->current->{value} eq '(' ? $self->_parse_args() : [],
             line   => $left->line,
-            col    => $left->col
+            col    => $left->col,
+            file   => $left->file
         );
     }
 

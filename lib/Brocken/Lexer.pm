@@ -5,6 +5,7 @@ no warnings 'portable', 'experimental::class';
 
 class Brocken::Lexer {
     field $source : param;
+    field $file : param = 'source.brocken';
     field $pos  = 0;
     field $line = 1;
     field $col  = 1;
@@ -17,10 +18,11 @@ class Brocken::Lexer {
         defer
         native
         if else unless
-        while for map
+        while until for map
+        next last redo
         try catch finally
         die
-        say print
+        say print dump
         use require eval
         exists delete
         eq ne lt gt le ge
@@ -37,9 +39,15 @@ class Brocken::Lexer {
         my @tokens;
         while ( $pos < length($source) ) {
             my $remaining = substr( $source, $pos );
-            if ( $remaining =~ /^(\s+)/ )     { $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^(\s+)/ ) { $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^(#\s*line\s+(\d+)(?:\s+"([^"]+)")?[^\n]*)/ ) {
+                $line = $2 - 1;             # -1 because the newline following the directive will increment it
+                $file = $3 if defined $3;
+                $self->_advance( length($1) );
+                next;
+            }
             if ( $remaining =~ /^(#[^\n]*)/ ) { $self->_advance( length($1) ); next; }
-            if ( $remaining =~ /^(\d+)/ ) { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^(\d+)/ )     { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^([\$@%](?:[\^][A-Z]|\$|0))/ ) {    # Match Perl Special Variables ($^X, $$, $0, $^T)
                 push @tokens, $self->_make_token( 'VAR', $1 );
                 $self->_advance( length($1) );
@@ -87,7 +95,7 @@ class Brocken::Lexer {
                 $self->_advance( length($full_match) );
                 next;
             }
-            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\||::|\/\/)/ ) {
+            if ( $remaining =~ /^(==|!=|<=|>=|=>|->|&&|\|\||::|\/\/|\.\.\.|\.\.)/ ) {
                 push @tokens, $self->_make_token( 'OP', $1 );
                 $self->_advance( length($1) );
                 next;
@@ -113,7 +121,7 @@ class Brocken::Lexer {
         while ( $str =~ /\n/g ) { $line++; $col = 1; }
         if ( $str =~ /([^\n]+)$/ ) { $col += length($1); }
     }
-    method _make_token( $t, $v ) { return { type => $t, value => $v, line => $line, col => $col }; }
+    method _make_token( $t, $v ) { return { type => $t, value => $v, line => $line, col => $col, file => $file }; }
 }
 1;
 __END__

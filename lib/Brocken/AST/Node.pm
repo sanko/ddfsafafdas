@@ -5,6 +5,7 @@ no warnings 'experimental::class';
 class Brocken::AST::Node {
     field $line : param : reader = 0;
     field $col  : param : reader = 0;
+    field $file : param : reader = undef;
     method dump { ( ref $self ) =~ s/.*:://r }
 }
 1;

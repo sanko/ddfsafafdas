@@ -8,6 +8,9 @@ package Brocken::AST::Stmt {
     class Brocken::AST::Stmt::VarDecl : isa(Brocken::AST::Node)
     { field $name : param : reader; field $type : param : reader; field $value : param : reader; }
 
+    class Brocken::AST::Stmt::OurDecl : isa(Brocken::AST::Node)
+    { field $name : param : reader; field $type : param : reader; field $value : param : reader; }
+
     class Brocken::AST::Stmt::StateDecl : isa(Brocken::AST::Node)
     { field $name : param : reader; field $type : param : reader; field $value : param : reader; }
 
@@ -17,6 +20,19 @@ package Brocken::AST::Stmt {
     { field $condition : param : reader; field $then_block : param : reader; field $else_block : param : reader = undef; }
 
     class Brocken::AST::Stmt::While : isa(Brocken::AST::Node) { field $condition : param : reader; field $body : param : reader; }
+
+    class Brocken::AST::Stmt::For : isa(Brocken::AST::Node) {
+        field $var    : param : reader = undef;    # Can be scalar or arrayref for multiple vars
+        field $source : param : reader;
+        field $body   : param : reader;
+        field $is_my  : param : reader = 0;
+    }
+
+    class Brocken::AST::Stmt::Next : isa(Brocken::AST::Node) { }
+
+    class Brocken::AST::Stmt::Last : isa(Brocken::AST::Node) { }
+
+    class Brocken::AST::Stmt::Redo : isa(Brocken::AST::Node) { }
 
     class Brocken::AST::Stmt::Return : isa(Brocken::AST::Node) { field $expr : param : reader; }
 
@@ -31,6 +47,8 @@ package Brocken::AST::Stmt {
     class Brocken::AST::Stmt::Require : isa(Brocken::AST::Node) { field $package : param : reader; }
 
     class Brocken::AST::Stmt::Eval : isa(Brocken::AST::Node) { field $code : param : reader; }
+
+    class Brocken::AST::Stmt::Yada : isa(Brocken::AST::Node) { }
 }
 1;
 __END__

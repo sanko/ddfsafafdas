@@ -82,8 +82,8 @@ package Brocken::Format::PE {
             my $pdata_rva  = 0;
             my $pdata_size = 0;
             if ( $os eq 'win64' && $self->func_ranges && @{ $self->func_ranges } ) {
-                warn "PE: Building .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n";
-                warn "PE: building SEH...\n" if $ENV{BROCKEN_JIT_DEBUG};
+                warn "PE: Building .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n" if $ENV{BROCKEN_JIT_DEBUG};
+                warn "PE: building SEH...\n"                                                          if $ENV{BROCKEN_JIT_DEBUG};
                 $xdata_data               = $self->_build_xdata;
                 $pdata_data               = $self->_build_pdata( $l->get('.text')->{rva}, $l->get('.xdata')->{rva} );
                 $l->get('.pdata')->{size} = length($pdata_data);

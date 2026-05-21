@@ -20,11 +20,14 @@ package Brocken::Compiler::Lowering {
         field %class_info;
         field %global_methods;
         field %native_funcs;
+        field %our_vars;
         field $global_method_count = 0;
+        field $our_var_next_offset = 256;
         field $class_id_counter    = 0;
         field $anon_counter        = 0;
         field @fragments;
         field @defer_stack;
+        field @loop_stack; # Stack of { next_l, last_l, redo_l }
         field $defer_active_depth = 0;
         field $_skip_runtime      = 0;
         field @exported_funcs;
@@ -250,6 +253,7 @@ package Brocken::Compiler::Lowering {
             #
             $self->inject_runtime_print_int();
             $self->inject_runtime_print_any();
+            $self->inject_runtime_dump();
             $self->inject_runtime_new_fiber();
             $self->inject_runtime_concat();
             $self->inject_runtime_to_string();
@@ -277,11 +281,14 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('M_unwind');
             $builder->emit( 'enter_func', 'void', [] );
+            my $msg_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $msg_slot, $builder->emit( 'get_arg', 'ptr', [0] ) ] );
             my $bp_slot = $driver->alloc_local_slot();
             my $my_bp   = $builder->emit( 'get_bp', 'ptr', [] );
             $builder->emit( 'local_store', 'void', [ $bp_slot, $my_bp ] );
             my $extab_ptr = $builder->emit( 'load_iso_disp',           'ptr', [ $driver->iso_offset('exception_table') ] );
             my $text_base = $builder->emit( 'intrinsic_get_text_base', 'ptr', [] );
+            my $data_base = $builder->emit( 'load_data_addr',          'ptr', [0] );
 
             # Search Depth setup to prevent stack overflow crashes
             my $search_depth_s = $driver->alloc_local_slot();
@@ -298,8 +305,18 @@ package Brocken::Compiler::Lowering {
                 [ $builder->emit( 'cmp_eq', 'Int', [ $curr_bp, 0 ] ), $builder->emit( 'cmp_ge', 'Int', [ $s_depth, 30 ] ) ] );
             $builder->emit_cond_br( $is_done, $l_fatal, $l_search );
             $builder->emit_label($l_fatal);
+            my $l_custom     = $builder->new_label();
+            my $l_default    = $builder->new_label();
+            my $l_print_done = $builder->new_label();
+            my $msg          = $builder->emit( 'local_load', 'ptr', [$msg_slot] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $msg, 0 ] ), $l_custom, $l_default );
+            $builder->emit_label($l_custom);
+            $builder->emit( 'intrinsic_print', 'void', [$msg] );
+            $builder->emit_jump($l_print_done);
+            $builder->emit_label($l_default);
             $builder->emit( 'intrinsic_print', 'void',
                 [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("FATAL: Unhandled Exception\n") ] ) ] );
+            $builder->emit_label($l_print_done);
 
             # --- Start Unhandled Exception Stack-Trace Backtrace ---
             my $fn_rva     = $data_segment->add_string( $driver->source_file // "source.brocken" );
@@ -327,8 +344,10 @@ package Brocken::Compiler::Lowering {
             my $rlt_sz       = $builder->emit( 'load_mem_disp',  'i64', [ $rlt_sz_addr, 0 ] );
             my $best_line_s  = $driver->alloc_local_slot();
             my $best_col_s   = $driver->alloc_local_slot();
+            my $best_file_s  = $driver->alloc_local_slot();
             $builder->emit( 'local_store', 'void', [ $best_line_s, 0 ] );
             $builder->emit( 'local_store', 'void', [ $best_col_s,  0 ] );
+            $builder->emit( 'local_store', 'void', [ $best_file_s, 0 ] );
             my $idx_s = $driver->alloc_local_slot();
             $builder->emit( 'local_store', 'void', [ $idx_s, 0 ] );
             my $l_scan_loop = $builder->new_label();
@@ -337,17 +356,19 @@ package Brocken::Compiler::Lowering {
             my $idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
             $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $idx, $rlt_sz ] ), $l_scan_done, $builder->new_label() );
             $builder->emit_label( $builder->last_instruction->{false_l} );
-            my $idx_offset = $builder->emit( 'mul',           'i64', [ $idx,        24 ] );
+            my $idx_offset = $builder->emit( 'mul',           'i64', [ $idx,        32 ] );
             my $entry_addr = $builder->emit( 'add',           'ptr', [ $rlt_ptr,    $idx_offset ] );
             my $entry_off  = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 0 ] );
             my $entry_line = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 8 ] );
             my $entry_col  = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 16 ] );
+            my $entry_file = $builder->emit( 'load_mem_disp', 'i64', [ $entry_addr, 24 ] );
             my $l_match    = $builder->new_label();
             my $l_no_match = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_le', 'Int', [ $entry_off, $t_rva ] ), $l_match, $l_no_match );
             $builder->emit_label($l_match);
             $builder->emit( 'local_store', 'void', [ $best_line_s, $entry_line ] );
             $builder->emit( 'local_store', 'void', [ $best_col_s,  $entry_col ] );
+            $builder->emit( 'local_store', 'void', [ $best_file_s, $entry_file ] );
             $builder->emit( 'local_store', 'void', [ $idx_s,       $builder->emit( 'add', 'i64', [ $idx, 1 ] ) ] );
             $builder->emit_jump($l_scan_loop);
             $builder->emit_label($l_no_match);
@@ -355,12 +376,36 @@ package Brocken::Compiler::Lowering {
             $builder->emit_label($l_scan_done);
             my $best_line    = $builder->emit( 'local_load', 'i64', [$best_line_s] );
             my $best_col     = $builder->emit( 'local_load', 'i64', [$best_col_s] );
+            my $best_file    = $builder->emit( 'local_load', 'i64', [$best_file_s] );
             my $l_print_loc  = $builder->new_label();
             my $l_skip_print = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $best_line, 0 ] ), $l_print_loc, $l_skip_print );
             $builder->emit_label($l_print_loc);
-            my $fn_addr = $builder->emit( 'load_data_addr', 'ptr', [$fn_rva] );
+            my $fn_addr_s      = $driver->alloc_local_slot();
+            my $l_custom_file  = $builder->new_label();
+            my $l_default_file = $builder->new_label();
+            my $l_file_done    = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $best_file, 0 ] ), $l_custom_file, $l_default_file );
+            $builder->emit_label($l_custom_file);
+            $builder->emit( 'local_store', 'void', [ $fn_addr_s, $builder->emit( 'add', 'ptr', [ $data_base, $best_file ] ) ] );
+            $builder->emit_jump($l_file_done);
+            $builder->emit_label($l_default_file);
+            $builder->emit( 'local_store', 'void', [ $fn_addr_s, $builder->emit( 'load_data_addr', 'ptr', [$fn_rva] ) ] );
+            $builder->emit_jump($l_file_done);
+            $builder->emit_label($l_file_done);
+            my $fn_addr       = $builder->emit( 'local_load', 'ptr', [$fn_addr_s] );
+            my $l_first_frame = $builder->new_label();
+            my $l_other_frame = $builder->new_label();
+            my $l_at_done     = $builder->new_label();
+            my $is_first      = $builder->emit( 'cmp_eq', 'Int', [ $builder->emit( 'local_load', 'i64', [$trace_depth_s] ), 0 ] );
+            my $has_msg       = $builder->emit( 'cmp_ne', 'Int', [ $builder->emit( 'local_load', 'ptr', [$msg_slot] ), 0 ] );
+            $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $is_first, $has_msg ] ), $l_first_frame, $l_other_frame );
+            $builder->emit_label($l_first_frame);
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(" at ") ] ) ] );
+            $builder->emit_jump($l_at_done);
+            $builder->emit_label($l_other_frame);
             $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("  at ") ] ) ] );
+            $builder->emit_label($l_at_done);
             $builder->emit( 'intrinsic_print', 'void', [$fn_addr] );
             $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(" line ") ] ) ] );
             $builder->emit( 'call_func', 'void',
@@ -701,6 +746,12 @@ package Brocken::Compiler::Lowering {
             for ( my $i = 0; $i < $state_count; $i++ ) {
                 $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_mem_disp', 'ptr', [ $stm, 4096 + ( $i * 8 ) ] ) ] );
             }
+            for my $off ( 200, 208, 216, 224, 240 ) {
+                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_iso_disp', 'ptr', [$off] ) ] );
+            }
+            for ( my $off = 256; $off < $our_var_next_offset; $off += 8 ) {
+                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_iso_disp', 'ptr', [$off] ) ] );
+            }
             $builder->emit( 'call_func',  'void', ['M_gc_sweep'] );
             $builder->emit( 'leave_func', 'void', [0] );
         }
@@ -956,6 +1007,156 @@ package Brocken::Compiler::Lowering {
             $builder->emit_label($l_f);
             $builder->emit( 'intrinsic_print', 'void', [$v] );
             $builder->emit( 'leave_func',      'void', [0] );
+        }
+
+        method inject_runtime_dump() {
+            $driver->reset_locals();
+            $builder->emit_label('M_dump');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $v = $builder->emit( 'get_arg', 'i64', [0] );
+            $builder->emit( 'call_func',       'void', [ 'M_dump_recursive', $v, $builder->emit( 'constant', 'i64', [1] ) ] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
+            $builder->emit( 'leave_func',      'void', [0] );
+            $self->inject_runtime_dump_recursive();
+        }
+
+        method inject_runtime_dump_recursive() {
+            $driver->reset_locals();
+            $builder->emit_label('M_dump_recursive');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $val_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $val_s, $builder->emit( 'get_arg', 'i64', [0] ) ] );
+            my $indent_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $indent_s, $builder->emit( 'get_arg', 'i64', [1] ) ] );
+            my $val = $builder->emit( 'local_load', 'i64', [$val_s] );
+
+            # 1. SMI (Int)
+            my $l_not_smi = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $val, 1 ] ), $builder->new_label(), $l_not_smi );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'call_func',  'void', [ 'M_print_int', $val ] );
+            $builder->emit( 'leave_func', 'void', [0] );
+            $builder->emit_label($l_not_smi);
+
+            # 2. Undef
+            my $uptr        = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
+            my $l_not_undef = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $val, $uptr ] ), $builder->new_label(), $l_not_undef );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("null") ] ) ] );
+            $builder->emit( 'leave_func',      'void', [0] );
+            $builder->emit_label($l_not_undef);
+
+            # 3. String
+            my $hdr       = $builder->emit( 'load_mem_disp', 'i64', [ $val, -8 ] );
+            my $is_str    = $builder->emit( 'cmp_eq', 'Int', [ $builder->emit( 'shr', 'i64', [ $hdr, 62 ] ), 3 ] );
+            my $l_not_str = $builder->new_label();
+            $builder->emit_cond_br( $is_str, $builder->new_label(), $l_not_str );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'intrinsic_print_char', 'void', [ ord('"') ] );
+            $builder->emit( 'intrinsic_print',      'void', [$val] );
+            $builder->emit( 'intrinsic_print_char', 'void', [ ord('"') ] );
+            $builder->emit( 'leave_func',           'void', [0] );
+            $builder->emit_label($l_not_str);
+
+            # 4. Complex types
+            my $first      = $builder->emit( 'load_mem_disp', 'i64', [ $val,   0 ] );
+            my $tag        = $builder->emit( 'and',           'i64', [ $first, 3 ] );
+            my $l_is_array = $builder->new_label();
+            my $l_is_tuple = $builder->new_label();
+            my $l_is_hash  = $builder->new_label();
+            my $l_is_obj   = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $tag, 1 ] ), $l_is_array, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $tag, 2 ] ), $l_is_tuple, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $tag, 3 ] ), $l_is_hash, $l_is_obj );
+            $builder->emit_label($l_is_array);
+            $self->_emit_runtime_dump_list( $val_s, $indent_s, ord('['), ord(']') );
+            $builder->emit( 'leave_func', 'void', [0] );
+            $builder->emit_label($l_is_tuple);
+            $self->_emit_runtime_dump_list( $val_s, $indent_s, ord('('), ord(')') );
+            $builder->emit( 'leave_func', 'void', [0] );
+            $builder->emit_label($l_is_hash);
+            $self->_emit_runtime_dump_hash( $val_s, $indent_s );
+            $builder->emit( 'leave_func', 'void', [0] );
+            $builder->emit_label($l_is_obj);
+            $builder->emit( 'intrinsic_print', 'void',
+                [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string('{"type":"Object"}') ] ) ] );
+            $builder->emit( 'leave_func', 'void', [0] );
+        }
+
+        method _emit_runtime_dump_list( $val_s, $indent_s, $open, $close ) {
+            my $val = $builder->emit( 'local_load', 'ptr', [$val_s] );
+            $builder->emit( 'shadow_push',          'void', [$val] );
+            $builder->emit( 'intrinsic_print_char', 'void', [$open] );
+            my $qword = $builder->emit( 'load_mem_disp', 'i64', [ $val,   0 ] );
+            my $count = $builder->emit( 'shr',           'i64', [ $qword, 2 ] );
+            my $i_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $i_s, 0 ] );
+            my $l_loop = $builder->new_label();
+            my $l_done = $builder->new_label();
+            $builder->emit_label($l_loop);
+            my $i = $builder->emit( 'local_load', 'i64', [$i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $count ] ), $l_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $l_no_comma = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $i, 0 ] ), $l_no_comma, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(", ") ] ) ] );
+            $builder->emit_label($l_no_comma);
+            my $curr_val = $builder->emit( 'local_load', 'ptr', [$val_s] );
+            my $elem_ptr
+                = $builder->emit( 'add', 'ptr', [ $curr_val, $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $i, 8 ] ) ] ) ] );
+            my $elem        = $builder->emit( 'load_mem_disp', 'i64', [ $elem_ptr, 0 ] );
+            my $next_indent = $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$indent_s] ), 2 ] );
+            $builder->emit( 'call_func', 'void', [ 'M_dump_recursive', $elem, $next_indent ] );
+            $builder->emit( 'local_store', 'void', [ $i_s, $builder->emit( 'add', 'i64', [ $i, 1 ] ) ] );
+            $builder->emit_jump($l_loop);
+            $builder->emit_label($l_done);
+            $builder->emit( 'intrinsic_print_char', 'void', [$close] );
+            $builder->emit( 'shadow_pop',           'void', [] );
+        }
+
+        method _emit_runtime_dump_hash( $val_s, $indent_s ) {
+            my $val = $builder->emit( 'local_load', 'ptr', [$val_s] );
+            $builder->emit( 'shadow_push',          'void', [$val] );
+            $builder->emit( 'intrinsic_print_char', 'void', [ ord('{') ] );
+            my $keys_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $keys_s, $builder->emit( 'call_func', 'ptr', [ 'M_hash_keys', $val ] ) ] );
+            my $keys = $builder->emit( 'local_load', 'ptr', [$keys_s] );
+            $builder->emit( 'shadow_push', 'void', [$keys] );
+            my $qword = $builder->emit( 'load_mem_disp', 'i64', [ $keys,  0 ] );
+            my $count = $builder->emit( 'shr',           'i64', [ $qword, 2 ] );
+            my $i_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $i_s, 0 ] );
+            my $l_loop = $builder->new_label();
+            my $l_done = $builder->new_label();
+            $builder->emit_label($l_loop);
+            my $i = $builder->emit( 'local_load', 'i64', [$i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $count ] ), $l_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $l_no_comma = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $i, 0 ] ), $l_no_comma, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(", ") ] ) ] );
+            $builder->emit_label($l_no_comma);
+            my $curr_keys = $builder->emit( 'local_load', 'ptr', [$keys_s] );
+            my $key_ptr
+                = $builder->emit( 'add', 'ptr', [ $curr_keys, $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $i, 8 ] ) ] ) ] );
+            my $key         = $builder->emit( 'load_mem_disp', 'i64', [ $key_ptr, 0 ] );
+            my $next_indent = $builder->emit( 'add', 'i64', [ $builder->emit( 'local_load', 'i64', [$indent_s] ), 2 ] );
+            $builder->emit( 'call_func', 'void', [ 'M_dump_recursive', $key, $next_indent ] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string(": ") ] ) ] );
+            my $curr_hash = $builder->emit( 'local_load', 'ptr', [$val_s] );
+            my $value     = $builder->emit( 'call_func',  'Any', [ 'M_hash_lookup', $curr_hash, $key ] );
+            $builder->emit( 'call_func', 'void', [ 'M_dump_recursive', $value, $next_indent ] );
+            $builder->emit( 'local_store', 'void', [ $i_s, $builder->emit( 'add', 'i64', [ $i, 1 ] ) ] );
+            $builder->emit_jump($l_loop);
+            $builder->emit_label($l_done);
+            $builder->emit( 'intrinsic_print_char', 'void', [ ord('}') ] );
+            $builder->emit( 'shadow_pop',           'void', [] );
+            $builder->emit( 'shadow_pop',           'void', [] );
         }
 
         method inject_runtime_new_fiber() {
@@ -2390,7 +2591,7 @@ package Brocken::Compiler::Lowering {
 
             # Emit source location trace if line number is present
             if ( $node->line > 0 ) {
-                $builder->emit( 'source_loc', 'void', [ $node->line, $node->col ] );
+                $builder->emit( 'source_loc', 'void', [ $node->line, $node->col, $node->file ] );
             }
             my $m = "lower_$nt";
             return $self->$m($node) if $self->can($m);
@@ -2417,8 +2618,18 @@ package Brocken::Compiler::Lowering {
             $self->inject_runtime();
             $self->_emit_runtime_init_sub();
             $self->register_classes($nodes);
-            my @main_statements;
 
+            for my $n (@$nodes) {
+                if ( $n isa Brocken::AST::Stmt::OurDecl ) {
+                    my $name = $n->name;
+                    if ( !exists $our_vars{$name} ) {
+                        $our_vars{$name} = $our_var_next_offset;
+                        $our_var_next_offset += 8;
+                    }
+                    $current_scope->define( $name, $n->type, 0, undef, undef, undef, $our_vars{$name} ) unless $current_scope->resolve($name);
+                }
+            }
+            my @main_statements;
             for my $n (@$nodes) {
                 if ( $n isa Brocken::AST::OOP::Method || $n isa Brocken::AST::OOP::ClassDecl || $n isa Brocken::AST::NativeDecl ) {
                     $self->lower($n);
@@ -2551,6 +2762,22 @@ package Brocken::Compiler::Lowering {
             return ( $builder->emit( 'load_mem_disp', $node->type, [ $sb, 4096 + ( $idx * 8 ) ] ), $node->type );
         }
 
+        method lower_OurDecl($node) {
+            my $name = $node->name;
+            if ( !exists $our_vars{$name} ) {
+                $our_vars{$name} = $our_var_next_offset;
+                $our_var_next_offset += 8;
+                die "Too many global variables" if $our_var_next_offset > 1024;
+            }
+            my $off = $our_vars{$name};
+            my ( $vr, $vt ) = $self->lower( $node->value );
+            $builder->emit( 'store_iso_disp', 'void', [ $off, $vr ] );
+            if ( !$current_scope->has_local_symbol($name) ) {
+                $current_scope->define( $name, $node->type eq 'Any' ? $vt : $node->type, 0, undef, undef, undef, $off );
+            }
+            return ( undef, 'void' );
+        }
+
         method lower_Assignment($node) {
             my ( $vr, $vt ) = $self->lower( $node->value );
             if ( $node->name isa Brocken::AST::Expr::IndexExpr ) {
@@ -2669,6 +2896,81 @@ package Brocken::Compiler::Lowering {
 
         method lower_BinOp($node) {
             if ( $node->op eq '&&' || $node->op eq '||' || $node->op eq '//' ) { return $self->_lower_logical($node); }
+            if ( $node->op eq '..' || $node->op eq '...' ) {
+                my ( $lr, $lt ) = $self->lower( $node->left );
+                $builder->emit( 'shadow_push', 'void', [$lr] );
+                my ( $rr, $rt ) = $self->lower( $node->right );
+                $builder->emit( 'shadow_push', 'void', [$rr] );
+                
+                # Untag both operands: (val - 1) / 2
+                my $l_val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $lr, 1 ] ), 2 ] );
+                my $r_val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $rr, 1 ] ), 2 ] );
+                
+                # diff = r_val - l_val
+                my $diff = $builder->emit( 'sub', 'i64', [ $r_val, $l_val ] );
+                # count = diff + 1
+                my $count = $builder->emit( 'add', 'i64', [ $diff, 1 ] );
+                
+                my $is_empty = $builder->emit( 'cmp_lt', 'Int', [ $r_val, $l_val ] );
+                my $count_slot = $driver->alloc_local_slot();
+                my $l_nonempty = $builder->new_label();
+                my $l_end = $builder->new_label();
+                $builder->emit_cond_br( $is_empty, $l_end, $l_nonempty );
+                
+                # If empty, store 0
+                $builder->emit('local_store', 'void', [$count_slot, $builder->emit('constant', 'i64', [0])]);
+                $builder->emit_jump($l_end);
+                
+                # If non-empty, store count
+                $builder->emit_label($l_nonempty);
+                $builder->emit('local_store', 'void', [$count_slot, $count]);
+                
+                $builder->emit_label($l_end);
+                my $final_count = $builder->emit('local_load', 'i64', [$count_slot]);
+                
+                # Allocate Array: size = 8 + final_count * 8
+                my $size = $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $final_count, 8 ] ) ] );
+                my $arr = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $size ] );
+                
+                # Tag Array: (final_count << 2) | 1
+                my $tag = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $final_count, 2 ] ), 1 ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $arr, 0, $tag ] );
+                
+                # Loop and fill
+                my $idx_s = $driver->alloc_local_slot();
+                $builder->emit('local_store', 'void', [$idx_s, $builder->emit('constant', 'i64', [0])]);
+                
+                my $l_loop_cond = $builder->new_label();
+                my $l_loop_body = $builder->new_label();
+                my $l_loop_end = $builder->new_label();
+                
+                $builder->emit_jump($l_loop_cond);
+                
+                $builder->emit_label($l_loop_body);
+                my $idx = $builder->emit('local_load', 'i64', [$idx_s]);
+                
+                # tagged_val = ((l_val + idx) << 1) | 1
+                my $raw_val = $builder->emit('add', 'i64', [$l_val, $idx]);
+                my $tagged_val = $builder->emit('or', 'i64', [ $builder->emit('shl', 'i64', [$raw_val, 1]), 1 ]);
+                
+                # offset = 8 + idx * 8
+                my $off = $builder->emit('add', 'i64', [ 8, $builder->emit('mul', 'i64', [$idx, 8]) ]);
+                my $ptr = $builder->emit('add', 'ptr', [$arr, $off]);
+                $builder->emit('store_mem_disp', 'void', [$ptr, 0, $tagged_val]);
+                
+                my $next_idx = $builder->emit('add', 'i64', [$idx, 1]);
+                $builder->emit('local_store', 'void', [$idx_s, $next_idx]);
+                
+                $builder->emit_label($l_loop_cond);
+                my $chk_idx = $builder->emit('local_load', 'i64', [$idx_s]);
+                $builder->emit_cond_br( $builder->emit('cmp_lt', 'Int', [$chk_idx, $final_count]), $l_loop_body, $l_loop_end );
+                
+                $builder->emit_label($l_loop_end);
+                
+                $builder->emit( 'shadow_pop', 'void', [] );
+                $builder->emit( 'shadow_pop', 'void', [] );
+                return ( $arr, 'Array' );
+            }
             if ( $node->op eq '.' ) {
                 my ( $lr, $lt ) = $self->lower( $node->left );
                 $builder->emit( 'shadow_push', 'void', [$lr] );
@@ -2762,15 +3064,101 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_While($node) {
-            my $l1 = $builder->new_label();
-            my $l2 = $builder->new_label();
-            my $l3 = $builder->new_label();
-            $builder->emit_label($l1);
-            $builder->emit_cond_br( $self->_emit_bool_test( ( $self->lower( $node->condition ) )[0] ), $l2, $l3 );
-            $builder->emit_label($l2);
+            my $redo_l = $builder->new_label();
+            my $next_l = $builder->new_label(); # Condition
+            my $last_l = $builder->new_label();
+            
+            push @loop_stack, { next_l => $next_l, last_l => $last_l, redo_l => $redo_l };
+            $builder->emit_jump($next_l);
+            $builder->emit_label($redo_l);
             $self->lower( $node->body );
-            $builder->emit_jump($l1);
-            $builder->emit_label($l3);
+            $builder->emit_label($next_l);
+            $builder->emit_cond_br( $self->_emit_bool_test( ( $self->lower( $node->condition ) )[0] ), $redo_l, $last_l );
+            $builder->emit_label($last_l);
+            pop @loop_stack;
+            return ( undef, 'void' );
+        }
+
+        method lower_For($node) {
+            my ( $source_reg, $source_type ) = $self->lower( $node->source );
+            
+            # For now, only support Array source
+            die "For loop source must be an Array" unless $source_type eq 'Array';
+            
+            my $l_cond = $builder->new_label();
+            my $l_next = $builder->new_label();
+            my $l_redo = $builder->new_label();
+            my $l_last = $builder->new_label();
+            
+            my $idx_s = $driver->alloc_local_slot();
+            $builder->emit('local_store', 'void', [$idx_s, $builder->emit('constant', 'i64', [0])]);
+            
+            push @loop_stack, { next_l => $l_next, last_l => $l_last, redo_l => $l_redo };
+            
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("LoopStart\n") ] ) ] );
+            
+            # Initial condition check
+            $builder->emit_jump($l_cond);
+            
+            $builder->emit_label($l_redo);
+            # Get element
+            my $idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+            # Ptr to element: source + 8 + (idx * 8)
+            my $ptr = $builder->emit( 'add', 'ptr', [ $source_reg, $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $idx, 8 ] ), 8 ] ) ] );
+            my $val = $builder->emit( 'load_mem_disp', 'Any', [ $ptr, 0 ] );
+            
+            # Define loop variable
+            if ( $node->is_my ) {
+                my $sl = $driver->alloc_local_slot();
+                $current_scope->define( $node->var, 'Any', 0, undef, $sl );
+                $builder->emit( 'local_store', 'void', [ $sl, $val ] );
+            }
+            
+            $self->lower( $node->body );
+            
+            # Fallthrough to increment
+            $builder->emit_jump($l_next);
+            
+            $builder->emit_label($l_next);
+            my $curr_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+            my $next_idx = $builder->emit( 'add', 'i64', [ $curr_idx, 1 ] );
+            $builder->emit( 'local_store', 'void', [$idx_s, $next_idx ] );
+            $builder->emit_jump($l_cond);
+            
+            $builder->emit_label($l_cond);
+            # Re-check condition: i < len(source)
+            # Length = (first_word >> 2)
+            my $raw_len = $builder->emit( 'load_mem_disp', 'i64', [ $source_reg, 0 ] );
+            my $len = $builder->emit( 'shr', 'i64', [ $raw_len, 2 ] );
+
+            # Debug print length
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("Len: ") ] ) ] );
+            $builder->emit( 'call_func', 'void', [ 'M_print_int', $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $len, 1 ] ), 1 ] ) ] );
+            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
+
+            my $chk_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $chk_idx, $len ] ), $l_redo, $l_last );
+            
+            $builder->emit_label($l_last);
+            pop @loop_stack;
+            return ( undef, 'void' );
+        }
+
+        method lower_Next($node) {
+            die "No active loop" unless @loop_stack;
+            $builder->emit_jump($loop_stack[-1]{next_l});
+            return ( undef, 'void' );
+        }
+
+        method lower_Last($node) {
+            die "No active loop" unless @loop_stack;
+            $builder->emit_jump($loop_stack[-1]{last_l});
+            return ( undef, 'void' );
+        }
+
+        method lower_Redo($node) {
+            die "No active loop" unless @loop_stack;
+            $builder->emit_jump($loop_stack[-1]{redo_l});
             return ( undef, 'void' );
         }
 
@@ -3200,7 +3588,13 @@ package Brocken::Compiler::Lowering {
             return ( $res, 'Any' );
         }
         method lower_Eval($node) { die "Eval is disabled.\n"; }
-        method lower_Use($node)  { return $self->lower_Require($node); }
+
+        method lower_Yada($node) {
+            my $msg = $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("Unimplemented ...") ] );
+            $builder->emit( 'call_func', 'void', [ 'M_unwind', $msg ] );
+            return ( undef, 'void' );
+        }
+        method lower_Use($node) { return $self->lower_Require($node); }
 
         method lower_Require($node) {
             my $package = $node->package;

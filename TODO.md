@@ -1,3 +1,50 @@
+# Current task list:
+
+We wrote a compiler in pure perl. Implement the following features:
+
+ - [ ] __LINE__, __FILE__, __PACKAGE__, __CLASS__, __ENND__, __DATA__,etc
+ - [x] Add the ability to handle `#line` directives like perl, C, etc. Implement a nur
+ - [ ] Enhance our RC Immix implementation with a nursery for short lived allocations.
+ - [ ] Implement `our` for package level globals.
+ - [ ] `dump` keyword that pretty prints vars (scalars, lists, hashes, and even class objects); maybe in JSON?
+ - [x] `...` yada-yada stub from Perl
+ - [ ] Implement these loop keywords (they should behave exactly as they do in perl 5.40):
+     - [x] `next`
+     - [x] `last`
+     - [x] `redo`
+     - [x] `for` loop.  All of these examples should work:
+         ```perl
+            for (@ary) { s/foo/bar/ }
+
+            for my $elem (@elements) {
+                $elem *= 2;
+            }
+
+            for $count (reverse(1..10), "BOOM") {
+                print $count, "\n";
+                sleep(1);
+            }
+
+            for (1..15) { print "Merry Christmas\n"; }
+
+            for $item ('a', 'b', 'c') {
+                print "Item: $item\n";
+            }
+
+            for my ($foo, $bar, $baz) (@list) {
+                # do something three-at-a-time
+            }
+
+            for my ($key, $value) (%hash) {
+                # iterate over the hash
+                # The hash is immediately copied to a flat list before the loop
+                # starts. The list contains copies of keys but aliases of values.
+                # This is the same behaviour as for $var (%hash) {...}
+            }
+         ```
+
+See our TODO.md file for moe.
+
 # Language Milestones & TODO
 
 ## Milestone 0: The Binary Foundation
@@ -60,7 +107,7 @@
 - [x] Reverse trampolines: Safe ABI boundaries for Host-to-Guest callback execution.
 
 ## Milestone 6: Developer Experience & Correctness
-- [ ] Exception Stack Traces: Tie `M_unwind` into the DWARF line-tables to produce human-readable traces mapping `rip` to `source_locs`.
+- [x] Exception Stack Traces: Tie `M_unwind` into the DWARF line-tables to produce human-readable traces mapping `rip` to `source_locs`.
 - [ ] Compiler Test Suite and Fuzzing: Expand tests to stress-test the Register Allocator.
 - [ ] IR-Diff Tool: Utility to verify output consistency between compiler versions.
 - [ ] LSP Stub: Basic IDE support for symbol definitions and type tooltips using POD6.

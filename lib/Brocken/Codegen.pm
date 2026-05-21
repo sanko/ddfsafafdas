@@ -46,7 +46,7 @@ class Brocken::Codegen {
                     }
                 }
             }
-            elsif ( $op eq 'source_loc' )  { $driver->push_source_loc( length( $as->code ), $inst->{args}[0], $inst->{args}[1] ); }
+            elsif ( $op eq 'source_loc' )  { $driver->push_source_loc( length( $as->code ), $inst->{args}[0], $inst->{args}[1], $inst->{args}[2] ); }
             elsif ( $op =~ /^intrinsic_/ ) { $target->compile_intrinsic( $as, $inst, \%reg_map, $driver ); }
             else                           { $target->emit_op( $as, $inst, \%reg_map, $driver ); }
         }
@@ -70,7 +70,11 @@ class Brocken::Codegen {
             my @locs     = sort { $a->{offset} <=> $b->{offset} } $driver->source_locs;
             my $rlt_data = '';
             for my $loc (@locs) {
-                $rlt_data .= pack( 'Q< Q< Q<', $loc->{offset}, $loc->{line}, $loc->{col} );
+                my $file_rva = 0;
+                if ( defined $loc->{file} ) {
+                    $file_rva = $driver->data_segment->add_string( $loc->{file} );
+                }
+                $rlt_data .= pack( 'Q< Q< Q< Q<', $loc->{offset}, $loc->{line}, $loc->{col}, $file_rva );
             }
             my $rlt_off = $driver->data_segment->add_raw_bytes($rlt_data);
             my $raw     = $driver->data_segment->raw_data();
