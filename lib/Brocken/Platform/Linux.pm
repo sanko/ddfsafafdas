@@ -37,6 +37,95 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'x0' );
             }
         }
+        elsif ( $op eq 'intrinsic_get_pid' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->mov_imm( 'rax', 39 );      # sys_getpid
+                $as->syscall();
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64: sys_getpid is 172
+                $as->mov_imm( 'x8', 172 );
+                $as->syscall(1);
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_system_filetime' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->sub_imm( 'rsp', 16 );     # space for struct timespec (16 bytes)
+                $as->mov_imm( 'rax', 228 );    # sys_clock_gettime
+                $as->mov_imm( 'rdi', 0 );      # CLOCK_REALTIME
+                $as->mov_reg( 'rsi', 'rsp' );
+                $as->syscall();
+                $as->load_reg_mem( 'rax', 'rsp', 0 );    # rax = tv_sec (Unix epoch seconds)
+                $as->add_imm( 'rsp', 16 );
+
+                # Scale to Windows FILETIME structure: epoch * 10000000 + 116444736000000000
+                $as->mov_imm( 'r10', 10000000 );
+                $as->mul_reg( 'rax', 'r10' );
+                $as->mov_imm( 'r11', 116444736000000000 );
+                $as->add_reg( 'rax', 'r11' );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64: sys_clock_gettime is 113
+                $as->sub_imm( 'sp', 16 );
+                $as->mov_imm( 'x8', 113 );
+                $as->mov_imm( 'x0', 0 );     # CLOCK_REALTIME
+                $as->mov_reg( 'x1', 'sp' );
+                $as->syscall(1);
+                $as->load_reg_mem( 'x0', 'sp', 0 );    # x0 = tv_sec
+                $as->add_imm( 'sp', 16 );
+                $as->mov_imm( 'x16', 10000000 );
+                $as->mul_reg( 'x0', 'x0', 'x16' );
+                $as->mov_imm( 'x17', 116444736000000000 );
+                $as->add_reg( 'x0', 'x0', 'x17' );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_module_filename' ) {
+            my $d    = $reg_map->{ $inst->{dest} };
+            my $buf  = $reg_map->{ $inst->{args}[0] };
+            my $val1 = unpack( 'Q<', "/proc/se" );
+            my $val2 = unpack( 'Q<', "lf/exe\0\0" );
+            if ( $arch eq 'x64' ) {
+                $as->sub_imm( 'rsp', 16 );
+                $as->mov_imm( 'r10', $val2 );
+                $as->store_mem_disp_reg( 'rsp', 8, 'r10' );
+                $as->mov_imm( 'r10', $val1 );
+                $as->store_mem_disp_reg( 'rsp', 0, 'r10' );
+                $as->mov_imm( 'rax', 89 );       # sys_readlink
+                $as->mov_reg( 'rdi', 'rsp' );    # pathname
+                $as->mov_reg( 'rsi', $buf );     # buf
+                $as->mov_imm( 'rdx', 512 );      # bufsiz
+                $as->syscall();
+                $as->add_imm( 'rsp', 16 );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64: readlinkat is 78
+                # readlinkat(AT_FDCWD, pathname, buf, bufsiz)
+                $as->sub_imm( 'sp', 16 );
+                $as->mov_imm( 'x16', $val2 );
+                $as->store_mem_disp_reg( 'sp', 8, 'x16' );
+                $as->mov_imm( 'x16', $val1 );
+                $as->store_mem_disp_reg( 'sp', 0, 'x16' );
+                $as->mov_imm( 'x8',  78 );     # sys_readlinkat
+                $as->mov_imm( 'x0', -100 );    # AT_FDCWD
+                $as->mov_reg( 'x1', 'sp' );    # pathname
+                $as->mov_reg( 'x2', $buf );    # buf
+                $as->mov_imm( 'x3', 512 );     # bufsiz
+                $as->syscall(1);
+                $as->add_imm( 'sp', 16 );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_cmd_line' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( $d, 0 );
+        }
         elsif ( $op eq 'intrinsic_get_stdout_handle' ) {
             my $d = $reg_map->{ $inst->{dest} };
             $as->mov_imm( $d, 1 );

@@ -37,7 +37,28 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
         my $op    = $inst->{op};
         my $v     = sub { $self->val( $reg_map, shift ) };
         my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
-        if ( $op eq 'intrinsic_get_text_base' ) {
+        if ( $op eq 'intrinsic_save_stack_ptr' ) {
+            $as->lea_rva( 'r11', "DATA:" . $inst->{args}[0] );
+            $as->store_mem_disp_reg( 'r11', 0, 'rsp' );
+            return;
+        }
+        elsif ( $op eq 'intrinsic_get_saved_stack_ptr' ) {
+            $as->lea_rva( 'r11', "DATA:" . $inst->{args}[0] );
+            $as->load_reg_mem( $d_reg, 'r11', 0 );
+            return;
+        }
+        elsif ( $op eq 'intrinsic_get_unix_envp' ) {
+            $as->lea_rva( 'r11', "DATA:" . $inst->{args}[0] );
+            $as->load_reg_mem( 'r10', 'r11', 0 );    # r10 = saved RSP
+            $as->load_reg_mem( 'rax', 'r10', 0 );    # rax = argc
+            $as->mov_imm( 'r11', 8 );
+            $as->mul_reg( 'rax', 'r11' );
+            $as->add_reg( 'rax', 'r10' );
+            $as->add_imm( 'rax', 16 );
+            $as->mov_reg( $d_reg, 'rax' );
+            return;
+        }
+        elsif ( $op eq 'intrinsic_get_text_base' ) {
             $as->lea_rva( $d_reg, 'TEXT:0', $driver->text_rva );
             return;
         }

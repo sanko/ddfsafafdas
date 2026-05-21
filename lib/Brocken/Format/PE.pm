@@ -21,7 +21,11 @@ package Brocken::Format::PE {
             ReadFile                    => 88,
             GetFileSizeEx               => 96,
             GetEnvironmentStringsA      => 104,
-            FreeEnvironmentStringsA     => 112
+            FreeEnvironmentStringsA     => 112,
+            GetCurrentProcessId         => 120,
+            GetModuleFileNameA          => 128,
+            GetSystemTimeAsFileTime     => 136,
+            GetCommandLineA             => 144
         );
 
         method import_rva($n) {
@@ -129,17 +133,15 @@ package Brocken::Format::PE {
             );
 
             # Data Directory Entries (16 standard entries)
-            #~ my ($edata_data, $edata_rva, $edata_size) = ('', 0, 0);
-            #~ if ($self->type eq 'shared') {
-            #~ my $edata = $l->get('.edata');
-            #~ }
-            print $fh pack( 'L< L<', $edata_rva,       $edata_size );    # 0: Export
-            print $fh pack( 'L< L<', $idata_rva + 256, 40 );             # 1: Import
-            print $fh pack( 'L< L<', 0,                0 );              # 2: Resource
-            print $fh pack( 'L< L<', $pdata_rva,       $pdata_size );    # 3: Exception (.pdata)
-            print $fh ( pack( 'L< L<', 0, 0 ) x 8 );                     # 4-11: reserved
-            print $fh pack( 'L< L<', $idata_rva, 64 );                   # 12: IAT
-            print $fh ( pack( 'L< L<', 0, 0 ) x 3 );                     # 13-15: reserved
+            my $iat_len = ( scalar( keys %IMPORTS ) + 1 ) * 8;
+            my $dir_rva = $idata_rva + $iat_len * 2;
+            print $fh pack( 'L< L<', $edata_rva, $edata_size );     # 0: Export
+            print $fh pack( 'L< L<', $dir_rva,   40 );              # 1: Import
+            print $fh pack( 'L< L<', 0,          0 );               # 2: Resource
+            print $fh pack( 'L< L<', $pdata_rva, $pdata_size );     # 3: Exception (.pdata)
+            print $fh ( pack( 'L< L<', 0, 0 ) x 8 );                # 4-11: reserved
+            print $fh pack( 'L< L<', $idata_rva, $iat_len - 8 );    # 12: IAT
+            print $fh ( pack( 'L< L<', 0, 0 ) x 3 );                # 13-15: reserved
 
             for my $s ( $l->sections ) {
                 my $raw_size = ( $s->{size} + $fa - 1 ) & ~( $fa - 1 );
@@ -173,21 +175,32 @@ package Brocken::Format::PE {
         }
 
         method _build_idata_raw($base_rva) {
-            my @funcs = sort { $IMPORTS{$a} <=> $IMPORTS{$b} } keys %IMPORTS;
+            my @funcs        = sort { $IMPORTS{$a} <=> $IMPORTS{$b} } keys %IMPORTS;
+            my $iat_len      = ( scalar(@funcs) + 1 ) * 8;
+            my $ilt_len      = $iat_len;
+            my $dir_len      = 20;
+            my $null_dir_len = 20;
+            my $dll_name     = "kernel32.dll\0";
+            my $dll_name_len = length($dll_name);
+            my $hints_rva    = $base_rva + $iat_len + $ilt_len + $dir_len + $null_dir_len + $dll_name_len;
             my ( $iat, $hints ) = ( '', '' );
-            my $hints_rva = $base_rva + 320;
+
             for my $f (@funcs) {
                 $iat   .= pack( 'Q<', $hints_rva + length($hints) );
                 $hints .= pack( 'S<', 0 ) . $f . "\0";
                 $hints .= "\0" if length($hints) % 2 != 0;
             }
             $iat .= pack( 'Q<', 0 );
-            my $ilt   = $iat;
-            my $dir   = pack( 'L< L< L< L< L<', $base_rva + 128, 0, 0, $base_rva + 296, $base_rva );
-            my $block = $iat . ( "\0" x ( 128 - length($iat) ) ) . $ilt . ( "\0" x ( 128 - length($ilt) ) ) . $dir . ( "\0" x 20 );
-            $block .= "kernel32.dll\0";
-            $block .= ( "\0" x ( 320 - length($block) ) ) . $hints;
-            return $block . ( "\0" x ( 2048 - length($block) ) );
+            my $ilt          = $iat;
+            my $ilt_rva      = $base_rva + $iat_len;
+            my $dir_rva      = $ilt_rva + $ilt_len;
+            my $dll_name_rva = $dir_rva + $dir_len + $null_dir_len;
+            my $dir          = pack( 'L< L< L< L< L<', $ilt_rva, 0, 0, $dll_name_rva, $base_rva );
+            my $null_dir     = pack( 'L< L< L< L< L<', 0,        0, 0, 0,             0 );
+            my $block        = $iat . $ilt . $dir . $null_dir . $dll_name . $hints;
+            my $pad_len      = 2048 - length($block);
+            $pad_len = 0 if $pad_len < 0;
+            return $block . ( "\0" x $pad_len );
         }
 
         method _build_xdata () {

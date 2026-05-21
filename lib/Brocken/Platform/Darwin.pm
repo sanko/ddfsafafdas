@@ -40,6 +40,100 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'x0' );
             }
         }
+        elsif ( $op eq 'intrinsic_get_pid' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->mov_imm( 'rax', 0x2000014 );    # sys_getpid
+                $as->syscall();
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64
+                $as->mov_imm( 'x16', 0x2000014 );    # sys_getpid
+                $as->syscall(1);
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_system_filetime' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->sub_imm( 'rsp', 16 );           # space for struct timeval
+                $as->mov_reg( 'rdi', 'rsp' );
+                $as->mov_imm( 'rsi', 0 );
+                $as->mov_imm( 'rax', 0x2000074 );    # sys_gettimeofday
+                $as->syscall();
+                $as->load_reg_mem( 'rax', 'rsp', 0 );    # rax = tv_sec
+                $as->load_reg_mem( 'rcx', 'rsp', 8 );    # rcx = tv_usec
+                $as->add_imm( 'rsp', 16 );
+
+                # Scale to FILETIME: (tv_sec * 10000000) + (tv_usec * 10) + 116444736000000000
+                $as->mov_imm( 'r10', 10000000 );
+                $as->mul_reg( 'rax', 'r10' );
+                $as->mov_imm( 'r10', 10 );
+                $as->mul_reg( 'rcx', 'r10' );
+                $as->add_reg( 'rax', 'rcx' );
+                $as->mov_imm( 'r11', 116444736000000000 );
+                $as->add_reg( 'rax', 'r11' );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64
+                $as->sub_imm( 'sp', 16 );            # space for struct timeval
+                $as->mov_reg( 'x0', 'sp' );
+                $as->mov_imm( 'x1',  0 );
+                $as->mov_imm( 'x16', 0x2000074 );    # sys_gettimeofday
+                $as->syscall(1);
+                $as->load_reg_mem( 'x0', 'sp', 0 );    # x0 = tv_sec
+                $as->load_reg_mem( 'x1', 'sp', 8 );    # x1 = tv_usec
+                $as->add_imm( 'sp', 16 );
+                $as->mov_imm( 'x16', 10000000 );
+                $as->mul_reg( 'x0', 'x0', 'x16' );
+                $as->mov_imm( 'x16', 10 );
+                $as->mul_reg( 'x1', 'x1', 'x16' );
+                $as->add_reg( 'x0', 'x0', 'x1' );
+                $as->mov_imm( 'x17', 116444736000000000 );
+                $as->add_reg( 'x0', 'x0', 'x17' );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_module_filename' ) {
+            my $d   = $reg_map->{ $inst->{dest} };
+            my $buf = $reg_map->{ $inst->{args}[0] };
+            if ( $arch eq 'x64' ) {
+
+                # First get the PID
+                $as->mov_imm( 'rax', 0x2000014 );    # sys_getpid
+                $as->syscall();
+                $as->mov_reg( 'rsi', 'rax' );        # pid into second arg rsi
+                $as->mov_imm( 'rdi', 2 );            # PROC_INFO_CALL_PIDINFO
+                $as->mov_imm( 'rdx', 11 );           # PROC_PIDPATHINFO
+                $as->mov_imm( 'r10', 0 );            # arg
+                $as->mov_reg( 'r8', $buf );          # buffer
+                $as->mov_imm( 'r9',  512 );          # buffersize
+                $as->mov_imm( 'rax', 0x2000150 );    # sys_proc_info
+                $as->syscall();
+                $as->mov_reg( $d, 'rax' );           # returns length or status
+            }
+            else {
+                # ARM64
+                # First get the PID
+                $as->mov_imm( 'x16', 0x2000014 );    # sys_getpid
+                $as->syscall(1);
+                $as->mov_reg( 'x1', 'x0' );          # pid into second arg x1
+                $as->mov_imm( 'x0', 2 );             # PROC_INFO_CALL_PIDINFO
+                $as->mov_imm( 'x2', 11 );            # PROC_PIDPATHINFO
+                $as->mov_imm( 'x3', 0 );             # arg
+                $as->mov_reg( 'x4', $buf );          # buffer
+                $as->mov_imm( 'x5',  512 );          # buffersize
+                $as->mov_imm( 'x16', 0x2000150 );    # sys_proc_info
+                $as->syscall(1);
+                $as->mov_reg( $d, 'x0' );            # returns length or status
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_cmd_line' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( $d, 0 );
+        }
         elsif ( $op eq 'intrinsic_get_stdout_handle' ) {
             my $d = $reg_map->{ $inst->{dest} };
             $as->mov_imm( $d, 1 );

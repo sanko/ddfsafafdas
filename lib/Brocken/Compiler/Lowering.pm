@@ -31,6 +31,7 @@ package Brocken::Compiler::Lowering {
 
         # --- First-class undef pointer ---
         field $undef_ptr_offset = undef;
+        field $stack_ptr_offset = undef;
         method class_info ()          { return %class_info }
         method exported_funcs ()      { return \@exported_funcs; }
         method skip_runtime           {$_skip_runtime}
@@ -56,6 +57,12 @@ package Brocken::Compiler::Lowering {
 
             # Default / Topic Variable $_
             $current_scope->define( '$_', 'Any', 0, undef, undef, undef, 216 );
+
+            # Special variables
+            $current_scope->define( '$^X', 'String', 0, undef, undef, undef, 224 );
+            $current_scope->define( '$$',  'Int',    0, undef, undef, undef, 232 );
+            $current_scope->define( '$0',  'String', 0, undef, undef, undef, 240 );
+            $current_scope->define( '$^T', 'Int',    0, undef, undef, undef, 248 );
         }
 
         # --- Exact Write Barrier ---
@@ -237,6 +244,7 @@ package Brocken::Compiler::Lowering {
             $self->inject_runtime_gc_alloc();
             #
             $self->inject_runtime_init_env();
+            $self->inject_runtime_init_argv();
             #
             $self->inject_runtime_print_int();
             $self->inject_runtime_print_any();
@@ -1022,8 +1030,63 @@ package Brocken::Compiler::Lowering {
             my $l_t1 = $builder->new_label();
             my $l_f1 = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $builder->emit( 'local_load', 'i64', [$v_slot] ), 1 ] ), $l_t1, $l_f1 );
+
+            # --- Non-integer branch (Pointer) ---
             $builder->emit_label($l_f1);
-            $builder->emit( 'leave_func', 'void', [ $builder->emit( 'local_load', 'i64', [$v_slot] ) ] );
+            my $ptr_val        = $builder->emit( 'local_load', 'ptr', [$v_slot] );
+            my $l_ptr_not_null = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $ptr_val, 0 ] ), $l_ptr_not_null, $l_undef );
+            $builder->emit_label($l_ptr_not_null);
+            my $hdr       = $builder->emit( 'load_mem_disp', 'i64', [ $ptr_val, -8 ] );
+            my $is_leaf   = $builder->emit( 'cmp_eq', 'Int', [ $builder->emit( 'shr', 'i64', [ $hdr, 62 ] ), 3 ] );
+            my $l_is_str  = $builder->new_label();
+            my $l_not_str = $builder->new_label();
+            $builder->emit_cond_br( $is_leaf, $l_is_str, $l_not_str );
+
+            # 1. String: already a string, return directly
+            $builder->emit_label($l_is_str);
+            $builder->emit( 'leave_func', 'void', [$ptr_val] );
+
+            # 2. Non-string heap structures: check first QWORD at +0 for tag bits
+            $builder->emit_label($l_not_str);
+            my $first      = $builder->emit( 'load_mem_disp', 'i64', [ $ptr_val, 0 ] );
+            my $tag_bits   = $builder->emit( 'and',           'i64', [ $first,   3 ] );
+            my $l_is_array = $builder->new_label();
+            my $l_is_tuple = $builder->new_label();
+            my $l_is_hash  = $builder->new_label();
+            my $l_is_obj   = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $tag_bits, 1 ] ), $l_is_array, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $tag_bits, 2 ] ), $l_is_tuple, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $tag_bits, 3 ] ), $l_is_hash, $l_is_obj );
+
+            # Array: return count
+            $builder->emit_label($l_is_array);
+            my $arr_cnt        = $builder->emit( 'shr',       'i64', [ $first, 2 ] );
+            my $tagged_arr_cnt = $builder->emit( 'or',        'i64', [ $builder->emit( 'shl', 'i64', [ $arr_cnt, 1 ] ), 1 ] );
+            my $arr_cnt_str    = $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $tagged_arr_cnt ] );
+            $builder->emit( 'leave_func', 'void', [$arr_cnt_str] );
+
+            # Tuple: return count
+            $builder->emit_label($l_is_tuple);
+            my $tup_cnt        = $builder->emit( 'shr',       'i64', [ $first, 2 ] );
+            my $tagged_tup_cnt = $builder->emit( 'or',        'i64', [ $builder->emit( 'shl', 'i64', [ $tup_cnt, 1 ] ), 1 ] );
+            my $tup_cnt_str    = $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $tagged_tup_cnt ] );
+            $builder->emit( 'leave_func', 'void', [$tup_cnt_str] );
+
+            # Hash: return count
+            $builder->emit_label($l_is_hash);
+            my $hash_cnt        = $builder->emit( 'load_mem_disp', 'i64', [ $ptr_val, 16 ] );
+            my $tagged_hash_cnt = $builder->emit( 'or',        'i64', [ $builder->emit( 'shl', 'i64', [ $hash_cnt, 1 ] ), 1 ] );
+            my $hash_cnt_str    = $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $tagged_hash_cnt ] );
+            $builder->emit( 'leave_func', 'void', [$hash_cnt_str] );
+
+            # Class Object: return descriptor
+            $builder->emit_label($l_is_obj);
+            $builder->emit( 'leave_func', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("Object") ] ) ] );
+
+            # --- Integer branch ---
             $builder->emit_label($l_t1);
             my $n    = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $builder->emit( 'local_load', 'i64', [$v_slot] ), 1 ] ), 2 ] );
             my $l_t2 = $builder->new_label();
@@ -1101,7 +1164,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit_jump($l3);
             $builder->emit_label($l4);
             $builder->emit( 'shadow_pop', 'void', [] );
-            $builder->emit( 'leave_func', 'void', [ $builder->emit( 'local_load', 'ptr', [$ns_p_slot] ) ] );
+            $builder->emit( 'leave_func', 'ptr',  [ $builder->emit( 'local_load', 'ptr', [$ns_p_slot] ) ] );
         }
 
         method _emit_runtime_init_sub() {
@@ -1184,6 +1247,73 @@ package Brocken::Compiler::Lowering {
                 # 6. Instantiate $_ as undef
                 my $undef_ptr = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
                 $builder->emit( 'store_iso_disp', 'void', [ 216, $undef_ptr ] );
+
+                # 7. Get current Process ID ($$)
+                my $raw_pid    = $builder->emit( 'intrinsic_get_pid', 'i64', [] );
+                my $tagged_pid = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $raw_pid, 1 ] ), 1 ] );
+                $builder->emit( 'store_iso_disp', 'void', [ 232, $tagged_pid ] );
+
+                # 8. Get executable path ($^X) & Program name ($0)
+                my $buf
+                    = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $builder->emit( 'constant', 'i64', [ 512 | hex("C000000000000000") ] ) ] );
+                my $len       = $builder->emit( 'intrinsic_get_module_filename', 'i64', [$buf] );
+                my $exec_path = $builder->emit( 'call_func', 'ptr', [ 'M_str_slice', $buf, $builder->emit( 'constant', 'i64', [0] ), $len ] );
+                $builder->emit( 'store_iso_disp', 'void', [ 224, $exec_path ] );    # $^X
+
+                # Settle $0 (We parse back to the last backslash to get the filename)
+                my $last_slash = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $last_slash, -1 ] );
+                my $i_slot = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $i_slot, 0 ] );
+                my $l_slash_loop = $builder->new_label();
+                my $l_slash_done = $builder->new_label();
+                $builder->emit_label($l_slash_loop);
+                my $i = $builder->emit( 'local_load', 'i64', [$i_slot] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $len ] ), $l_slash_done, $builder->new_label() );
+                $builder->emit_label( $builder->last_instruction->{false_l} );
+                my $char          = $builder->emit( 'load_mem_byte', 'Int', [ $buf,  $i ] );
+                my $is_slash      = $builder->emit( 'cmp_eq',        'Int', [ $char, ord('\\') ] );    # check backslash
+                my $l_store_slash = $builder->new_label();
+                my $l_skip_slash  = $builder->new_label();
+                $builder->emit_cond_br( $is_slash, $l_store_slash, $l_skip_slash );
+                $builder->emit_label($l_store_slash);
+                $builder->emit( 'local_store', 'void', [ $last_slash, $i ] );
+                $builder->emit_label($l_skip_slash);
+                $builder->emit( 'local_store', 'void', [ $i_slot, $builder->emit( 'add', 'i64', [ $i, 1 ] ) ] );
+                $builder->emit_jump($l_slash_loop);
+                $builder->emit_label($l_slash_done);
+                my $slash_idx   = $builder->emit( 'local_load', 'i64', [$last_slash] );
+                my $l_has_slash = $builder->new_label();
+                my $l_no_slash  = $builder->new_label();
+                my $l_prog_done = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $slash_idx, -1 ] ), $l_no_slash, $l_has_slash );
+                $builder->emit_label($l_no_slash);
+                $builder->emit( 'store_iso_disp', 'void', [ 240, $exec_path ] );
+                $builder->emit_jump($l_prog_done);
+                $builder->emit_label($l_has_slash);
+                my $start_idx = $builder->emit( 'add',       'i64', [ $slash_idx, 1 ] );
+                my $sub_len   = $builder->emit( 'sub',       'i64', [ $builder->emit( 'sub', 'i64', [ $len, $slash_idx ] ), 1 ] );
+                my $prog_name = $builder->emit( 'call_func', 'ptr', [ 'M_str_slice', $buf, $start_idx, $sub_len ] );
+                $builder->emit( 'store_iso_disp', 'void', [ 240, $prog_name ] );
+                $builder->emit_label($l_prog_done);
+
+                # 9. Get Startup Epoch ($^T)
+                my $raw_ft = $builder->emit( 'intrinsic_get_system_filetime', 'i64', [] );
+                my $epoch  = $builder->emit(
+                    'div', 'i64',
+                    [   $builder->emit( 'sub',      'i64', [ $raw_ft, $builder->emit( 'constant', 'i64', [116444736000000000] ) ] ),
+                        $builder->emit( 'constant', 'i64', [10000000] )
+                    ]
+                );
+                my $tagged_epoch = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $epoch, 1 ] ), 1 ] );
+                $builder->emit( 'store_iso_disp', 'void', [ 248, $tagged_epoch ] );
+
+                # 10. Instantiate and Populate @ARGV Array (Using Command Line parser)
+                #~ my $argv_arr = $builder->emit('call_func', 'ptr', ['M_gc_alloc', $builder->emit('constant', 'i64', [8])]);
+                #~ $builder->emit('store_mem_disp', 'void', [$argv_arr, 0, $builder->emit('constant', 'i64', [1])]); # tag count 0
+                #~ $builder->emit('store_iso_disp', 'void', [ 208, $argv_arr ]);
+                # Compile runtime bootstrap for ARGV splitting
+                $builder->emit( 'call_func', 'void', ['M_init_argv'] );
             }
             $builder->emit_jump($l_done);
             $builder->emit_label($l_done);
@@ -1751,6 +1881,15 @@ package Brocken::Compiler::Lowering {
         }
 
         method inject_runtime_init_env() {
+            if ( $driver->os eq 'win64' ) {
+                $self->inject_runtime_init_env_win64();
+            }
+            else {
+                $self->inject_runtime_init_env_unix();
+            }
+        }
+
+        method inject_runtime_init_env_win64() {
             $driver->reset_locals();
             $builder->emit_label('M_init_env');
             $builder->emit( 'enter_func', 'void', [] );
@@ -1838,6 +1977,314 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func',               'void', [] );
         }
 
+        method inject_runtime_init_env_unix() {
+            $driver->reset_locals();
+            $builder->emit_label('M_init_env');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $env_hash_slot = $driver->alloc_local_slot();
+            my $env_hash      = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('env_hash') ] );
+            $builder->emit( 'local_store', 'void', [ $env_hash_slot, $env_hash ] );
+            $builder->emit( 'shadow_push', 'void', [$env_hash] );
+            my $envp_ptr_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $envp_ptr_s, $builder->emit( 'intrinsic_get_unix_envp', 'ptr', [$stack_ptr_offset] ) ] );
+            my $l_loop = $builder->new_label();
+            my $l_done = $builder->new_label();
+            $builder->emit_label($l_loop);
+            my $envp_ptr = $builder->emit( 'local_load',    'ptr', [$envp_ptr_s] );
+            my $env_str  = $builder->emit( 'load_mem_disp', 'ptr', [ $envp_ptr, 0 ] );
+
+            # If env_str == NULL, we are done
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $env_str, 0 ] ), $l_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+
+            # We have a valid env_str. Now parse "Key=Value"
+            my $eq_idx_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $eq_idx_s, -1 ] );
+            my $len_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $len_s, 0 ] );
+            my $l_scan_loop = $builder->new_label();
+            my $l_scan_done = $builder->new_label();
+            $builder->emit_label($l_scan_loop);
+            my $len = $builder->emit( 'local_load',    'i64', [$len_s] );
+            my $b   = $builder->emit( 'load_mem_byte', 'Int', [ $env_str, $len ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $b, 0 ] ), $l_scan_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+
+            # If b == '=', record index of '='
+            my $l_is_eq  = $builder->new_label();
+            my $l_not_eq = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $b, ord('=') ] ), $l_is_eq, $l_not_eq );
+            $builder->emit_label($l_is_eq);
+            $builder->emit( 'local_store', 'void', [ $eq_idx_s, $len ] );
+            $builder->emit_label($l_not_eq);
+            $builder->emit( 'local_store', 'void', [ $len_s, $builder->emit( 'add', 'i64', [ $len, 1 ] ) ] );
+            $builder->emit_jump($l_scan_loop);
+            $builder->emit_label($l_scan_done);
+
+            # We finished scanning the "Key=Value" string
+            my $eq_idx    = $builder->emit( 'local_load', 'i64', [$eq_idx_s] );
+            my $total_len = $builder->emit( 'local_load', 'i64', [$len_s] );
+
+            # Only slice and insert if we actually found '='
+            my $l_insert_kv = $builder->new_label();
+            my $l_skip_kv   = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $eq_idx, -1 ] ), $l_insert_kv, $l_skip_kv );
+            $builder->emit_label($l_insert_kv);
+
+            # Slice Key: [0, eq_idx]
+            my $key_obj = $builder->emit( 'call_func', 'ptr', [ 'M_str_slice', $env_str, 0, $eq_idx ] );
+            $builder->emit( 'shadow_push', 'void', [$key_obj] );
+
+            # Slice Value: [eq_idx + 1, total_len - eq_idx - 1]
+            my $val_start = $builder->emit( 'add',       'i64', [ $eq_idx, 1 ] );
+            my $val_len   = $builder->emit( 'sub',       'i64', [ $builder->emit( 'sub', 'i64', [ $total_len, $eq_idx ] ), 1 ] );
+            my $val_obj   = $builder->emit( 'call_func', 'ptr', [ 'M_str_slice', $env_str, $val_start, $val_len ] );
+
+            # Insert into %ENV
+            $builder->emit( 'call_func',  'void', [ 'M_hash_insert', $builder->emit( 'local_load', 'ptr', [$env_hash_slot] ), $key_obj, $val_obj ] );
+            $builder->emit( 'shadow_pop', 'void', [] );    # pop key_obj
+            $builder->emit_label($l_skip_kv);
+
+            # Advance envp_ptr to the next string: envp_ptr += 8
+            $builder->emit( 'local_store', 'void', [ $envp_ptr_s, $builder->emit( 'add', 'ptr', [ $envp_ptr, 8 ] ) ] );
+            $builder->emit_jump($l_loop);
+            $builder->emit_label($l_done);
+            $builder->emit( 'shadow_pop', 'void', [] );    # pop env_hash
+            $builder->emit( 'leave_func', 'void', [] );
+        }
+
+        method inject_runtime_init_argv() {
+            if ( $driver->os eq 'win64' ) {
+                $self->inject_runtime_init_argv_win64();
+            }
+            else {
+                $self->inject_runtime_init_argv_unix();
+            }
+        }
+
+        method inject_runtime_init_argv_win64() {
+            $driver->reset_locals();
+            $builder->emit_label('M_init_argv');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $argv_s      = $driver->alloc_local_slot();
+            my $cursor_s    = $driver->alloc_local_slot();
+            my $start_s     = $driver->alloc_local_slot();
+            my $in_q_s      = $driver->alloc_local_slot();
+            my $argc_s      = $driver->alloc_local_slot();
+            my $cp_i_s      = $driver->alloc_local_slot();
+            my $tmp_start_s = $driver->alloc_local_slot();
+            my $tmp_len_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $argv_s, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('argv_array') ] ) ] );
+            $builder->emit( 'shadow_push', 'void', [ $builder->emit( 'local_load', 'ptr', [$argv_s] ) ] );
+            my $cmd = $builder->emit( 'intrinsic_get_cmd_line', 'ptr', [] );
+            $builder->emit( 'local_store', 'void', [ $cursor_s, 0 ] );
+            $builder->emit( 'local_store', 'void', [ $start_s,  0 ] );
+            $builder->emit( 'local_store', 'void', [ $in_q_s,   0 ] );
+            $builder->emit( 'local_store', 'void', [ $argc_s,   0 ] );
+            my $l_loop = $builder->new_label();
+            my $l_end  = $builder->new_label();
+            $builder->emit_label($l_loop);
+            my $cur   = $builder->emit( 'local_load',    'i64', [$cursor_s] );
+            my $b     = $builder->emit( 'load_mem_byte', 'Int', [ $cmd, $cur ] );
+            my $in_q  = $builder->emit( 'local_load',    'i64', [$in_q_s] );
+            my $start = $builder->emit( 'local_load',    'i64', [$start_s] );
+
+            # Check for double quote to toggle in_q
+            my $l_not_quote = $builder->new_label();
+            my $is_quote    = $builder->emit( 'cmp_eq', 'Int', [ $b, ord('"') ] );
+            $builder->emit_cond_br( $is_quote, $builder->new_label(), $l_not_quote );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            my $new_in_q = $builder->emit( 'xor', 'i64', [ $in_q, 1 ] );
+            $builder->emit( 'local_store', 'void', [ $in_q_s, $new_in_q ] );
+            $in_q = $new_in_q;    # update in_q for the current char check
+            $builder->emit_label($l_not_quote);
+
+            # Check should_split (split on EOF or space outside of quotes)
+            my $current_in_q     = $builder->emit( 'local_load', 'i64', [$in_q_s] );
+            my $is_eof           = $builder->emit( 'cmp_eq',     'Int', [ $b,            0 ] );
+            my $is_space         = $builder->emit( 'cmp_eq',     'Int', [ $b,            ord(' ') ] );
+            my $not_in_q         = $builder->emit( 'cmp_eq',     'Int', [ $current_in_q, 0 ] );
+            my $is_space_outside = $builder->emit( 'and',        'i64', [ $is_space,     $not_in_q ] );
+            my $should_split     = $builder->emit( 'or',         'i64', [ $is_eof,       $is_space_outside ] );
+            my $l_split          = $builder->new_label();
+            my $l_no_split       = $builder->new_label();
+            $builder->emit_cond_br( $should_split, $l_split, $l_no_split );
+            $builder->emit_label($l_split);
+            my $len         = $builder->emit( 'sub', 'i64', [ $cur, $start ] );
+            my $l_push      = $builder->new_label();
+            my $l_skip_push = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $len, 0 ] ), $l_push, $l_skip_push );
+            $builder->emit_label($l_push);
+            my $argc          = $builder->emit( 'local_load', 'i64', [$argc_s] );
+            my $l_discard_exe = $builder->new_label();
+            my $l_store_arg   = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $argc, 0 ] ), $l_discard_exe, $l_store_arg );
+            $builder->emit_label($l_discard_exe);
+            $builder->emit( 'local_store', 'void', [ $argc_s, 1 ] );
+            $builder->emit_jump($l_skip_push);
+            $builder->emit_label($l_store_arg);
+
+            # Initialize temp slots for start and len
+            $builder->emit( 'local_store', 'void', [ $tmp_start_s, $start ] );
+            $builder->emit( 'local_store', 'void', [ $tmp_len_s,   $len ] );
+
+            # Strip outer double quotes if present (standard command-line format)
+            my $l_strip_done = $builder->new_label();
+            my $first_char   = $builder->emit( 'load_mem_byte', 'Int', [ $cmd, $start ] );
+            my $last_idx     = $builder->emit( 'sub',           'i64', [ $builder->emit( 'add', 'i64', [ $start, $len ] ), 1 ] );
+            my $last_char    = $builder->emit( 'load_mem_byte', 'Int', [ $cmd,        $last_idx ] );
+            my $is_first_q   = $builder->emit( 'cmp_eq',        'Int', [ $first_char, ord('"') ] );
+            my $is_last_q    = $builder->emit( 'cmp_eq',        'Int', [ $last_char,  ord('"') ] );
+            my $is_both_q    = $builder->emit( 'and',           'i64', [ $is_first_q, $is_last_q ] );
+            my $is_len_ok    = $builder->emit( 'cmp_ge',        'Int', [ $len,        2 ] );
+            my $should_strip = $builder->emit( 'and',           'i64', [ $is_both_q,  $is_len_ok ] );
+            $builder->emit_cond_br( $should_strip, $builder->new_label(), $l_strip_done );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            my $new_start = $builder->emit( 'add', 'i64', [ $start, 1 ] );
+            my $new_len   = $builder->emit( 'sub', 'i64', [ $len,   2 ] );
+            $builder->emit( 'local_store', 'void', [ $tmp_start_s, $new_start ] );
+            $builder->emit( 'local_store', 'void', [ $tmp_len_s,   $new_len ] );
+            $builder->emit_jump($l_strip_done);
+            $builder->emit_label($l_strip_done);
+            my $final_start = $builder->emit( 'local_load', 'i64', [$tmp_start_s] );
+            my $final_len   = $builder->emit( 'local_load', 'i64', [$tmp_len_s] );
+            my $arg_str     = $builder->emit( 'call_func',  'ptr', [ 'M_str_slice', $cmd, $final_start, $final_len ] );
+            $builder->emit( 'shadow_push', 'void', [$arg_str] );
+
+            # Since @ARGV was allocated empty, we'll re-allocate with space!
+            my $argv   = $builder->emit( 'local_load', 'ptr', [$argv_s] );
+            my $arr_ct = $builder->emit( 'shr',        'i64', [ $builder->emit( 'load_mem_disp', 'i64', [ $argv, 0 ] ), 2 ] );
+            my $new_sz = $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $builder->emit( 'add', 'i64', [ $arr_ct, 1 ] ), 8 ] ), 8 ] );
+            my $new_arr = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $new_sz ] );
+            $builder->emit(
+                'store_mem_disp',
+                'void',
+                [   $new_arr, 0,
+                    $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $builder->emit( 'add', 'i64', [ $arr_ct, 1 ] ), 2 ] ), 1 ] )
+                ]
+            );
+
+            # Copy old elements
+            $builder->emit( 'local_store', 'void', [ $cp_i_s, 0 ] );
+            my $l_cp_loop = $builder->new_label();
+            my $l_cp_end  = $builder->new_label();
+            $builder->emit_label($l_cp_loop);
+            my $cp_i = $builder->emit( 'local_load', 'i64', [$cp_i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $cp_i, $arr_ct ] ), $l_cp_end, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $src_addr
+                = $builder->emit( 'add', 'ptr', [ $builder->emit( 'add', 'ptr', [ $argv, 8 ] ), $builder->emit( 'mul', 'i64', [ $cp_i, 8 ] ) ] );
+            my $el = $builder->emit( 'load_mem_disp', 'Any', [ $src_addr, 0 ] );
+            my $dst_addr
+                = $builder->emit( 'add', 'ptr', [ $builder->emit( 'add', 'ptr', [ $new_arr, 8 ] ), $builder->emit( 'mul', 'i64', [ $cp_i, 8 ] ) ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $dst_addr, 0, $el ] );
+            $builder->emit( 'local_store', 'void', [ $cp_i_s, $builder->emit( 'add', 'i64', [ $cp_i, 1 ] ) ] );
+            $builder->emit_jump($l_cp_loop);
+            $builder->emit_label($l_cp_end);
+            my $append_addr
+                = $builder->emit( 'add', 'ptr', [ $builder->emit( 'add', 'ptr', [ $new_arr, 8 ] ), $builder->emit( 'mul', 'i64', [ $arr_ct, 8 ] ) ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $append_addr, 0, $arg_str ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('argv_array'), $new_arr ] );
+            $builder->emit( 'local_store',    'void', [ $argv_s, $new_arr ] );
+            $builder->emit( 'shadow_pop',     'void', [] );    # pop arg_str
+            $builder->emit_label($l_skip_push);
+            $builder->emit( 'local_store', 'void', [ $start_s, $builder->emit( 'add', 'i64', [ $cur, 1 ] ) ] );
+            $builder->emit_jump($l_no_split);
+            $builder->emit_label($l_no_split);
+            my $l_advance = $builder->new_label();
+            $builder->emit_cond_br( $is_eof, $l_end, $l_advance );
+            $builder->emit_label($l_advance);
+            $builder->emit( 'local_store', 'void', [ $cursor_s, $builder->emit( 'add', 'i64', [ $cur, 1 ] ) ] );
+            $builder->emit_jump($l_loop);
+            $builder->emit_label($l_end);
+            $builder->emit( 'shadow_pop', 'void', [] );        # pop argv
+            $builder->emit( 'leave_func', 'void', [] );
+        }
+
+        method inject_runtime_init_argv_unix() {
+            $driver->reset_locals();
+            $builder->emit_label('M_init_argv');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $argv_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $argv_s, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('argv_array') ] ) ] );
+            $builder->emit( 'shadow_push', 'void', [ $builder->emit( 'local_load', 'ptr', [$argv_s] ) ] );
+            my $stack_ptr = $builder->emit( 'intrinsic_get_saved_stack_ptr', 'ptr', [$stack_ptr_offset] );
+            my $argc      = $builder->emit( 'load_mem_disp',                 'i64', [ $stack_ptr, 0 ] );
+            my $i_s       = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $i_s, 1 ] );    # Start at 1 to skip argv[0]
+            my $l_loop = $builder->new_label();
+            my $l_done = $builder->new_label();
+            $builder->emit_label($l_loop);
+            my $i = $builder->emit( 'local_load', 'i64', [$i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $argc ] ), $l_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+
+            # Get argv[i] from stack_ptr + 8 + i * 8
+            my $argv_element_offset = $builder->emit( 'add',           'i64', [ $builder->emit( 'mul', 'i64', [ $i, 8 ] ), 8 ] );
+            my $arg_ptr_addr        = $builder->emit( 'add',           'ptr', [ $stack_ptr,    $argv_element_offset ] );
+            my $arg_c_str           = $builder->emit( 'load_mem_disp', 'ptr', [ $arg_ptr_addr, 0 ] );
+
+            # strlen loop
+            my $len_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $len_s, 0 ] );
+            my $l_len_loop = $builder->new_label();
+            my $l_len_done = $builder->new_label();
+            $builder->emit_label($l_len_loop);
+            my $curr_len = $builder->emit( 'local_load',    'i64', [$len_s] );
+            my $char     = $builder->emit( 'load_mem_byte', 'Int', [ $arg_c_str, $curr_len ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $char, 0 ] ), $l_len_done, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit( 'local_store', 'void', [ $len_s, $builder->emit( 'add', 'i64', [ $curr_len, 1 ] ) ] );
+            $builder->emit_jump($l_len_loop);
+            $builder->emit_label($l_len_done);
+            my $len     = $builder->emit( 'local_load', 'i64', [$len_s] );
+            my $arg_str = $builder->emit( 'call_func',  'ptr', [ 'M_str_slice', $arg_c_str, 0, $len ] );
+            $builder->emit( 'shadow_push', 'void', [$arg_str] );
+
+            # Re-allocate and copy
+            my $argv   = $builder->emit( 'local_load', 'ptr', [$argv_s] );
+            my $arr_ct = $builder->emit( 'shr',        'i64', [ $builder->emit( 'load_mem_disp', 'i64', [ $argv, 0 ] ), 2 ] );
+            my $new_sz = $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $builder->emit( 'add', 'i64', [ $arr_ct, 1 ] ), 8 ] ), 8 ] );
+            my $new_arr = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $new_sz ] );
+            $builder->emit(
+                'store_mem_disp',
+                'void',
+                [   $new_arr, 0,
+                    $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $builder->emit( 'add', 'i64', [ $arr_ct, 1 ] ), 2 ] ), 1 ] )
+                ]
+            );
+
+            # Copy old elements
+            my $cp_i_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $cp_i_s, 0 ] );
+            my $l_cp_loop = $builder->new_label();
+            my $l_cp_end  = $builder->new_label();
+            $builder->emit_label($l_cp_loop);
+            my $cp_i = $builder->emit( 'local_load', 'i64', [$cp_i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $cp_i, $arr_ct ] ), $l_cp_end, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $src_addr
+                = $builder->emit( 'add', 'ptr', [ $builder->emit( 'add', 'ptr', [ $argv, 8 ] ), $builder->emit( 'mul', 'i64', [ $cp_i, 8 ] ) ] );
+            my $el = $builder->emit( 'load_mem_disp', 'Any', [ $src_addr, 0 ] );
+            my $dst_addr
+                = $builder->emit( 'add', 'ptr', [ $builder->emit( 'add', 'ptr', [ $new_arr, 8 ] ), $builder->emit( 'mul', 'i64', [ $cp_i, 8 ] ) ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $dst_addr, 0, $el ] );
+            $builder->emit( 'local_store', 'void', [ $cp_i_s, $builder->emit( 'add', 'i64', [ $cp_i, 1 ] ) ] );
+            $builder->emit_jump($l_cp_loop);
+            $builder->emit_label($l_cp_end);
+            my $append_addr
+                = $builder->emit( 'add', 'ptr', [ $builder->emit( 'add', 'ptr', [ $new_arr, 8 ] ), $builder->emit( 'mul', 'i64', [ $arr_ct, 8 ] ) ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $append_addr, 0, $arg_str ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('argv_array'), $new_arr ] );
+            $builder->emit( 'local_store',    'void', [ $argv_s, $new_arr ] );
+            $builder->emit( 'shadow_pop',     'void', [] );                                                    # pop arg_str
+            $builder->emit( 'local_store',    'void', [ $i_s, $builder->emit( 'add', 'i64', [ $i, 1 ] ) ] );
+            $builder->emit_jump($l_loop);
+            $builder->emit_label($l_done);
+            $builder->emit( 'shadow_pop', 'void', [] );                                                        # pop argv
+            $builder->emit( 'leave_func', 'void', [] );
+        }
+
         # --- AST Lowering Dispatcher ---
         method lower($node) {
             return ( undef, 'void' ) unless defined $node;
@@ -1855,6 +2302,9 @@ package Brocken::Compiler::Lowering {
 
             # --- Initialize undef singleton ---
             $undef_ptr_offset = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
+
+            # --- Initialize stack_ptr_offset ---
+            $stack_ptr_offset = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
             $builder->emit_jump('L_MAIN_START');
             $self->inject_runtime();
             $self->_emit_runtime_init_sub();
@@ -1867,6 +2317,11 @@ package Brocken::Compiler::Lowering {
                 else { push @main_statements, $n; }
             }
             $builder->emit_label('L_MAIN_START');
+
+            # Save raw RSP on non-Windows platforms before pushing frame structures
+            if ( $driver->os ne 'win64' ) {
+                $builder->emit( 'intrinsic_save_stack_ptr', 'void', [$stack_ptr_offset] );
+            }
             $builder->emit( 'enter_func', 'void', [] );
             $builder->emit( 'call_func',  'void', ["M_runtime_init"] );
             my $iso_slot = $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] );
@@ -2516,9 +2971,24 @@ package Brocken::Compiler::Lowering {
             my $l_end     = $builder->new_label();
             my $type_tag  = $builder->emit( 'and', 'i64', [ $builder->emit( 'load_mem_disp', 'i64', [ $src_reg, 0 ] ), 3 ] );
             $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $type_tag, 3 ] ), $l_is_hash, $l_is_arr );
+
+            # --- Array Path ---
             $builder->emit_label($l_is_arr);
             my $raw_idx = $builder->emit( 'shr', 'i64', [ $idx_reg, 1 ] );
-            my $addr    = $builder->emit( 'add', 'ptr',
+
+            # Bounds Check: Get array count from tag_word
+            my $tag_word        = $builder->emit( 'load_mem_disp', 'i64', [ $src_reg,  0 ] );
+            my $count           = $builder->emit( 'shr',           'i64', [ $tag_word, 2 ] );
+            my $l_in_bounds     = $builder->new_label();
+            my $l_out_of_bounds = $builder->new_label();
+            my $is_ge           = $builder->emit( 'cmp_ge', 'Int', [ $raw_idx, $count ] );
+            my $is_lt0          = $builder->emit( 'cmp_lt', 'Int', [ $raw_idx, 0 ] );
+            my $is_oob          = $builder->emit( 'or',     'i64', [ $is_ge,   $is_lt0 ] );
+            $builder->emit_cond_br( $is_oob, $l_out_of_bounds, $l_in_bounds );
+
+            # In Bounds: Load element
+            $builder->emit_label($l_in_bounds);
+            my $addr = $builder->emit( 'add', 'ptr',
                 [ $builder->emit( 'add', 'ptr', [ $src_reg, 8 ] ), $builder->emit( 'mul', 'i64', [ $raw_idx, 8 ] ) ] );
             my $raw_val = $builder->emit( 'load_mem_disp', 'Any', [ $addr, 0 ] );
 
@@ -2532,6 +3002,13 @@ package Brocken::Compiler::Lowering {
             $builder->emit_label($l_raw_ok);
             $builder->emit( 'local_store', 'void', [ $res_slot, $raw_val ] );
             $builder->emit_jump($l_end);
+
+            # Out of Bounds: Return undef pointer
+            $builder->emit_label($l_out_of_bounds);
+            $builder->emit( 'local_store', 'void', [ $res_slot, $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] ) ] );
+            $builder->emit_jump($l_end);
+
+            # --- Hash Path ---
             $builder->emit_label($l_is_hash);
             $builder->emit(
                 'local_store',

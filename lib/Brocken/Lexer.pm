@@ -40,6 +40,11 @@ class Brocken::Lexer {
             if ( $remaining =~ /^(\s+)/ )     { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(#[^\n]*)/ ) { $self->_advance( length($1) ); next; }
             if ( $remaining =~ /^(\d+)/ ) { push @tokens, $self->_make_token( 'NUM', $1 ); $self->_advance( length($1) ); next; }
+            if ( $remaining =~ /^([\$@%](?:[\^][A-Z]|\$|0))/ ) {    # Match Perl Special Variables ($^X, $$, $0, $^T)
+                push @tokens, $self->_make_token( 'VAR', $1 );
+                $self->_advance( length($1) );
+                next;
+            }
 
             # Robust String Lexing: Handles \" and \n and UTF-8 correctly
             if ( $remaining =~ /^"((?:[^"\\\$]|\\.|\$[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)*)"/s ) {

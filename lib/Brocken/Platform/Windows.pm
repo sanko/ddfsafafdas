@@ -28,21 +28,45 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
             $as->call_rva( $driver->import_rva('FreeEnvironmentStringsA'), $driver->text_rva );
         }
+        elsif ( $op eq 'intrinsic_get_pid' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->call_rva( $driver->import_rva('GetCurrentProcessId'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
+        elsif ( $op eq 'intrinsic_get_system_filetime' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->lea_reg_disp( 'rcx', 'rsp', 32 );    # Use shadow space to store 8-byte FILETIME
+            $as->call_rva( $driver->import_rva('GetSystemTimeAsFileTime'), $driver->text_rva );
+            $as->load_reg_mem( $d, 'rsp', 32 );
+        }
+        elsif ( $op eq 'intrinsic_get_module_filename' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( 'rcx', 0 );                                 # NULL = Current executable
+            $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[0] } );    # buffer
+            $as->mov_imm( 'r8', 512 );                                # buffer size
+            $as->call_rva( $driver->import_rva('GetModuleFileNameA'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );                                # returns length of string
+        }
+        elsif ( $op eq 'intrinsic_get_cmd_line' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->call_rva( $driver->import_rva('GetCommandLineA'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
         elsif ( $op eq 'intrinsic_get_stdout_handle' ) {
             my $d = $reg_map->{ $inst->{dest} };
-            $as->mov_imm( 'rcx', -11 );    # STD_OUTPUT_HANDLE
+            $as->mov_imm( 'rcx', -11 );                               # STD_OUTPUT_HANDLE
             $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
             $as->mov_reg( $d, 'rax' );
         }
         elsif ( $op eq 'intrinsic_get_stderr_handle' ) {
             my $d = $reg_map->{ $inst->{dest} };
-            $as->mov_imm( 'rcx', -12 );    # STD_ERROR_HANDLE
+            $as->mov_imm( 'rcx', -12 );                               # STD_ERROR_HANDLE
             $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
             $as->mov_reg( $d, 'rax' );
         }
         elsif ( $op eq 'intrinsic_get_stdin_handle' ) {
             my $d = $reg_map->{ $inst->{dest} };
-            $as->mov_imm( 'rcx', -10 );    # STD_INPUT_HANDLE
+            $as->mov_imm( 'rcx', -10 );                               # STD_INPUT_HANDLE
             $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
             $as->mov_reg( $d, 'rax' );
         }
