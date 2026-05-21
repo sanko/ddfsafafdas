@@ -19,7 +19,9 @@ package Brocken::Format::PE {
             CloseHandle                 => 72,
             CreateFileA                 => 80,
             ReadFile                    => 88,
-            GetFileSizeEx               => 96
+            GetFileSizeEx               => 96,
+            GetEnvironmentStringsA      => 104,
+            FreeEnvironmentStringsA     => 112
         );
 
         method import_rva($n) {

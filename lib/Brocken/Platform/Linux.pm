@@ -37,6 +37,18 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'x0' );
             }
         }
+        elsif ( $op eq 'intrinsic_get_stdout_handle' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( $d, 1 );
+        }
+        elsif ( $op eq 'intrinsic_get_stderr_handle' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( $d, 2 );
+        }
+        elsif ( $op eq 'intrinsic_get_stdin_handle' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( $d, 0 );
+        }
         elsif ( $op eq 'intrinsic_print' ) {
             my $p = $reg_map->{ $inst->{args}[0] };
             if ( $arch eq 'x64' ) {

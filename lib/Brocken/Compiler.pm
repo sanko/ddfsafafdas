@@ -5,27 +5,29 @@ package Brocken::Compiler {
     no warnings 'portable', 'experimental::class';
 
     class Brocken::Symbol {
-        field $name          : param : reader;
-        field $type          : param : reader;
-        field $is_state      : param : reader = 0;
-        field $state_idx     : param : reader = undef;
-        field $stack_offset  : param : reader = undef;
-        field $shadow_offset : param : reader = undef;
+        field $name           : param : reader;
+        field $type           : param : reader;
+        field $is_state       : param : reader = 0;
+        field $state_idx      : param : reader = undef;
+        field $stack_offset   : param : reader = undef;
+        field $shadow_offset  : param : reader = undef;
+        field $isolate_offset : param : reader = undef;
     }
 
     class Brocken::Scope {
         field $parent : param : reader = undef;
         field %symbols;
 
-        method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef, $shadow_offset = undef ) {
+        method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef, $shadow_offset = undef, $isolate_offset = undef ) {
             die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
             return $symbols{$name} = Brocken::Symbol->new(
-                name          => $name,
-                type          => $type,
-                is_state      => $is_state,
-                state_idx     => $state_idx,
-                stack_offset  => $stack_offset,
-                shadow_offset => $shadow_offset
+                name           => $name,
+                type           => $type,
+                is_state       => $is_state,
+                state_idx      => $state_idx,
+                stack_offset   => $stack_offset,
+                shadow_offset  => $shadow_offset,
+                isolate_offset => $isolate_offset
             );
         }
         method resolve($name) { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
@@ -170,7 +172,15 @@ package Brocken::Compiler {
                 capabilities     => 144,    # A 64-bit bitmask of allowed operations
                 err_code         => 152,    # Reason for sandbox termination (0=Success, 1=OOM, 2=NoFuel, 3=Security)
                 mark_stack_limit => 160,
-                exception_table  => 168
+                exception_table  => 168,
+
+                # System Globals
+                stdout_handle => 176,
+                stderr_handle => 184,
+                stdin_handle  => 192,
+                env_hash      => 200,
+                argv_array    => 208,
+                def_var       => 216        # $_
             };
             return $ISO->{$name} // die "Unknown Isolate offset: $name";
         }

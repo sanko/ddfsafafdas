@@ -19,6 +19,33 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->call_rva( $driver->import_rva('VirtualAlloc'), $driver->text_rva );
             $as->mov_reg( $d, 'rax' );
         }
+        elsif ( $op eq 'intrinsic_get_env_block' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->call_rva( $driver->import_rva('GetEnvironmentStringsA'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
+        elsif ( $op eq 'intrinsic_free_env_block' ) {
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
+            $as->call_rva( $driver->import_rva('FreeEnvironmentStringsA'), $driver->text_rva );
+        }
+        elsif ( $op eq 'intrinsic_get_stdout_handle' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( 'rcx', -11 );    # STD_OUTPUT_HANDLE
+            $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
+        elsif ( $op eq 'intrinsic_get_stderr_handle' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( 'rcx', -12 );    # STD_ERROR_HANDLE
+            $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
+        elsif ( $op eq 'intrinsic_get_stdin_handle' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_imm( 'rcx', -10 );    # STD_INPUT_HANDLE
+            $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
         elsif ( $op eq 'intrinsic_print' || $op eq 'intrinsic_print_char' ) {
             my $is_char = ( $op eq 'intrinsic_print_char' );
             my $p       = $reg_map->{ $inst->{args}[0] };

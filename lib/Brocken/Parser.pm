@@ -462,7 +462,7 @@ class Brocken::Parser {
 
     method _parse_undef_literal($tok) {
         $self->advance();
-        Brocken::AST::Expr::Const->new( value => 'undef', type => 'Undef', line => $tok->{line}, col => $tok->{col} );
+        return Brocken::AST::Expr::Const->new( value => 'undef', type => 'Undef', line => $tok->{line}, col => $tok->{col} );
     }
     method _parse_var_ref($tok) { $self->advance(); Brocken::AST::Expr::Var->new( name => $tok->{value}, line => $tok->{line}, col => $tok->{col} ) }
 
@@ -488,6 +488,11 @@ class Brocken::Parser {
                 line   => $tok->{line},
                 col    => $tok->{col}
             );
+        }
+
+        # --- UPDATE: Map bareword standard I/O handles directly to Var nodes ---
+        if ( $name =~ /^(STDOUT|STDERR|STDIN)$/ ) {
+            return Brocken::AST::Expr::Var->new( name => $name, line => $tok->{line}, col => $tok->{col} );
         }
         return Brocken::AST::Expr::Const->new( value => $name, type => 'Class', line => $tok->{line}, col => $tok->{col} );
     }
@@ -652,7 +657,6 @@ class Brocken::Parser {
         );
     }
 
-    # --- Parameter and Argument Lists ---
     method _parse_routine_params() {
         $self->expect('(');
         my @params;
