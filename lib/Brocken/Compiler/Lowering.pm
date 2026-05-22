@@ -3993,6 +3993,16 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_Call($node) {
+            if ( $node->name eq 'make_callback' ) {
+                my $sub_expr = $node->args->[0];
+                my $sig_expr = $node->args->[1];
+                die "make_callback requires a static signature string" unless $sig_expr isa Brocken::AST::Expr::Const && $sig_expr->type eq 'String';
+                my $sig_str = $sig_expr->value;
+                my ( $sub_reg, $sub_type ) = $self->lower($sub_expr);
+                my $pool_id   = $self->_get_or_create_callback_pool($sig_str);
+                my $tramp_ptr = $builder->emit( 'call_func', 'ptr', [ "M_reserve_callback_" . $pool_id, $sub_reg ] );
+                return ( $tramp_ptr, 'ptr' );
+            }
             if ( $node->name eq 'transfer' ) {
                 return (
                     $builder->emit(
@@ -4652,7 +4662,113 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_NativeDecl($node) {
-            $native_funcs{ $node->name } = { library => $node->library, signature => $node->signature };
+            my $lib_name  = $node->library;
+            my $func_name = $node->name;
+            my $sig_str   = $node->signature;
+            $native_funcs{$func_name} = { library => $lib_name, signature => $sig_str };
+
+            # Parse signature: e.g., "(String, Int)->Int"
+            my ( $arg_str, $ret_type ) = $sig_str =~ /^\((.*?)\)->(.*)$/;
+            $arg_str  //= '';
+            $ret_type //= 'void';
+            my @arg_types = length($arg_str) ? split( ',', $arg_str ) : ();
+            map {s/^\s+|\s+$//g} @arg_types;
+            $ret_type =~ s/^\s+|\s+$//g;
+
+            # Reserve a global .data slot to cache the C function pointer
+            my $c_ptr_offset = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
+            my $thunk_name   = "M_" . $func_name;
+            $global_methods{$func_name} //= $global_method_count++;
+
+            # Emit the thunk logic as a deferred fragment
+            $self->capture_fragment(
+                $thunk_name,
+                sub {
+                    $driver->reset_locals();
+                    my @old_defers = @defer_stack;
+                    @defer_stack = ();
+                    $builder->emit_label($thunk_name);
+                    $builder->emit( 'enter_func', 'void', [] );
+
+                    # --- 1. CRITICAL FIX: CAPTURE REGISTERS IMMEDIATELY ---
+                    # C functions (like LoadLibrary) will clobber rcx/rdx.
+                    # We must save the incoming arguments to stack slots immediately.
+                    my @saved_slots;
+                    my $arg_idx = 0;
+                    for my $t (@arg_types) {
+                        my $slot    = $driver->alloc_local_slot();
+                        my $raw_reg = $builder->emit( 'get_arg', 'Any', [ $arg_idx++ ] );
+                        $builder->emit( 'local_store', 'void', [ $slot, $raw_reg ] );
+                        push @saved_slots, $slot;
+                    }
+
+                    # Load cached C pointer
+                    my $c_ptr_addr = $builder->emit( 'load_data_addr', 'ptr', [$c_ptr_offset] );
+                    my $c_ptr      = $builder->emit( 'load_mem_disp',  'ptr', [ $c_ptr_addr, 0 ] );
+                    my $l_has_ptr  = $builder->new_label();
+                    $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $c_ptr, 0 ] ), $l_has_ptr, $builder->new_label() );
+                    $builder->emit_label( $builder->last_instruction->{false_l} );
+
+                    # Path A: Not cached. Dynamically load the library and resolve the function.
+                    my $lib_str    = $builder->emit( 'load_data_addr',             'ptr', [ $data_segment->add_string($lib_name) ] );
+                    my $lib_handle = $builder->emit( 'intrinsic_load_library',     'ptr', [$lib_str] );
+                    my $func_str   = $builder->emit( 'load_data_addr',             'ptr', [ $data_segment->add_string($func_name) ] );
+                    my $new_c_ptr  = $builder->emit( 'intrinsic_get_proc_address', 'ptr', [ $lib_handle, $func_str ] );
+
+                    # Cache it for next time
+                    $builder->emit( 'store_mem_disp', 'void', [ $c_ptr_addr, 0, $new_c_ptr ] );
+                    my $c_ptr_final_s = $driver->alloc_local_slot();
+                    $builder->emit( 'local_store', 'void', [ $c_ptr_final_s, $new_c_ptr ] );
+                    my $l_call = $builder->new_label();
+                    $builder->emit_jump($l_call);
+
+                    # Path B: We already have the pointer cached!
+                    $builder->emit_label($l_has_ptr);
+                    $builder->emit( 'local_store', 'void', [ $c_ptr_final_s, $c_ptr ] );
+                    $builder->emit_jump($l_call);
+
+                    # --- Unbox Arguments & Call C Function ---
+                    $builder->emit_label($l_call);
+                    my $final_c_ptr = $builder->emit( 'local_load', 'ptr', [$c_ptr_final_s] );
+                    my @raw_args;
+                    for my $i ( 0 .. $#arg_types ) {
+                        my $t   = $arg_types[$i];
+                        my $arg = $builder->emit( 'local_load', 'Any', [ $saved_slots[$i] ] );
+                        if ( $t eq 'Int' || $t eq 'Bool' ) {
+
+                            # Untag integer: arg >> 1
+                            push @raw_args, $builder->emit( 'shr', 'i64', [ $arg, 1 ] );
+                        }
+                        elsif ( $t eq 'String' ) {
+
+                            # C strings are just raw pointers to payload.
+                            # Skip the 16-byte Brocken object header!
+                            push @raw_args, $builder->emit( 'add', 'ptr', [ $arg, 16 ] );
+                        }
+                        else {
+                            push @raw_args, $arg;    # Raw pass-through
+                        }
+                    }
+
+                    # Execute the C function matching the Windows x64 ABI perfectly!
+                    my $ret_val = $builder->emit( 'call_reg', 'i64', [ $final_c_ptr, @raw_args ] );
+
+                    # --- Box Return Value ---
+                    my $boxed_ret;
+                    if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
+                        $boxed_ret = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $ret_val, 1 ] ), 1 ] );
+                    }
+                    elsif ( $ret_type eq 'void' ) {
+                        $boxed_ret = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
+                    }
+                    else {
+                        # Default fallback: Treat unknown C returns as generic Ints so we don't crash
+                        $boxed_ret = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $ret_val, 1 ] ), 1 ] );
+                    }
+                    $builder->emit( 'leave_func', 'Any', [$boxed_ret] );
+                    @defer_stack = @old_defers;
+                }
+            );
             return ( undef, 'void' );
         }
 

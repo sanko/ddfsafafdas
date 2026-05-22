@@ -25,7 +25,9 @@ package Brocken::Format::PE {
             GetCurrentProcessId         => 120,
             GetModuleFileNameA          => 128,
             GetSystemTimeAsFileTime     => 136,
-            GetCommandLineA             => 144
+            GetCommandLineA             => 144,
+            LoadLibraryA                => 152,
+            GetProcAddress              => 160
         );
 
         method import_rva($n) {

@@ -82,6 +82,7 @@ class Brocken::Parser {
         'refcount'      => '_parse_ident_or_call',
         'retain'        => '_parse_ident_or_call',
         'release'       => '_parse_ident_or_call',
+        'make_callback' => '_parse_ident_or_call',
         '...'           => '_parse_yada'
     );
 

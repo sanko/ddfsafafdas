@@ -20,7 +20,7 @@ package Brocken::Compiler::DataSegment {
             my $offset   = length($raw_data);
             $raw_data .= pack( 'Q<',    $header );
             $raw_data .= pack( 'Q< Q<', $byte_len, length($str) );
-            $raw_data .= $utf8_bytes;
+            $raw_data .= $utf8_bytes . "\0";                       # Force a null byte for C-FFI compatibility
 
             # Padding to 8-byte alignment
             my $pad = ( 8 - ( length($raw_data) % 8 ) ) % 8;

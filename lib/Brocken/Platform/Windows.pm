@@ -19,6 +19,21 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->call_rva( $driver->import_rva('VirtualAlloc'), $driver->text_rva );
             $as->mov_reg( $d, 'rax' );
         }
+        elsif ( $op eq 'intrinsic_load_library' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );
+            $as->add_imm( 'rcx', 16 );    # Skip the 16-byte Brocken String Header
+            $as->call_rva( $driver->import_rva('LoadLibraryA'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
+        elsif ( $op eq 'intrinsic_get_proc_address' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );    # DLL Handle
+            $as->mov_reg( 'rdx', $reg_map->{ $inst->{args}[1] } );    # Func Name String
+            $as->add_imm( 'rdx', 16 );                                # Skip the 16-byte Brocken String Header
+            $as->call_rva( $driver->import_rva('GetProcAddress'), $driver->text_rva );
+            $as->mov_reg( $d, 'rax' );
+        }
         elsif ( $op eq 'intrinsic_get_env_block' ) {
             my $d = $reg_map->{ $inst->{dest} };
             $as->call_rva( $driver->import_rva('GetEnvironmentStringsA'), $driver->text_rva );

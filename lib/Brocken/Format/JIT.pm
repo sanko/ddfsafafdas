@@ -18,7 +18,9 @@ package Brocken::Format::JIT {
             CloseHandle                 => 72,
             CreateFileA                 => 80,
             ReadFile                    => 88,
-            GetFileSizeEx               => 96
+            GetFileSizeEx               => 96,
+            LoadLibraryA                => 104,
+            GetProcAddress              => 112
         );
 
         method import_rva($n) {
@@ -32,8 +34,6 @@ package Brocken::Format::JIT {
         }
 
         method write_bin( $filename, $text, $data, $arch, $os, $type ) {
-
-            # No-op or return raw data for JIT
             return "";
         }
     }
