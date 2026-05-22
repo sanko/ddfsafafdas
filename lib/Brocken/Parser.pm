@@ -981,8 +981,12 @@ class Brocken::Parser {
     }
 
     method _parse_type_spec() {
-        if ( $self->current->{type} eq 'KEYWORD' && $self->current->{value} =~ /^[A-Za-z_][A-Za-z0-9_]*$/ ) {
-            my $t = $self->current->{value};
+        my $curr = $self->current;
+
+        # FIX: Allow both KEYWORD and IDENT tokens to represent type specifiers
+        # so that user-defined class names can be used as static type annotations!
+        if ( ( $curr->{type} eq 'KEYWORD' || $curr->{type} eq 'IDENT' ) && $curr->{value} =~ /^[A-Za-z_][A-Za-z0-9_]*$/ ) {
+            my $t = $curr->{value};
             $self->advance();
             if ( $t eq 'Callback' && $self->current->{type} eq 'OP' && $self->current->{value} eq '[' ) {
                 $self->advance();

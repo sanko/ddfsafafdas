@@ -45,6 +45,301 @@ package Brocken::Compiler::Lowering {
             $self->_initialize_root_scope();
         }
 
+        # --- Deep AST Cloner and Alpha-Renamer ---
+        method _clone_node( $node, $bindings ) {
+            return undef unless defined $node;
+            my $class = ref($node);
+            return $node unless $class =~ /^Brocken::AST/;
+            my %args = ( line => $node->line, col => $node->col, file => $node->file );
+            if ( $node isa Brocken::AST::Expr::Var ) {
+                my $name = $node->name;
+                if ( exists $bindings->{$name} ) {
+                    return $self->_clone_node( $bindings->{$name}, {} );
+                }
+                $args{name} = $name;
+            }
+            elsif ( $node isa Brocken::AST::Expr::Const ) {
+                $args{value} = $node->value;
+                $args{type}  = $node->type;
+            }
+            elsif ( $node isa Brocken::AST::Expr::BinOp ) {
+                $args{op}    = $node->op;
+                $args{left}  = $self->_clone_node( $node->left,  $bindings );
+                $args{right} = $self->_clone_node( $node->right, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Expr::UnaryOp ) {
+                $args{op}   = $node->op;
+                $args{expr} = $self->_clone_node( $node->expr, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Expr::Ternary ) {
+                $args{cond} = $self->_clone_node( $node->cond, $bindings );
+                $args{then} = $self->_clone_node( $node->then, $bindings );
+                $args{else} = $self->_clone_node( $node->else, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Expr::Call ) {
+                $args{name} = $node->name;
+                $args{args} = [ map { $self->_clone_node( $_, $bindings ) } @{ $node->args } ];
+            }
+            elsif ( $node isa Brocken::AST::Expr::AnonCall ) {
+                $args{invocant} = $self->_clone_node( $node->invocant, $bindings );
+                $args{args}     = [ map { $self->_clone_node( $_, $bindings ) } @{ $node->args } ];
+            }
+            elsif ( $node isa Brocken::AST::Expr::ArrayLiteral ) {
+                $args{elements} = [ map { $self->_clone_node( $_, $bindings ) } @{ $node->elements } ];
+            }
+            elsif ( $node isa Brocken::AST::Expr::TupleLiteral ) {
+                $args{elements} = [ map { $self->_clone_node( $_, $bindings ) } @{ $node->elements } ];
+            }
+            elsif ( $node isa Brocken::AST::Expr::HashLiteral ) {
+                $args{pairs} = [ map { { key => $self->_clone_node( $_->{key}, $bindings ), value => $self->_clone_node( $_->{value}, $bindings ) } }
+                        @{ $node->pairs } ];
+            }
+            elsif ( $node isa Brocken::AST::Expr::IndexExpr ) {
+                $args{source} = $self->_clone_node( $node->source, $bindings );
+                $args{index}  = $self->_clone_node( $node->index,  $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Expr::MethodCall ) {
+                $args{object} = $self->_clone_node( $node->object, $bindings );
+                $args{method} = $node->method;
+                $args{args}   = [ map { $self->_clone_node( $_, $bindings ) } @{ $node->args } ];
+            }
+            elsif ( $node isa Brocken::AST::Expr::Exists ) {
+                $args{expr} = $self->_clone_node( $node->expr, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Expr::Delete ) {
+                $args{expr} = $self->_clone_node( $node->expr, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Block ) {
+                $args{statements} = [ map { $self->_clone_node( $_, $bindings ) } @{ $node->statements } ];
+            }
+            elsif ( $node isa Brocken::AST::Stmt::VarDecl ) {
+                my $unique_name = $node->name . "_inl_" . ++$anon_counter;
+                $bindings->{ $node->name }
+                    = Brocken::AST::Expr::Var->new( name => $unique_name, line => $node->line, col => $node->col, file => $node->file );
+                $args{name}  = $unique_name;
+                $args{type}  = $node->type;
+                $args{value} = $self->_clone_node( $node->value, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Assignment ) {
+                $args{name}  = $self->_clone_node( $node->name,  $bindings );
+                $args{value} = $self->_clone_node( $node->value, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::If ) {
+                $args{condition}  = $self->_clone_node( $node->condition,  $bindings );
+                $args{then_block} = $self->_clone_node( $node->then_block, $bindings );
+                $args{else_block} = $self->_clone_node( $node->else_block, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::While ) {
+                $args{condition} = $self->_clone_node( $node->condition, $bindings );
+                $args{body}      = $self->_clone_node( $node->body,      $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Return ) {
+                $args{expr} = $self->_clone_node( $node->expr, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Exit ) {
+                $args{expr} = $self->_clone_node( $node->expr, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Map ) {
+                $args{expr}   = $self->_clone_node( $node->expr,   $bindings );
+                $args{source} = $self->_clone_node( $node->source, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Defer ) {
+                $args{block} = $self->_clone_node( $node->block, $bindings );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Use ) {
+                $args{package} = $node->package;
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Require ) {
+                $args{package} = $node->package;
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Yada ) {
+
+                # No-op
+            }
+            else {
+                die "AST Inliner Error: Unhandled node type " . ref($node);
+            }
+            return $class->new(%args);
+        }
+
+        # In lib/Brocken/Compiler/Lowering.pm
+        field %inline_registry;
+
+        # --- Pre-scan and Register Inline Candidates ---
+        method register_inline_candidates($nodes) {
+            for my $n (@$nodes) {
+                if ( $n isa Brocken::AST::OOP::Method ) {
+                    my $fn = 'M_' . $n->name;
+                    $inline_registry{$fn} = { node => $n, is_method => 0 } if $self->is_inline_candidate( $n, $fn );
+                }
+                elsif ( $n isa Brocken::AST::OOP::ClassDecl ) {
+                    for my $m ( @{ $n->methods } ) {
+                        my $fn = $n->name . "::" . $m->name;
+                        $inline_registry{$fn} = { node => $m, is_method => 1, class_name => $n->name } if $self->is_inline_candidate( $m, $fn );
+                    }
+                }
+            }
+        }
+
+        # --- High-Performance, Type-Safe AST Checker ---
+        method _has_recursion_or_bad_return( $node, $func_name ) {
+            return 0 unless defined $node;
+            my $class = ref($node);
+            return 0 unless $class =~ /^Brocken::AST/;
+            if ( $node isa Brocken::AST::Expr::Call ) {
+                return 1 if $node->name eq $func_name;
+                for ( @{ $node->args // [] } ) {
+                    return 1 if $self->_has_recursion_or_bad_return( $_, $func_name );
+                }
+            }
+            elsif ( $node isa Brocken::AST::Expr::MethodCall ) {
+                return 1 if $node->method eq $func_name;
+                return 1 if $node->object isa Brocken::AST::Expr::Const && $node->object->value . "::" . $node->method eq $func_name;
+                return 1 if $self->_has_recursion_or_bad_return( $node->object, $func_name );
+                for ( @{ $node->args // [] } ) {
+                    return 1 if $self->_has_recursion_or_bad_return( $_, $func_name );
+                }
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Return ) {
+                return 1;
+            }
+            elsif ( $node isa Brocken::AST::Expr::BinOp ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->left,  $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->right, $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Expr::UnaryOp ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->expr, $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Expr::Ternary ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->cond, $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->then, $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->else, $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Block ) {
+                for ( @{ $node->statements // [] } ) {
+                    return 1 if $self->_has_recursion_or_bad_return( $_, $func_name );
+                }
+            }
+            elsif ( $node isa Brocken::AST::Stmt::Assignment ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->name,  $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->value, $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Expr::IndexExpr ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->source, $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->index,  $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::If ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->condition,  $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->then_block, $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->else_block, $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::While ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->condition, $func_name );
+                return 1 if $self->_has_recursion_or_bad_return( $node->body,      $func_name );
+            }
+            elsif ( $node isa Brocken::AST::Stmt::VarDecl || $node isa Brocken::AST::Stmt::OurDecl || $node isa Brocken::AST::Stmt::StateDecl ) {
+                return 1 if $self->_has_recursion_or_bad_return( $node->value, $func_name );
+            }
+            return 0;
+        }
+
+        # --- Inline Eligibility Checker ---
+        method is_inline_candidate( $node, $func_name ) {
+            my $body  = $node->body;
+            my @stmts = @{ $body->statements // [] };
+            return 0 if @stmts > 20;    # Statically skip large subroutines
+            my $last_stmt   = $stmts[-1];
+            my @other_stmts = @stmts[ 0 .. $#stmts - 1 ];
+            for my $s (@other_stmts) {
+                return 0 if $self->_has_recursion_or_bad_return( $s, $func_name );
+            }
+            if ( $last_stmt && $last_stmt isa Brocken::AST::Stmt::Return ) {
+                return 0 if $self->_has_recursion_or_bad_return( $last_stmt->expr, $func_name );
+            }
+            else {
+                return 0 if $self->_has_recursion_or_bad_return( $last_stmt, $func_name );
+            }
+            return 1;
+        }
+
+        # --- Dynamic Scope-Injection Inliner ---
+        method _inline_function( $reg_entry, $args ) {
+            my $target_node = $reg_entry->{node};
+            my $is_method   = $reg_entry->{is_method};
+            my $class_name  = $reg_entry->{class_name};
+
+            # 1. Create a nested lexical scope for the inlined execution
+            $current_scope = Brocken::Scope->new( parent => $current_scope );
+
+            # Protect shadow stack
+            my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
+
+            # 2. Evaluate and bind arguments
+            my @arg_regs;
+            for my $arg_node (@$args) {
+                my ( $r, $t ) = $self->lower($arg_node);
+                push @arg_regs, $r;
+                if ( $t =~ /^(Any|String|Array|Hash|Tuple|Fiber|Class|Undef)$/ || $t !~ /^(Int|Float|i64|double|ptr|void)$/ ) {
+                    $builder->emit( 'shadow_push', 'void', [$r] );
+                }
+            }
+
+            # 3. Setup Implicit $self if it is a class method
+            if ($is_method) {
+                my $obj_reg = shift @arg_regs;
+                my $ss      = $driver->alloc_local_slot();
+                $current_scope->define( '$self', 'ptr', 0, undef, $ss );
+                $builder->emit( 'local_store', 'void', [ $ss, $obj_reg ] );
+
+                # Inject Class Fields into the temporary scope pointing to their exact offsets
+                my $ci = $class_info{$class_name};
+                my @ancestors;
+                my $curr = $ci->{parent_class};
+                while ( defined $curr ) {
+                    unshift @ancestors, $curr;
+                    $curr = $class_info{$curr}{parent_class};
+                }
+                my $fo = 16;
+                for my $anc (@ancestors) {
+                    for my $field ( @{ $class_info{$anc}{fields} // [] } ) {
+                        $current_scope->define( $field->name, 'Any', 0, undef, -$fo );
+                        $fo += 8;
+                    }
+                }
+                for my $field ( @{ $ci->{fields} // [] } ) {
+                    $current_scope->define( $field->name, 'Any', 0, undef, -$fo );
+                    $fo += 8;
+                }
+            }
+
+            # 4. Setup Parameters as local scope variables
+            my @params = @{ $target_node->params };
+            for my $i ( 0 .. $#params ) {
+                my $p_name  = $params[$i]{name};
+                my $p_type  = $params[$i]{type};
+                my $arg_reg = $arg_regs[$i] // $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
+                my $sl      = $driver->alloc_local_slot();
+                $current_scope->define( $p_name, $p_type, 0, undef, $sl );
+                $builder->emit( 'local_store', 'void', [ $sl, $arg_reg ] );
+            }
+
+            # 5. Lower the body statements directly
+            my ( $r, $t );
+            for my $s ( @{ $target_node->body->statements // [] } ) {
+                if ( $s isa Brocken::AST::Stmt::Return ) {
+                    ( $r, $t ) = $self->lower( $s->expr );
+                }
+                else {
+                    ( $r, $t ) = $self->lower($s);
+                }
+            }
+
+            # Restore shadow stack & pop scope
+            $builder->emit( 'shadow_set', 'void', [$sp_backup] );
+            $current_scope = $current_scope->parent;
+            return ( $r, $t );
+        }
+
         method _initialize_root_scope() {
 
             # Standard I/O Handles (mapped to FileHandle type, NO sigils!)
@@ -3273,10 +3568,13 @@ package Brocken::Compiler::Lowering {
             $driver->set_line_table_ptr_offset($line_table_ptr_offset);
             $driver->set_line_table_size_offset($line_table_size_offset);
             $builder->emit_jump('L_MAIN_START');
+
+            # Pre-scan the AST for all inline candidates before compilation
+            $self->register_inline_candidates($nodes);
+            #
             $self->inject_runtime();
             $self->_emit_runtime_init_sub();
             $self->register_classes($nodes);
-
             for my $n (@$nodes) {
                 if ( $n isa Brocken::AST::Stmt::OurDecl ) {
                     my $name = $n->name;
@@ -3996,6 +4294,12 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_Call($node) {
+
+            # Check if the target subroutine is registered in the inline candidate pool
+            my $func_name = "M_" . $node->name;
+            if ( exists $inline_registry{$func_name} ) {
+                return $self->_inline_function( $inline_registry{$func_name}, [ @{ $node->args } ] );
+            }
             if ( $node->name eq 'make_callback' ) {
                 my $sub_expr = $node->args->[0];
                 my $sig_expr = $node->args->[1];
@@ -4222,6 +4526,15 @@ package Brocken::Compiler::Lowering {
             }
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
             my ( $or, $ot ) = $self->lower($inv);
+
+            # Statically resolve class method calls and inline them instantly!
+            my $full_name = "${ot}::${mn}";
+            if ( exists $inline_registry{$full_name} ) {
+                my @args = ( $node->object, @{ $node->args } );
+                my ( $r, $t ) = $self->_inline_function( $inline_registry{$full_name}, \@args );
+                $builder->emit( 'shadow_set', 'void', [$sp_backup] );
+                return ( $r, $t );
+            }
 
             # Protect invocant
             $builder->emit( 'shadow_push', 'void', [$or] );
@@ -4538,9 +4851,11 @@ package Brocken::Compiler::Lowering {
             my $source = do { local $/; <$fh> };
             close $fh;
             my $ast = Brocken::Parser->new( tokens => Brocken::Lexer->new( source => $source )->lex() )->parse();
-            $self->register_classes($ast);
-            my @main_stmts;
 
+            # Register dynamic module subroutines as well!
+            $self->register_classes($ast);
+            $self->register_inline_candidates($ast);
+            my @main_stmts;
             for my $n (@$ast) {
                 if   ( $n isa Brocken::AST::OOP::Method || $n isa Brocken::AST::OOP::ClassDecl ) { $self->lower($n); }
                 else                                                                             { push @main_stmts, $n; }
