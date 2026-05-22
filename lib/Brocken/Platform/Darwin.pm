@@ -40,16 +40,55 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'x0' );
             }
         }
+        elsif ( $op eq 'intrinsic_align_entry_stack' ) {
+            $as->sub_imm( 'rsp', 8 );
+        }
+        elsif ( $op eq 'intrinsic_load_library' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->add_imm( 'rdi', 16 );          # Skip 16-byte Brocken String Header
+                $as->mov_imm( 'rsi', 2 );           # RTLD_NOW = 2
+                $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->add_imm( 'x0', 16 );           # Skip 16-byte Brocken String Header
+                $as->mov_imm( 'x1', 2 );            # RTLD_NOW = 2
+                $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_proc_address' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );    # Library Handle
+                $as->mov_reg( 'rsi', $reg_map->{ $inst->{args}[1] } );    # Symbol Name String
+                $as->add_imm( 'rsi', 16 );                                # Skip 16-byte Brocken String Header
+                $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
+                $as->add_imm( 'x1', 16 );                                 # Skip 16-byte Brocken String Header
+                $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
         elsif ( $op eq 'intrinsic_get_pid' ) {
             my $d = $reg_map->{ $inst->{dest} };
             if ( $arch eq 'x64' ) {
-                $as->mov_imm( 'rax', 0x2000014 );    # sys_getpid
+                $as->mov_imm( 'rax', 0x2000014 );                         # sys_getpid
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
             else {
                 # ARM64
-                $as->mov_imm( 'x16', 0x2000014 );    # sys_getpid
+                $as->mov_imm( 'x16', 0x2000014 );                         # sys_getpid
                 $as->syscall(1);
                 $as->mov_reg( $d, 'x0' );
             }
@@ -57,13 +96,13 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
         elsif ( $op eq 'intrinsic_get_system_filetime' ) {
             my $d = $reg_map->{ $inst->{dest} };
             if ( $arch eq 'x64' ) {
-                $as->sub_imm( 'rsp', 16 );           # space for struct timeval
+                $as->sub_imm( 'rsp', 16 );                                # space for struct timeval
                 $as->mov_reg( 'rdi', 'rsp' );
                 $as->mov_imm( 'rsi', 0 );
-                $as->mov_imm( 'rax', 0x2000074 );    # sys_gettimeofday
+                $as->mov_imm( 'rax', 0x2000074 );                         # sys_gettimeofday
                 $as->syscall();
-                $as->load_reg_mem( 'rax', 'rsp', 0 );    # rax = tv_sec
-                $as->load_reg_mem( 'rcx', 'rsp', 8 );    # rcx = tv_usec
+                $as->load_reg_mem( 'rax', 'rsp', 0 );                     # rax = tv_sec
+                $as->load_reg_mem( 'rcx', 'rsp', 8 );                     # rcx = tv_usec
                 $as->add_imm( 'rsp', 16 );
 
                 # Scale to FILETIME: (tv_sec * 10000000) + (tv_usec * 10) + 116444736000000000
@@ -173,7 +212,7 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->store_mem_disp_byte( 'rsp', 48, $src );
                 $as->mov_imm( 'rax', $SYS_write );
                 $as->mov_imm( 'rdi', 1 );
-                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );    # lea rsi, [rsp+48]
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
                 $as->mov_imm( 'rdx', 1 );
                 $as->syscall();
             }
@@ -183,7 +222,51 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->sturb_mem_disp_reg( 'sp', 48, $src );
                 $as->mov_imm( 'x16', $SYS_write );
                 $as->mov_imm( 'x0',  1 );
-                $as->add_imm( 'x17', 0 );                                                        # dummy to get SP
+                $as->add_imm( 'x17', 0 );
+                $as->mov_reg( 'x1', 'sp' );
+                $as->add_imm( 'x1', 48 );
+                $as->mov_imm( 'x2', 1 );
+                $as->syscall(1);
+            }
+        }
+        elsif ( $op eq 'intrinsic_print_stderr' ) {
+            my $p = $reg_map->{ $inst->{args}[0] };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rsi', $p );
+                $as->load_reg_mem( 'rdx', 'rsi', 0 );
+                $as->add_imm( 'rsi', 16 );
+                $as->mov_imm( 'rdi', 2 );
+                $as->mov_imm( 'rax', $SYS_write );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x1', $p );
+                $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->add_imm( 'x1', 16 );
+                $as->mov_imm( 'x0',  2 );
+                $as->mov_imm( 'x16', $SYS_write );
+                $as->syscall(1);
+            }
+        }
+        elsif ( $op eq 'intrinsic_print_stderr_char' ) {
+            my $char = $v->( $inst->{args}[0] );
+            if ( $arch eq 'x64' ) {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11';
+                $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->store_mem_disp_byte( 'rsp', 48, $src );
+                $as->mov_imm( 'rax', $SYS_write );
+                $as->mov_imm( 'rdi', 2 );
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
+                $as->mov_imm( 'rdx', 1 );
+                $as->syscall();
+            }
+            else {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x17';
+                $as->mov_imm( 'x17', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->sturb_mem_disp_reg( 'sp', 48, $src );
+                $as->mov_imm( 'x16', $SYS_write );
+                $as->mov_imm( 'x0',  2 );
+                $as->add_imm( 'x17', 0 );
                 $as->mov_reg( 'x1', 'sp' );
                 $as->add_imm( 'x1', 48 );
                 $as->mov_imm( 'x2', 1 );
@@ -302,6 +385,22 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
             }
         }
         elsif ( $op eq 'intrinsic_exit' ) {
+            if ( $driver->coverage && $driver->coverage_table_size > 0 ) {
+                if ( $arch eq 'x64' ) {
+                    $as->mov_imm( 'rax', $SYS_write );
+                    $as->mov_imm( 'rdi', 2 );
+                    $as->lea_rva( 'rsi', "DATA:" . $driver->coverage_table_offset );
+                    $as->mov_imm( 'rdx', $driver->coverage_table_size );
+                    $as->syscall();
+                }
+                else {
+                    $as->mov_imm( 'x16', $SYS_write );
+                    $as->mov_imm( 'x0',  2 );
+                    $as->lea_rva( 'x1', "DATA:" . $driver->coverage_table_offset );
+                    $as->mov_imm( 'x2', $driver->coverage_table_size );
+                    $as->syscall(1);
+                }
+            }
             my $val = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {
                 $as->mov_imm( 'rax', $SYS_exit );
