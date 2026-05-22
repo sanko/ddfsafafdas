@@ -395,6 +395,7 @@ class Brocken::Target::ARM64 : isa(Brocken::Target) {
             $as->ldur_reg_mem( 'x15', 'x28', $driver->iso_offset('current_fcb') );
             $as->ldur_reg_mem( 'x17', 'x15', $driver->fcb_offset('shadow_ptr') );
             $as->sub_imm( 'x17', 8 );
+            $as->ldur_reg_mem( $d_reg, 'x17', 0 ) if defined $d_reg;
             $as->stur_mem_disp_reg( 'x15', $driver->fcb_offset('shadow_ptr'), 'x17' );
         }
         elsif ( $op =~ /^(local|atomic)_(inc|dec)_ref$/ ) {

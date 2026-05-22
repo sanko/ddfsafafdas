@@ -152,6 +152,8 @@ package Brocken::Compiler {
         method local_ptr ()       {$local_ptr}
         method set_local_ptr ($v) { $local_ptr = $v }
         method reset_locals ()    { $local_ptr = 0 }
+        field $global_label_counter = 0;
+        method alloc_global_label() { return ++$global_label_counter; }
 
         method alloc_local_slot () {
             $local_ptr += 8;

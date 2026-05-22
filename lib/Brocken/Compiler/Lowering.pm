@@ -496,9 +496,14 @@ package Brocken::Compiler::Lowering {
             $internal_name //= 'M_' . $node->name;
             $export_name   //= 'E_' . $node->name;
             $builder->emit_label($export_name);
-            $builder->emit( 'enter_func', 'void', [] );
 
-            # --- 1. CAPTURE RAW REGS IMMEDIATELY ---
+            # Save caller's R14 BEFORE enter_func overwrites it with the second iso load
+            my $caller_r14_s = $driver->alloc_local_slot();
+            my $old_r14      = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+            $builder->emit( 'enter_func',  'void', [] );
+            $builder->emit( 'local_store', 'void', [ $caller_r14_s, $old_r14 ] );
+
+            # --- 2. CAPTURE RAW REGS IMMEDIATELY ---
             my @saved_slots;
             my $arg_idx = 0;
             for my $p ( @{ $node->params } ) {
@@ -510,13 +515,13 @@ package Brocken::Compiler::Lowering {
                 push @saved_slots, { slot => $slot, type => $param_type, ir_type => $ir_type };
             }
 
-            # --- 2. INITIALIZE RUNTIME ---
+            # --- 3. INITIALIZE RUNTIME & SET OUR ISOLATE ---
             $builder->emit( 'call_func', 'void', ['M_runtime_init'] );
-            my $giso_addr = $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] );
-            my $iso_ptr   = $builder->emit( 'load_mem_disp',  'i64', [ $giso_addr, 0 ] );
-            $builder->emit( 'set_isolate_ctx', 'void', [$iso_ptr] );
+            my $giso_ptr = $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] );
+            my $iso      = $builder->emit( 'load_mem_disp',  'ptr', [ $giso_ptr, 0 ] );
+            $builder->emit( 'set_isolate_ctx', 'void', [$iso] );
 
-            # --- 3. BOX SAVED ARGUMENTS ---
+            # --- 4. BOX SAVED ARGUMENTS ---
             my @boxed_args;
             for my $s (@saved_slots) {
                 my $raw = $builder->emit( 'local_load', $s->{ir_type}, [ $s->{slot} ] );
@@ -529,11 +534,39 @@ package Brocken::Compiler::Lowering {
                 }
             }
 
-            # --- 4. CALL INTERNAL LOGIC ---
+            # --- 5. CALL INTERNAL LOGIC ---
             my $has_float   = grep { $_->{type} eq 'Float' || $_->{type} eq 'double' } @{ $node->params };
             my $ret_ir_type = $has_float ? 'double' : 'i64';
             my $result      = $builder->emit( 'call_func', $ret_ir_type, [ $internal_name, @boxed_args ] );
-            $builder->emit( 'leave_func', $ret_ir_type, [$result] );
+
+            # --- 6. UNBOX RETURN VALUE ---
+            my $ret_type = $self->_infer_return_type($node);
+            if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
+                $result = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $result, 1 ] ), 2 ] );
+            }
+
+            # --- 7. RESTORE CALLER'S R14 ---
+            my $orig_r14 = $builder->emit( 'local_load', 'ptr', [$caller_r14_s] );
+            $builder->emit( 'set_isolate_ctx', 'void',       [$orig_r14] );
+            $builder->emit( 'leave_func',      $ret_ir_type, [$result] );
+        }
+
+        method _infer_return_type($node) {
+            my $stmts = $node->body->statements;
+            for my $stmt ( reverse @$stmts ) {
+                next unless $stmt isa Brocken::AST::Stmt::Return;
+                next unless defined $stmt->expr;
+                my $e = $stmt->expr;
+                if ( $e isa Brocken::AST::Expr::BinOp   && $e->op =~ /^[+\-*\/%]$/ ) { return 'Int'; }
+                if ( $e isa Brocken::AST::Expr::UnaryOp && $e->op eq '-' )           { return 'Int'; }
+                if ( $e isa Brocken::AST::Expr::Const ) { return $e->type; }
+                if ( $e isa Brocken::AST::Expr::Var ) {
+                    for my $p ( @{ $node->params } ) { return $p->{type} if $p->{name} eq $e->name; }
+                    return 'Int';
+                }
+                return 'Any';
+            }
+            return 'Any';
         }
 
         method inject_runtime() {
@@ -2464,7 +2497,9 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'store_mem_disp', 'void', [ $fcb, $driver->fcb_offset('shadow_ptr'),  $sh ] );
             $builder->emit( 'store_mem_disp', 'void',
                 [ $fcb, $driver->fcb_offset('wait_handle'), $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] ) ] );
-            {    # Globals
+
+            # --- GUARD ALL PROGRAM-LEVEL GLOBALS FOR NON-SHARED LIBRARIES ---
+            if ( $driver->type ne 'shared' ) {
 
                 # 1. Instantiate STDOUT (Get standard handle dynamically)
                 my $stdout_fd = $builder->emit( 'intrinsic_get_stdout_handle', 'ptr', [] );
@@ -3597,6 +3632,9 @@ package Brocken::Compiler::Lowering {
             # Save raw RSP on non-Windows platforms before pushing frame structures
             if ( $driver->os ne 'win64' ) {
                 $builder->emit( 'intrinsic_save_stack_ptr', 'void', [$stack_ptr_offset] );
+
+                # Align the process entry stack to simulate a call return address
+                $builder->emit( 'intrinsic_align_entry_stack', 'void', [] );
             }
             $builder->emit( 'enter_func', 'void', [] );
             $builder->emit( 'call_func',  'void', ["M_runtime_init"] );

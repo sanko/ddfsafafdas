@@ -23,13 +23,19 @@ sub test_brocken {
         Test2::V0::fail("$name - compilation failed: $err");
         return;
     }
-    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
+
+    # Bug Fix: Only prepend "./" if the path is relative and does not already contain a slash
+    my $run = $exe;
+    if ( $^O ne 'MSWin32' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
+        $run = './' . $exe;
+    }
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
         alarm($timeout);
 
         #~ Test2::V0::diag( 'Running '. $run);
         #~ system( q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run );
+        $run = q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run;
         open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
         local $/;
         my $out = <$fh>;
@@ -52,7 +58,7 @@ sub test_brocken {
                 $ok = 0 unless defined $out_lines[$i] && $out_lines[$i] eq $expected->[$i];
             }
         }
-        Test2::V0::ok( $ok, $name ) or Test2::V0::diag( 'Expected: ' . join( ', ', @$expected ) . ' Got: ' . join( ', ', @out_lines ) );
+        Test2::V0::ok( $ok, $name ) or Test2::V0::diag( join( "\n", 'Expected: ', @$expected, 'Got:', @out_lines ) );
     }
     elsif ( ref $expected eq 'Regexp' ) {
         Test2::V0::like( $output, $expected, $name );

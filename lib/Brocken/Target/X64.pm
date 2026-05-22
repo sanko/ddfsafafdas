@@ -371,7 +371,7 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
 
                 # Guard: Only load from memory if R14 isn't already set.
                 # This allows M_runtime_init to set R14 once and have it persist.
-                my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_local_slot();    # generic unique label
+                my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_global_label();    # globally unique label
                 $as->test_reg_reg( 'r14', 'r14' );
                 $as->jcc( $driver->cc('nz'), $l_has_iso );
                 $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
@@ -466,6 +466,7 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
             $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
             $as->load_reg_mem( 'r10', 'r11', $driver->fcb_offset('shadow_ptr') );
             $as->sub_imm( 'r10', 8 );
+            $as->load_reg_mem( $d_reg, 'r10', 0 ) if defined $d_reg;
             $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), 'r10' );
         }
         elsif ( $op =~ /^(local|atomic)_(inc|dec)_ref$/ ) {

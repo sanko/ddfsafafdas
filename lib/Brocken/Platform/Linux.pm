@@ -37,10 +37,49 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'x0' );
             }
         }
+        elsif ( $op eq 'intrinsic_align_entry_stack' ) {
+            $as->sub_imm( 'rsp', 8 );
+        }
+        elsif ( $op eq 'intrinsic_load_library' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );
+                $as->add_imm( 'rdi', 16 );      # Skip 16-byte Brocken String Header
+                $as->mov_imm( 'rsi', 2 );       # RTLD_NOW = 2
+                $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->add_imm( 'x0', 16 );       # Skip 16-byte Brocken String Header
+                $as->mov_imm( 'x1', 2 );        # RTLD_NOW = 2
+                $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
+        elsif ( $op eq 'intrinsic_get_proc_address' ) {
+            my $d = $reg_map->{ $inst->{dest} };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rdi', $reg_map->{ $inst->{args}[0] } );    # Library Handle
+                $as->mov_reg( 'rsi', $reg_map->{ $inst->{args}[1] } );    # Symbol Name String
+                $as->add_imm( 'rsi', 16 );                                # Skip 16-byte Brocken String Header
+                $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
+                $as->mov_reg( $d, 'rax' );
+            }
+            else {
+                # ARM64
+                $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
+                $as->add_imm( 'x1', 16 );                                 # Skip 16-byte Brocken String Header
+                $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
+                $as->mov_reg( $d, 'x0' );
+            }
+        }
         elsif ( $op eq 'intrinsic_get_pid' ) {
             my $d = $reg_map->{ $inst->{dest} };
             if ( $arch eq 'x64' ) {
-                $as->mov_imm( 'rax', 39 );      # sys_getpid
+                $as->mov_imm( 'rax', 39 );                                # sys_getpid
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
@@ -343,7 +382,6 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
             $as->shr_imm( 'rax', 1 );
 
             # 2. Build struct timespec { long tv_sec, long tv_nsec } on stack
-            # Use the 32-byte shadow-like space we have or just push
             $as->mov_imm( 'r11', 0 );    # 0 nanoseconds
             $as->push_reg('r11');        # tv_nsec
             $as->push_reg('rax');        # tv_sec
@@ -367,7 +405,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                     $as->syscall();
                 }
                 else {
-                    $as->mov_imm( 'x8', 64 );
+                    $as->mov_imm( 'x8', 93 );
                     $as->mov_imm( 'x0', 2 );
                     $as->lea_rva( 'x1', "DATA:" . $driver->coverage_table_offset );
                     $as->mov_imm( 'x2', $driver->coverage_table_size );
