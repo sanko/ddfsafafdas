@@ -105,5 +105,4 @@ BROCKEN
     ok !$err, 'multiple our vars compiled' or diag "Error: $err";
     is $out, "6\n", 'multiple our vars sum = 6';
 }
-
 done_testing;

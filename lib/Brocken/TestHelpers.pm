@@ -16,7 +16,7 @@ sub test_brocken {
     require File::Temp;
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $tmp_fh;
-    my $p   = Brocken::Compiler->new();
+    my $p = Brocken::Compiler->new();
     eval { $p->compile_source( $source, $exe ); };
 
     if ( my $err = $@ ) {

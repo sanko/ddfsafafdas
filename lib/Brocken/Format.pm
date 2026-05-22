@@ -7,15 +7,15 @@ class Brocken::Format {
     field $type           : param : reader = 'exe';
     field $debug_data     : reader = {};
     field $func_ranges    : reader = [];
-    field $labels           : reader = {};
-    field $exported_funcs   : reader = [];
-    field $preserved_regs   : reader = [];
+    field $labels         : reader = {};
+    field $exported_funcs : reader = [];
+    field $preserved_regs : reader = [];
     #
     method set_preserved_regs($r) { $preserved_regs = $r; }
-    method set_debug_data($d)     { $debug_data = $d; }
-    method debug_section($name) { return $self->debug_data->{$name} // ''; }
-    method set_func_ranges($r)  { $func_ranges = $r; }
-    method set_labels($l)       { $labels      = $l; }
+    method set_debug_data($d)     { $debug_data     = $d; }
+    method debug_section($name)   { return $self->debug_data->{$name} // ''; }
+    method set_func_ranges($r)    { $func_ranges = $r; }
+    method set_labels($l)         { $labels      = $l; }
 
     # shared lib
     method set_exported_funcs($f) { $exported_funcs = $f; }

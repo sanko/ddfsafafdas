@@ -179,7 +179,7 @@ class Brocken::Compiler::Optimizer {
         for my $i ( 0 .. $#$insts ) {
             my $inst = $insts->[$i];
             if ( $inst->{op} eq 'label' || $inst->{op} eq 'source_loc' ) {
-                push @new, { op => 'coverage_probe', args => [$probe_id++] };
+                push @new, { op => 'coverage_probe', args => [ $probe_id++ ] };
             }
             push @new, $inst;
         }

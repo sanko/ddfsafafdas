@@ -74,10 +74,9 @@ test_brocken(
     expected => qr/Done: 100000/,
     timeout  => 120
 );
-
-    test_brocken(
-        name   => 'classes_and_gc',
-        source => q{
+test_brocken(
+    name   => 'classes_and_gc',
+    source => q{
             class Test {
                 field Any $a;
                 field Any $b;
@@ -93,10 +92,8 @@ test_brocken(
             }
             say "Done";
         },
-        expected => qr/Done/
-    );
-
-
+    expected => qr/Done/
+);
 test_brocken(
     name   => 'nested_arrays',
     source => q{
@@ -110,7 +107,5 @@ test_brocken(
     },
     expected => qr/Done/
 );
-
-
 #
 done_testing;

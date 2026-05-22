@@ -204,20 +204,35 @@ package Brocken::Format::PE {
         }
 
         method _build_xdata () {
-            # SEH register numbers (AMD64 ABI)
-            my %SEH_REG = ( rax => 0, rcx => 1, rdx => 2, rbx => 3, rsp => 4, rbp => 5, rsi => 6, rdi => 7,
-                r8 => 8, r9 => 9, r10 => 10, r11 => 11, r12 => 12, r13 => 13, r14 => 14, r15 => 15 );
 
+            # SEH register numbers (AMD64 ABI)
+            my %SEH_REG = (
+                rax => 0,
+                rcx => 1,
+                rdx => 2,
+                rbx => 3,
+                rsp => 4,
+                rbp => 5,
+                rsi => 6,
+                rdi => 7,
+                r8  => 8,
+                r9  => 9,
+                r10 => 10,
+                r11 => 11,
+                r12 => 12,
+                r13 => 13,
+                r14 => 14,
+                r15 => 15
+            );
             my @regs      = @{ $self->preserved_regs // [] };
             my $locals    = 4096;
             my $shadow    = 32;
             my $total_loc = $locals + $shadow;
             my $scaled    = $total_loc / 8;
-
-            my $codes = '';
+            my $codes     = '';
 
             # Compute push sizes: regs 0-7 use 1 byte (no REX), regs 8-15 use 2 bytes (REX.B prefix)
-            my $offset     = 0;
+            my $offset = 0;
             my @push_info;
             for my $r (@regs) {
                 my $reg_num = $SEH_REG{$r};
@@ -225,16 +240,19 @@ package Brocken::Format::PE {
                 $offset += $size;
                 push @push_info, { reg_num => $reg_num, offset => $offset };
             }
+
             # mov rbp, rsp = 3 bytes
             my $set_fp_offset = $offset + 3;
+
             # sub rsp, imm32 = 7 bytes
-            my $alloc_offset = $set_fp_offset + 7;
+            my $alloc_offset  = $set_fp_offset + 7;
             my $prologue_size = $alloc_offset;
 
             # Emit unwind codes in reverse prologue order (last instruction first)
             # SEH coding: second byte = (OpInfo << 4) | UnwindOp
             # UWOP_ALLOC_LARGE (op=1, info=0)
             $codes .= pack( 'CC', $prologue_size, ( 0 << 4 ) | 1 ) . pack( 'S<', $scaled );
+
             # UWOP_SET_FPREG (op=3, info=0)
             $codes .= pack( 'CC', $set_fp_offset, ( 0 << 4 ) | 3 );
 

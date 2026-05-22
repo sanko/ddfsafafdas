@@ -41,7 +41,7 @@ subtest 'build_debug_frame' => sub {
     my $dw    = Brocken::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs, context_size => $CTX_WIN64 );
     my $data  = $dw->build_debug_frame;
     ok length($data) > 40, 'debug_frame has content';
-    my ($cie_len) = unpack( 'L<', $data );
+    my ($cie_len) = unpack( 'L<',    $data );
     my ($cie_id)  = unpack( 'x4 L<', $data );
     is $cie_id, 0xFFFFFFFF, 'CIE id = -1 (DWARF3)';
     my $fde_count = 0;
@@ -54,7 +54,7 @@ subtest 'build_debug_frame' => sub {
         $pos += 4 + $fde_len;
     }
     is $fde_count, scalar(@$funcs), "FDE count matches func_ranges";
-    is $pos, length($data), 'debug_frame entries consume all bytes';
+    is $pos,       length($data),   'debug_frame entries consume all bytes';
 };
 subtest 'build_eh_frame' => sub {
     my $funcs = make_fake_funcs;
@@ -72,15 +72,15 @@ subtest 'build_eh_frame' => sub {
     ok $cie_len > 0, 'CIE length positive';
     my ($cie_id) = unpack( 'x4 L<', $data );
     is $cie_id, 0, 'CIE id = 0 (eh_frame)';
-    my $body = substr( $data, 8, $cie_len - 4 );
+    my $body   = substr( $data, 8, $cie_len - 4 );
     my $zr_pos = index( $body, "zR\0" );
     ok $zr_pos >= 0, 'CIE augmentation is "zR"';
+
     # FDE_enc is at zr_pos + 3("zR\0") + 1(code_align) + 1(data_align) + 1(return_reg) + 1(aug_data_len)
     my ($fde_enc) = unpack( "x" . ( $zr_pos + 7 ) . "C", $body );
     is $fde_enc, 0x1B, 'FDE encoding = pcrel|sdata4 (0x1B)';
     my $fde_count = 0;
     my $pos       = 4 + $cie_len;
-
     while ( $pos < length($data) ) {
         my ($fde_len) = unpack( "x${pos} L<", $data );
         last if $fde_len == 0;
@@ -88,7 +88,7 @@ subtest 'build_eh_frame' => sub {
         $pos += 4 + $fde_len;
     }
     is $fde_count, scalar(@$funcs), 'FDE count matches func_ranges';
-    is $pos, length($data), 'eh_frame entries consume all bytes';
+    is $pos,       length($data),   'eh_frame entries consume all bytes';
 };
 subtest 'build_debug_aranges' => sub {
     my $funcs = make_fake_funcs;

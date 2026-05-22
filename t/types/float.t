@@ -42,7 +42,7 @@ BROCKEN
     my $as = $driver->as;
     $as->resolve( $driver->text_rva, $driver->data_rva );
     my $all_labels = $as->labels;
-    $format->set_labels( $all_labels );
+    $format->set_labels($all_labels);
     my @exports = sort(qw(pass_float));
     $format->set_exported_funcs( \@exports );
     my $text    = $as->code;

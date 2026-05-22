@@ -37,8 +37,8 @@ sub coverage_to_lcov {
     my %line_hits;
     my $nprobes = length($cov_bytes);
     for my $i ( 0 .. $nprobes - 1 ) {
-        my $line   = $probe_lines->[$i] // 0;
-        my $count  = ord( substr( $cov_bytes, $i, 1 ) );
+        my $line  = $probe_lines->[$i] // 0;
+        my $count = ord( substr( $cov_bytes, $i, 1 ) );
         $line_hits{$line} += $count;
     }
     my @lines;
@@ -143,16 +143,16 @@ sub coverage_to_lcov {
         $lines_seen{$line} = 1;
     }
     ok scalar( keys %lines_seen ) >= 3, 'Probes mapped to at least 3 distinct lines';
-    ok exists $lines_seen{1}, 'Line 1 has probes';
-    ok exists $lines_seen{2}, 'Line 2 has probes';
-    ok exists $lines_seen{3}, 'Line 3 has probes';
+    ok exists $lines_seen{1},           'Line 1 has probes';
+    ok exists $lines_seen{2},           'Line 2 has probes';
+    ok exists $lines_seen{3},           'Line 3 has probes';
 }
 
 # Test 10: Line-level lcov has distinct entries per line
 {
     my $source = "say 'a';\nsay 'b';\n";
     my ( $stdout, $stderr, $compiler ) = compile_and_capture_coverage( source => $source );
-    my $lcov = coverage_to_lcov( $stderr, $compiler );
+    my $lcov     = coverage_to_lcov( $stderr, $compiler );
     my @da_lines = $lcov =~ /^DA:(\d+),(\d+)/gm;
     my %da_map;
     for my $i ( 0 .. $#da_lines / 2 ) {
@@ -163,5 +163,4 @@ sub coverage_to_lcov {
     cmp_ok $da_map{1}, '>', 0, 'Line 1 hit count > 0';
     cmp_ok $da_map{2}, '>', 0, 'Line 2 hit count > 0';
 }
-
 done_testing;

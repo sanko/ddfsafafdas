@@ -60,9 +60,9 @@ package Brocken::Compiler {
         field $exception_table_offset : reader : writer = undef;
         field $data_segment           : reader : writer = undef;
         field $coverage               : param  : reader = undef;
-        field $coverage_table_offset      : reader = undef;
-        field $coverage_table_size        : reader = undef;
-        field $coverage_probe_lines       : reader = undef;
+        field $coverage_table_offset  : reader = undef;
+        field $coverage_table_size    : reader = undef;
+        field $coverage_probe_lines   : reader = undef;
         #
         ADJUST {
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
@@ -229,7 +229,6 @@ package Brocken::Compiler {
                     if ( $probe_count > 0 ) {
                         $coverage_table_size   = $probe_count;
                         $coverage_table_offset = $ds->add_raw_bytes( "\0" x $probe_count );
-
                         my @probe_lines;
                         my $next_line = 0;
                         for my $inst ( reverse @instructions ) {

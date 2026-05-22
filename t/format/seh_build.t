@@ -18,9 +18,9 @@ subtest 'build_xdata' => sub {
     my $version                = $version_flags_prolog & 0x07;
     my $flags                  = ( $version_flags_prolog >> 3 ) & 0x1F;
     my $prolog                 = ( $version_flags_prolog >> 6 ) & 0xFF;
-    is $version, 1,  'UNWIND_INFO version 1';
-    is $flags,   0,  'No exception handler flags';
-    is( ($version_flags_prolog >> 8) & 0xFF, 22, 'SizeOfProlog = 22' );
+    is $version, 1, 'UNWIND_INFO version 1';
+    is $flags,   0, 'No exception handler flags';
+    is( ( $version_flags_prolog >> 8 ) & 0xFF, 22, 'SizeOfProlog = 22' );
     my ($count_of_codes) = unpack( 'x2 C', $xdata );
     is $count_of_codes, 11, 'CountOfCodes = 11';
     my ($frame_reg) = unpack( 'x3 C', $xdata );

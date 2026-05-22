@@ -240,6 +240,7 @@ package Brocken::Format::DWARF {
             }
             return $data;
         }
+
         method build_eh_frame () {
             return '' unless $eh_frame_base;
             my $reg = $arch eq 'arm64' ? 30 : 16;
@@ -247,22 +248,20 @@ package Brocken::Format::DWARF {
             # CIE with "zR" augmentation for pcrel FDE encoding
             my $cie_body = pack( 'C', 1 ) . "zR\0" . $self->_uleb(1) . $self->_sleb(-8);
             $cie_body .= pack( 'C', $reg );
+
             # Augmentation data length + FDE encoding (pcrel|sdata4 = 0x1B)
             $cie_body .= $self->_uleb(1) . "\x1B";
+
             # Initial instructions: def_cfa RSP+8, offset rip at cfa-8
             $cie_body .= "\x0C" . $self->_uleb( $arch eq 'arm64' ? 31 : 7 ) . $self->_uleb(8);
             $cie_body .= pack( 'C', 0x80 | $reg ) . $self->_uleb(1);
-
             my $cie_pad = ( 4 - ( ( length($cie_body) + 4 ) % 4 ) ) % 4;
             $cie_body .= "\0" x $cie_pad;
-
             my $data = pack( 'L<', length($cie_body) + 4 ) . pack( 'L<', 0 ) . $cie_body;
-
             for my $fn (@$func_ranges) {
                 my $fn_start = $fn->{start};
                 my $fn_len   = ( $fn->{end} // $fn->{start} + 1 ) - $fn->{start};
-
-                my $instr = "\x0C" . $self->_uleb( $arch eq 'arm64' ? 29 : 6 ) . $self->_uleb( $context_size + 8 );
+                my $instr    = "\x0C" . $self->_uleb( $arch eq 'arm64' ? 29 : 6 ) . $self->_uleb( $context_size + 8 );
                 for my $r (@$preserved_regs) {
                     my $reg_num      = $arch eq 'arm64' ? 0 : $DWARF_REG{$r};
                     my $factored_off = -16 / -8;

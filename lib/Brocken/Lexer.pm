@@ -103,8 +103,8 @@ class Brocken::Lexer {
             if ( $remaining =~ /^([+\-*\/=<>\[\].:!?%])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1); next; }
             if ( $remaining =~ /^(__LINE__|__FILE__)/ ) {
                 my $val = $1;
-                if ( $val eq '__LINE__' ) { push @tokens, $self->_make_token( 'NUM', $line ) }
-                else                       { push @tokens, $self->_make_token( 'STRING', $file ) }
+                if   ( $val eq '__LINE__' ) { push @tokens, $self->_make_token( 'NUM',    $line ) }
+                else                        { push @tokens, $self->_make_token( 'STRING', $file ) }
                 $self->_advance( length($val) );
                 next;
             }
