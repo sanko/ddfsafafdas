@@ -46,7 +46,13 @@ class Brocken::Codegen {
                     }
                 }
             }
-            elsif ( $op eq 'source_loc' )  { $driver->push_source_loc( length( $as->code ), $inst->{args}[0], $inst->{args}[1], $inst->{args}[2] ); }
+            elsif ( $op eq 'source_loc' ) { $driver->push_source_loc( length( $as->code ), $inst->{args}[0], $inst->{args}[1], $inst->{args}[2] ); }
+            elsif ( $op eq 'coverage_probe' ) {
+                if ( $driver->coverage && defined $driver->coverage_table_offset ) {
+                    my $probe_id = $inst->{args}[0];
+                    $as->inc_byte_data( $driver->coverage_table_offset + $probe_id );
+                }
+            }
             elsif ( $op =~ /^intrinsic_/ ) { $target->compile_intrinsic( $as, $inst, \%reg_map, $driver ); }
             else                           { $target->emit_op( $as, $inst, \%reg_map, $driver ); }
         }

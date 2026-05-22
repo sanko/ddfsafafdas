@@ -786,6 +786,13 @@ class Brocken::Target::ARM64::Emit {
         $code .= pack( 'L<', 0x38000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
     }
 
+    method inc_byte_data($data_offset) {
+        $self->lea_rva( 'x16', "DATA:$data_offset" );
+        $code .= pack( 'L<', 0x39400211 );    # ldrb w17, [x16]
+        $code .= pack( 'L<', 0x11000631 );    # add w17, w17, #1
+        $code .= pack( 'L<', 0x39000211 );    # strb w17, [x16]
+    }
+
     method lea_rva( $reg, $target, $txtrva = 0 ) {
         my $r = $self->reg($reg);
         if ( !defined $target ) { die "lea_rva: target is undefined" }

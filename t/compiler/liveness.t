@@ -1,0 +1,57 @@
+use v5.40;
+use feature 'class';
+no warnings 'portable', 'experimental::class';
+use Test2::V0;
+use lib 'lib';
+use Brocken::IR;
+subtest 'Basic vreg tracking' => sub {
+    my $b  = Brocken::IR::Builder->new;
+    my $v1 = $b->emit( 'constant', 'Int', [1] );
+    my $v2 = $b->emit( 'constant', 'Int', [2] );
+    $b->emit( 'add', 'Int', [ $v1, $v2 ] );
+    my $insts = $b->instructions;
+    is scalar(@$insts), 3, 'three instructions';
+    ok defined($v1), 'vreg %1 defined';
+    ok defined($v2), 'vreg %2 defined';
+};
+subtest 'Nested vreg references' => sub {
+    my $b     = Brocken::IR::Builder->new;
+    my $a     = $b->emit( 'constant',      'Int', [10] );
+    my $b1    = $b->emit( 'load_mem_disp', 'Int', [ $a, 0 ] );
+    my $c1    = $b->emit( 'constant',      'Int', [5] );
+    my $r     = $b->emit( 'mul',           'Int', [ $b1, $c1 ] );
+    my $insts = $b->instructions;
+    is scalar(@$insts), 4, 'chained instructions';
+    like $a, qr/^%\d+$/, 'vreg for constant';
+    like $r, qr/^%\d+$/, 'vreg for mul result';
+    is $insts->[3]{args}[0], $b1, 'mul uses result of load';
+    is $insts->[3]{args}[1], $c1, 'mul uses constant';
+};
+subtest 'Memory operations use vregs' => sub {
+    my $b    = Brocken::IR::Builder->new;
+    my $base = $b->emit( 'load_data_addr', 'Int', ['string'] );
+    my $val  = $b->emit( 'constant',       'Int', [42] );
+    $b->emit( 'store_mem_disp', 'void', [ $base, 0, $val ] );
+    $b->emit( 'local_load',     'Int',  ['%slot'] );
+    my $insts = $b->instructions;
+    ok scalar(@$insts) >= 4, 'memory ops create instructions';
+    is $insts->[0]{op}, 'load_data_addr', 'load_data_addr';
+    is $insts->[2]{op}, 'store_mem_disp', 'store_mem_disp';
+};
+subtest 'Control flow creates labels' => sub {
+    my $b  = Brocken::IR::Builder->new;
+    my $l1 = $b->new_label;
+    my $l2 = $b->new_label;
+    $b->emit_label($l1);
+    $b->emit( 'constant', 'Int', [1] );
+    $b->emit_jump($l2);
+    $b->emit_label($l2);
+    $b->emit( 'leave_func', 'void', [] );
+    my $insts = $b->instructions;
+    is scalar(@$insts),     5,       'label/jump sequence';
+    is $insts->[0]{op},     'label', 'first is label';
+    is $insts->[0]{name},   $l1,     'label name';
+    is $insts->[2]{op},     'jmp',   'jmp instruction';
+    is $insts->[2]{target}, $l2,     'jmp target';
+};
+done_testing;

@@ -36,7 +36,7 @@ BROCKEN
     my $optimizer = Brocken::Compiler::Optimizer->new();
     $optimizer->optimize( $lowering->builder );
     my $format = $driver->format;
-    my $data   = $ds->get_raw_data();
+    my $data   = $ds->raw_data();
     $format->pre_layout( 65536, length($data), 'x64', 'win64' );
     my $codegen = Brocken::Codegen->new( arch => 'x64' );
     my @insts   = $lowering->builder->instructions;

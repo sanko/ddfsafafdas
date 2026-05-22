@@ -27,7 +27,7 @@ package Brocken::Compiler::Lowering {
         field $anon_counter        = 0;
         field @fragments;
         field @defer_stack;
-        field @loop_stack; # Stack of { next_l, last_l, redo_l }
+        field @loop_stack;    # Stack of { next_l, last_l, redo_l }
         field $defer_active_depth = 0;
         field $_skip_runtime      = 0;
         field @exported_funcs;
@@ -2770,10 +2770,14 @@ package Brocken::Compiler::Lowering {
                 die "Too many global variables" if $our_var_next_offset > 1024;
             }
             my $off = $our_vars{$name};
-            my ( $vr, $vt ) = $self->lower( $node->value );
-            $builder->emit( 'store_iso_disp', 'void', [ $off, $vr ] );
+            my $type = $node->type;
+            if ( defined $node->value ) {
+                my ( $vr, $vt ) = $self->lower( $node->value );
+                $builder->emit( 'store_iso_disp', 'void', [ $off, $vr ] );
+                $type = $node->type eq 'Any' ? $vt : $node->type;
+            }
             if ( !$current_scope->has_local_symbol($name) ) {
-                $current_scope->define( $name, $node->type eq 'Any' ? $vt : $node->type, 0, undef, undef, undef, $off );
+                $current_scope->define( $name, $type, 0, undef, undef, undef, $off );
             }
             return ( undef, 'void' );
         }
@@ -2901,72 +2905,64 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'shadow_push', 'void', [$lr] );
                 my ( $rr, $rt ) = $self->lower( $node->right );
                 $builder->emit( 'shadow_push', 'void', [$rr] );
-                
+
                 # Untag both operands: (val - 1) / 2
                 my $l_val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $lr, 1 ] ), 2 ] );
                 my $r_val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $rr, 1 ] ), 2 ] );
-                
+
                 # diff = r_val - l_val
                 my $diff = $builder->emit( 'sub', 'i64', [ $r_val, $l_val ] );
+
                 # count = diff + 1
-                my $count = $builder->emit( 'add', 'i64', [ $diff, 1 ] );
-                
-                my $is_empty = $builder->emit( 'cmp_lt', 'Int', [ $r_val, $l_val ] );
+                my $count      = $builder->emit( 'add',    'i64', [ $diff,  1 ] );
+                my $is_empty   = $builder->emit( 'cmp_lt', 'Int', [ $r_val, $l_val ] );
                 my $count_slot = $driver->alloc_local_slot();
                 my $l_nonempty = $builder->new_label();
-                my $l_end = $builder->new_label();
+                my $l_end      = $builder->new_label();
                 $builder->emit_cond_br( $is_empty, $l_end, $l_nonempty );
-                
+
                 # If empty, store 0
-                $builder->emit('local_store', 'void', [$count_slot, $builder->emit('constant', 'i64', [0])]);
+                $builder->emit( 'local_store', 'void', [ $count_slot, $builder->emit( 'constant', 'i64', [0] ) ] );
                 $builder->emit_jump($l_end);
-                
+
                 # If non-empty, store count
                 $builder->emit_label($l_nonempty);
-                $builder->emit('local_store', 'void', [$count_slot, $count]);
-                
+                $builder->emit( 'local_store', 'void', [ $count_slot, $count ] );
                 $builder->emit_label($l_end);
-                my $final_count = $builder->emit('local_load', 'i64', [$count_slot]);
-                
+                my $final_count = $builder->emit( 'local_load', 'i64', [$count_slot] );
+
                 # Allocate Array: size = 8 + final_count * 8
-                my $size = $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $final_count, 8 ] ) ] );
-                my $arr = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $size ] );
-                
+                my $size = $builder->emit( 'add',       'i64', [ 8,            $builder->emit( 'mul', 'i64', [ $final_count, 8 ] ) ] );
+                my $arr  = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $size ] );
+
                 # Tag Array: (final_count << 2) | 1
                 my $tag = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $final_count, 2 ] ), 1 ] );
                 $builder->emit( 'store_mem_disp', 'void', [ $arr, 0, $tag ] );
-                
+
                 # Loop and fill
                 my $idx_s = $driver->alloc_local_slot();
-                $builder->emit('local_store', 'void', [$idx_s, $builder->emit('constant', 'i64', [0])]);
-                
+                $builder->emit( 'local_store', 'void', [ $idx_s, $builder->emit( 'constant', 'i64', [0] ) ] );
                 my $l_loop_cond = $builder->new_label();
                 my $l_loop_body = $builder->new_label();
-                my $l_loop_end = $builder->new_label();
-                
+                my $l_loop_end  = $builder->new_label();
                 $builder->emit_jump($l_loop_cond);
-                
                 $builder->emit_label($l_loop_body);
-                my $idx = $builder->emit('local_load', 'i64', [$idx_s]);
-                
+                my $idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+
                 # tagged_val = ((l_val + idx) << 1) | 1
-                my $raw_val = $builder->emit('add', 'i64', [$l_val, $idx]);
-                my $tagged_val = $builder->emit('or', 'i64', [ $builder->emit('shl', 'i64', [$raw_val, 1]), 1 ]);
-                
+                my $raw_val    = $builder->emit( 'add', 'i64', [ $l_val, $idx ] );
+                my $tagged_val = $builder->emit( 'or',  'i64', [ $builder->emit( 'shl', 'i64', [ $raw_val, 1 ] ), 1 ] );
+
                 # offset = 8 + idx * 8
-                my $off = $builder->emit('add', 'i64', [ 8, $builder->emit('mul', 'i64', [$idx, 8]) ]);
-                my $ptr = $builder->emit('add', 'ptr', [$arr, $off]);
-                $builder->emit('store_mem_disp', 'void', [$ptr, 0, $tagged_val]);
-                
-                my $next_idx = $builder->emit('add', 'i64', [$idx, 1]);
-                $builder->emit('local_store', 'void', [$idx_s, $next_idx]);
-                
+                my $off = $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $idx, 8 ] ) ] );
+                my $ptr = $builder->emit( 'add', 'ptr', [ $arr, $off ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $ptr, 0, $tagged_val ] );
+                my $next_idx = $builder->emit( 'add', 'i64', [ $idx, 1 ] );
+                $builder->emit( 'local_store', 'void', [ $idx_s, $next_idx ] );
                 $builder->emit_label($l_loop_cond);
-                my $chk_idx = $builder->emit('local_load', 'i64', [$idx_s]);
-                $builder->emit_cond_br( $builder->emit('cmp_lt', 'Int', [$chk_idx, $final_count]), $l_loop_body, $l_loop_end );
-                
+                my $chk_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $chk_idx, $final_count ] ), $l_loop_body, $l_loop_end );
                 $builder->emit_label($l_loop_end);
-                
                 $builder->emit( 'shadow_pop', 'void', [] );
                 $builder->emit( 'shadow_pop', 'void', [] );
                 return ( $arr, 'Array' );
@@ -3065,9 +3061,8 @@ package Brocken::Compiler::Lowering {
 
         method lower_While($node) {
             my $redo_l = $builder->new_label();
-            my $next_l = $builder->new_label(); # Condition
+            my $next_l = $builder->new_label();    # Condition
             my $last_l = $builder->new_label();
-            
             push @loop_stack, { next_l => $next_l, last_l => $last_l, redo_l => $redo_l };
             $builder->emit_jump($next_l);
             $builder->emit_label($redo_l);
@@ -3081,64 +3076,59 @@ package Brocken::Compiler::Lowering {
 
         method lower_For($node) {
             my ( $source_reg, $source_type ) = $self->lower( $node->source );
-            
+
             # For now, only support Array source
             die "For loop source must be an Array" unless $source_type eq 'Array';
-            
             my $l_cond = $builder->new_label();
             my $l_next = $builder->new_label();
             my $l_redo = $builder->new_label();
             my $l_last = $builder->new_label();
-            
-            my $idx_s = $driver->alloc_local_slot();
-            $builder->emit('local_store', 'void', [$idx_s, $builder->emit('constant', 'i64', [0])]);
-            
+            my $idx_s  = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $idx_s, $builder->emit( 'constant', 'i64', [0] ) ] );
             push @loop_stack, { next_l => $l_next, last_l => $l_last, redo_l => $l_redo };
-            
             $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("LoopStart\n") ] ) ] );
-            
+
             # Initial condition check
             $builder->emit_jump($l_cond);
-            
             $builder->emit_label($l_redo);
+
             # Get element
             my $idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+
             # Ptr to element: source + 8 + (idx * 8)
-            my $ptr = $builder->emit( 'add', 'ptr', [ $source_reg, $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $idx, 8 ] ), 8 ] ) ] );
+            my $ptr
+                = $builder->emit( 'add', 'ptr', [ $source_reg, $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $idx, 8 ] ), 8 ] ) ] );
             my $val = $builder->emit( 'load_mem_disp', 'Any', [ $ptr, 0 ] );
-            
+
             # Define loop variable
             if ( $node->is_my ) {
                 my $sl = $driver->alloc_local_slot();
                 $current_scope->define( $node->var, 'Any', 0, undef, $sl );
                 $builder->emit( 'local_store', 'void', [ $sl, $val ] );
             }
-            
             $self->lower( $node->body );
-            
+
             # Fallthrough to increment
             $builder->emit_jump($l_next);
-            
             $builder->emit_label($l_next);
             my $curr_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
             my $next_idx = $builder->emit( 'add', 'i64', [ $curr_idx, 1 ] );
-            $builder->emit( 'local_store', 'void', [$idx_s, $next_idx ] );
+            $builder->emit( 'local_store', 'void', [ $idx_s, $next_idx ] );
             $builder->emit_jump($l_cond);
-            
             $builder->emit_label($l_cond);
+
             # Re-check condition: i < len(source)
             # Length = (first_word >> 2)
             my $raw_len = $builder->emit( 'load_mem_disp', 'i64', [ $source_reg, 0 ] );
-            my $len = $builder->emit( 'shr', 'i64', [ $raw_len, 2 ] );
+            my $len     = $builder->emit( 'shr',           'i64', [ $raw_len,    2 ] );
 
             # Debug print length
             $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("Len: ") ] ) ] );
-            $builder->emit( 'call_func', 'void', [ 'M_print_int', $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $len, 1 ] ), 1 ] ) ] );
+            $builder->emit( 'call_func', 'void',
+                [ 'M_print_int', $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $len, 1 ] ), 1 ] ) ] );
             $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
-
             my $chk_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
             $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $chk_idx, $len ] ), $l_redo, $l_last );
-            
             $builder->emit_label($l_last);
             pop @loop_stack;
             return ( undef, 'void' );
@@ -3146,19 +3136,19 @@ package Brocken::Compiler::Lowering {
 
         method lower_Next($node) {
             die "No active loop" unless @loop_stack;
-            $builder->emit_jump($loop_stack[-1]{next_l});
+            $builder->emit_jump( $loop_stack[-1]{next_l} );
             return ( undef, 'void' );
         }
 
         method lower_Last($node) {
             die "No active loop" unless @loop_stack;
-            $builder->emit_jump($loop_stack[-1]{last_l});
+            $builder->emit_jump( $loop_stack[-1]{last_l} );
             return ( undef, 'void' );
         }
 
         method lower_Redo($node) {
             die "No active loop" unless @loop_stack;
-            $builder->emit_jump($loop_stack[-1]{redo_l});
+            $builder->emit_jump( $loop_stack[-1]{redo_l} );
             return ( undef, 'void' );
         }
 

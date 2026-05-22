@@ -75,9 +75,9 @@ subtest 'Ternary Operator' => sub {
 subtest 'Method Call' => sub {
     my $ast  = parse('$obj->meth(1, 2);');
     my $node = $ast->[0];
-    isa_ok( $node, 'Brocken::AST::OOP::MethodCall' );
-    is( $node->invocant->name,   '$obj', 'invocant $obj' );
-    is( $node->name,             'meth', 'method meth' );
+    isa_ok( $node, 'Brocken::AST::Expr::MethodCall' );
+    is( $node->object->name,     '$obj', 'invocant $obj' );
+    is( $node->method,           'meth', 'method meth' );
     is( scalar @{ $node->args }, 2,      '2 args' );
 };
 done_testing;

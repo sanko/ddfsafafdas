@@ -749,6 +749,12 @@ class Brocken::Target::X64::Emit {
             pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
     }
 
+    method inc_byte_data($data_offset) {
+        $code .= pack( 'CC', 0xFE, 0x05 );
+        push @fixups, { offset => length($code), target => "DATA:$data_offset" };
+        $code .= pack( 'l<', 0 );
+    }
+
     method resolve( $text_rva = 0, $data_rva = 0 ) {
         for (@fixups) {
             my $target = $_->{target};

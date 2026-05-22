@@ -5,7 +5,7 @@ We wrote a compiler in pure perl. Implement the following features:
  - [ ] __LINE__, __FILE__, __PACKAGE__, __CLASS__, __ENND__, __DATA__,etc
  - [x] Add the ability to handle `#line` directives like perl, C, etc. Implement a nur
  - [ ] Enhance our RC Immix implementation with a nursery for short lived allocations.
- - [ ] Implement `our` for package level globals.
+ - [x] Implement `our` for package level globals.
  - [ ] `dump` keyword that pretty prints vars (scalars, lists, hashes, and even class objects); maybe in JSON?
  - [x] `...` yada-yada stub from Perl
  - [ ] Implement these loop keywords (they should behave exactly as they do in perl 5.40):

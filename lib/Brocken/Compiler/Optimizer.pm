@@ -25,6 +25,15 @@ class Brocken::Compiler::Optimizer {
                 if ( $i->{op} eq 'shadow_push' ) { $shadow_map{ $i->{args}[0] } = $i; }
             }
             for my $i (@instructions) {
+                next if $i->{op} eq 'nop';
+                next unless defined $i->{dest};
+                next if $i->{op} =~ /^(?:call_|tail_call_|store_|intrinsic_|shadow_|mark_try_|leave_func)/;
+                if ( ( $use_count{ $i->{dest} } // 0 ) == 0 ) {
+                    $i->{op} = 'nop';
+                    $changed = 1;
+                }
+            }
+            for my $i (@instructions) {
                 next unless $i->{op} eq 'map_op';
                 my $src_reg = $i->{args}[0];
                 my $prev    = $def{$src_reg};
@@ -88,10 +97,13 @@ class Brocken::Compiler::Optimizer {
                 $current_enter = $i;
                 $is_leaf       = 1;
             }
-            elsif ( $i->{op} eq 'leave_func' || $i->{op} eq 'tail_call_func' || $i->{op} eq 'tail_call_reg' ) {
+            elsif ( $i->{op} eq 'leave_func' ) {
                 if ( $current_enter && $is_leaf ) {
                     $current_enter->{op} = 'enter_leaf_func';
                 }
+                $current_enter = undef;
+            }
+            elsif ( $i->{op} eq 'tail_call_func' || $i->{op} eq 'tail_call_reg' ) {
                 $current_enter = undef;
             }
             elsif ($current_enter) {
@@ -102,6 +114,50 @@ class Brocken::Compiler::Optimizer {
                 }
             }
         }
+    }
+
+    method coverage_report($builder) {
+        my @insts = $builder->instructions();
+        return {} unless @insts;
+        my %label_idx;
+        for my $i ( 0 .. $#insts ) {
+            $label_idx{ $insts[$i]{name} } = $i if $insts[$i]{op} eq 'label';
+        }
+        my @entry = grep { $insts[$_]{op} =~ /^enter_func/ } 0 .. $#insts;
+        return {} unless @entry;
+        my %reachable;
+        my @work = @entry;
+        while (@work) {
+            my $idx = pop @work;
+            next if $reachable{$idx}++ || $idx > $#insts;
+            my $op = $insts[$idx]{op};
+            next if $op eq 'leave_func' || $op eq 'nop';
+            if ( $op eq 'jmp' ) {
+                my $t = $label_idx{ $insts[$idx]{target} };
+                push @work, $t if defined $t;
+            }
+            elsif ( $op eq 'cond_br' ) {
+                my $tt = $label_idx{ $insts[$idx]{true_l} };
+                my $ft = $label_idx{ $insts[$idx]{false_l} };
+                push @work, $tt if defined $tt;
+                push @work, $ft if defined $ft;
+            }
+            else {
+                push @work, $idx + 1 if $idx + 1 <= $#insts;
+            }
+        }
+        my ( %op_total, %op_reach );
+        for my $i ( 0 .. $#insts ) {
+            $op_total{ $insts[$i]{op} }++;
+            $op_reach{ $insts[$i]{op} }++ if $reachable{$i};
+        }
+        return {
+            total_insts  => scalar(@insts),
+            reachable    => scalar( keys %reachable ),
+            unreachable  => scalar(@insts) - scalar( keys %reachable ),
+            opcode_total => \%op_total,
+            opcode_reach => \%op_reach,
+        };
     }
 
     method substitute_ast( $node, $var_name, $repl_node ) {
@@ -115,6 +171,20 @@ class Brocken::Compiler::Optimizer {
         }
         if ( $node isa Brocken::AST::Expr::Const ) { return $node; }
         die 'Optimizer Error: Unhandled AST node ' . ref($node);
+    }
+
+    method insert_coverage_probes($insts) {
+        my $probe_id = 0;
+        my @new;
+        for my $i ( 0 .. $#$insts ) {
+            my $inst = $insts->[$i];
+            if ( $inst->{op} eq 'label' || $inst->{op} eq 'source_loc' ) {
+                push @new, { op => 'coverage_probe', args => [$probe_id++] };
+            }
+            push @new, $inst;
+        }
+        @$insts = @new;
+        return $probe_id;
     }
 }
 1;

@@ -9,67 +9,47 @@ sub test_brocken {
     my %args     = @_;
     my $name     = $args{name};
     my $source   = $args{source};
-    my $expected = $args{expected};        # Arrayref of lines or regex
+    my $expected = $args{expected};
     my $timeout  = $args{timeout} // 30;
     require Brocken;
     require Test2::V0;
-    my $lexer    = Brocken::Lexer->new( source => $source );
-    my $tokens   = $lexer->lex();
-    my $parser   = Brocken::Parser->new( tokens => $tokens );
-    my $ast      = $parser->parse();
-    my $ds       = Brocken::Compiler::DataSegment->new();
-    my $driver   = Brocken::Compiler->new();
-    my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
-    $lowering->lower_program($ast);
-    my $optimizer = Brocken::Compiler::Optimizer->new();
-    $optimizer->optimize( $lowering->builder );
-    my $p = Brocken::Compiler->new();
-    warn;
-    $p->format->pre_layout( scalar( $lowering->builder->instructions ) * 32 + 8192, length( $ds->get_raw_data() ) + 8192, $p->arch, $p->os, 0 );
-    warn;
-    my $codegen = Brocken::Codegen->new( arch => $p->arch );
-    warn;
-    $codegen->compile( [ $lowering->builder->instructions() ], $p );
-    warn;
-    $p->as->resolve();
-    warn;
-    my $ext = $p->os eq 'win64' ? '.exe' : '';
-    my $exe = "test_bin$ext";
-    $p->compile_source( $source, $exe );
-    warn;
-    my $run = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
-    warn;
+    require File::Temp;
+    my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
+    close $tmp_fh;
+    my $p   = Brocken::Compiler->new();
+    eval { $p->compile_source( $source, $exe ); };
+
+    if ( my $err = $@ ) {
+        Test2::V0::fail("$name - compilation failed: $err");
+        return;
+    }
+    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
-        warn;
         alarm($timeout);
-        warn $run;
-
-        #~ my $out = `$run 2>&1`;
-        my $out = system $run;
-        warn;
-        warn $out;
+        open my $fh, '-|', $run or die "Cannot run $run: $!";
+        local $/;
+        my $out = <$fh>;
+        close $fh;
         alarm(0);
         $out;
     };
-    warn;
     my $err = $@;
     alarm(0);
-    warn;
-    unlink $exe if -e $exe;
-    warn;
     if ($err) {
-        warn;
-        Test2::V0::fail("$name - $err");
+        Test2::V0::fail("$name - execution failed: $err");
         return;
     }
-    warn;
+    chomp $output if defined $output;
     if ( ref $expected eq 'ARRAY' ) {
         my @out_lines = split /\n/, $output;
-
-        # Clean up output lines (remove debug etc if any)
-        @out_lines = grep { !/^Debug:|^Executing/ } @out_lines;
-        Test2::V0::is_deeply( \@out_lines, $expected, $name );
+        my $ok        = ( @out_lines == @$expected );
+        if ($ok) {
+            for my $i ( 0 .. $#$expected ) {
+                $ok = 0 unless defined $out_lines[$i] && $out_lines[$i] eq $expected->[$i];
+            }
+        }
+        Test2::V0::ok( $ok, $name ) or Test2::V0::diag( 'Expected: ' . join( ', ', @$expected ) . ' Got: ' . join( ', ', @out_lines ) );
     }
     elsif ( ref $expected eq 'Regexp' ) {
         Test2::V0::like( $output, $expected, $name );
@@ -104,46 +84,3 @@ sub with_temp_file {
     $code->( $file->filename );
 }
 1;
-__END__
-
-=pod
-
-=head1 NAME
-
-Brocken::TestHelpers - Utility functions for testing Brocken components
-
-=head1 SYNOPSIS
-
-    use Brocken::TestHelpers qw(test_brocken);
-
-    test_brocken(
-        name     => 'Simple Addition',
-        source   => 'say 1 + 2;',
-        expected => ['3'],
-    );
-
-=head1 DESCRIPTION
-
-Provides a set of helper functions to simplify unit and integration testing of the Brocken lexer, parser, and compiler.
-
-=head1 FUNCTIONS
-
-=head2 test_brocken(%args)
-
-Performs a full compilation and execution test. Arguments: - C<name>: Name of the test. - C<source>: Brocken source
-code. - C<expected>: Arrayref of expected output lines or a Regexp. - C<timeout>: Execution timeout in seconds (default
-30).
-
-=head2 make_fake_funcs
-
-Returns a sample array of function metadata hashrefs for testing debug info generation.
-
-=head2 make_source_locs
-
-Returns a sample array of source location hashrefs for testing debug info generation.
-
-=head2 with_temp_file($code, $suffix?)
-
-Creates a temporary file, calls the provided C<$code> sub with the filename, and automatically unlinks it after.
-
-=cut

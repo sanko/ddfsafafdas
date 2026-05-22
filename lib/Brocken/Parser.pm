@@ -11,18 +11,18 @@ class Brocken::Parser {
 
     # Precedence Table (Higher number = binds tighter)
     my %PRECEDENCE = (
-        '='  => 10,                                                                #
-        '?'  => 11,                                                                #
-        '||' => 12, '//' => 12,                                                    #
-        '&&' => 13,                                                                #
-        '..' => 17, '...' => 17,                                                   # Range ops
-        '==' => 15, '!=' => 15, '<'  => 15, '>'  => 15, '<=' => 15, '>=' => 15,    # Numeric ops
-        'eq' => 15, 'ne' => 15, 'lt' => 15, 'gt' => 15, 'le' => 15, 'ge' => 15,    # String ops
-        '+'  => 20, '-'  => 20, '.'  => 20,                                        #
-        '*'  => 30, '/'  => 30, '%'  => 30,                                        #
-        '['  => 50, '{'  => 50,                                                    # Indexing
-        '->' => 60,                                                                #
-        '('  => 70,                                                                # Expression calls
+        '='  => 10,                                                                 #
+        '?'  => 11,                                                                 #
+        '||' => 12, '//' => 12,                                                     #
+        '&&' => 13,                                                                 #
+        '..' => 17, '...' => 17,                                                    # Range ops
+        '==' => 15, '!='  => 15, '<'  => 15, '>'  => 15, '<=' => 15, '>=' => 15,    # Numeric ops
+        'eq' => 15, 'ne'  => 15, 'lt' => 15, 'gt' => 15, 'le' => 15, 'ge' => 15,    # String ops
+        '+'  => 20, '-'   => 20, '.'  => 20,                                        #
+        '*'  => 30, '/'   => 30, '%'  => 30,                                        #
+        '['  => 50, '{'   => 50,                                                    # Indexing
+        '->' => 60,                                                                 #
+        '('  => 70,                                                                 # Expression calls
     );
 
     # Statement Registry (Keyword -> Method)
@@ -84,34 +84,34 @@ class Brocken::Parser {
 
     # Expression Infix Registry (Connects two expressions)
     my %INFIX_HANDLERS = (
-        '+'  => '_parse_bin_op',
-        '-'  => '_parse_bin_op',
-        '*'  => '_parse_bin_op',
-        '/'  => '_parse_bin_op',
-        '%'  => '_parse_bin_op',
-        '.'  => '_parse_bin_op',
-        '==' => '_parse_bin_op',
-        '!=' => '_parse_bin_op',
-        '<'  => '_parse_bin_op',
-        '>'  => '_parse_bin_op',
-        '<=' => '_parse_bin_op',
-        '>=' => '_parse_bin_op',
-        'eq' => '_parse_bin_op',
-        'ne' => '_parse_bin_op',
-        'lt' => '_parse_bin_op',
-        'gt' => '_parse_bin_op',
-        'le' => '_parse_bin_op',
-        'ge' => '_parse_bin_op',
-        '&&' => '_parse_bin_op',
-        '||' => '_parse_bin_op',
-        '//' => '_parse_bin_op',
-        '='  => '_parse_bin_op',
+        '+'   => '_parse_bin_op',
+        '-'   => '_parse_bin_op',
+        '*'   => '_parse_bin_op',
+        '/'   => '_parse_bin_op',
+        '%'   => '_parse_bin_op',
+        '.'   => '_parse_bin_op',
+        '=='  => '_parse_bin_op',
+        '!='  => '_parse_bin_op',
+        '<'   => '_parse_bin_op',
+        '>'   => '_parse_bin_op',
+        '<='  => '_parse_bin_op',
+        '>='  => '_parse_bin_op',
+        'eq'  => '_parse_bin_op',
+        'ne'  => '_parse_bin_op',
+        'lt'  => '_parse_bin_op',
+        'gt'  => '_parse_bin_op',
+        'le'  => '_parse_bin_op',
+        'ge'  => '_parse_bin_op',
+        '&&'  => '_parse_bin_op',
+        '||'  => '_parse_bin_op',
+        '//'  => '_parse_bin_op',
+        '='   => '_parse_bin_op',
         '..'  => '_parse_bin_op',
         '...' => '_parse_bin_op',
-        '->' => '_parse_deref',
-        '?'  => '_parse_ternary',
-        '['  => '_parse_index_expr',
-        '{'  => '_parse_index_expr'
+        '->'  => '_parse_deref',
+        '?'   => '_parse_ternary',
+        '['   => '_parse_index_expr',
+        '{'   => '_parse_index_expr'
     );
 
     method _parse_attributes() {
@@ -224,8 +224,11 @@ class Brocken::Parser {
         $self->advance();
         my $type = $self->_parse_type_spec();
         my $ntok = $self->expect('VAR');
-        $self->expect('=');
-        my $val = $self->parse_expression(0);
+        my $val  = undef;
+        if ( $self->current->{value} eq '=' ) {
+            $self->advance();
+            $val = $self->parse_expression(0);
+        }
         $self->_consume_stmt_terminator();
         return Brocken::AST::Stmt::OurDecl->new(
             name  => $ntok->{value},
@@ -335,56 +338,56 @@ class Brocken::Parser {
 
     method _parse_for() {
         my $tok = $self->current;
-        $self->advance(); # 'for'
+        $self->advance();    # 'for'
         my $is_my = 0;
-        my $var = '$_'; # default
-        
-        if ($self->current->{value} eq 'my') {
+        my $var   = '$_';    # default
+        if ( $self->current->{value} eq 'my' ) {
             $is_my = 1;
             $self->advance();
-            if ($self->current->{value} eq '(') {
+            if ( $self->current->{value} eq '(' ) {
                 $self->advance();
                 $var = [];
-                while ($self->current->{value} ne ')') {
+                while ( $self->current->{value} ne ')' ) {
                     push @$var, $self->expect('VAR')->{value};
-                    if ($self->current->{value} eq ',') { $self->advance(); }
+                    if ( $self->current->{value} eq ',' ) { $self->advance(); }
                 }
                 $self->expect(')');
-            } else {
+            }
+            else {
                 $var = $self->expect('VAR')->{value};
             }
-        } elsif ($self->current->{type} eq 'VAR') {
+        }
+        elsif ( $self->current->{type} eq 'VAR' ) {
             $var = $self->current->{value};
             $self->advance();
         }
-        
         my $source;
-        if ($self->current->{value} eq '(') {
+        if ( $self->current->{value} eq '(' ) {
             $self->advance();
             $source = $self->parse_expression(0);
             $self->expect(')');
-        } else {
+        }
+        else {
             $source = $self->parse_expression(0);
         }
-        
         my $body = $self->_parse_block_stmt();
         return Brocken::AST::Stmt::For->new(
-            var => $var,
+            var    => $var,
             source => $source,
-            body => $body,
-            is_my => $is_my,
-            line => $tok->{line},
-            col => $tok->{col},
-            file => $tok->{file}
+            body   => $body,
+            is_my  => $is_my,
+            line   => $tok->{line},
+            col    => $tok->{col},
+            file   => $tok->{file}
         );
     }
 
     method _parse_next_last_redo() {
-        my $tok = $self->current;
+        my $tok  = $self->current;
         my $type = $self->advance()->{value};
         $self->_consume_stmt_terminator();
         my $class = "Brocken::AST::Stmt::" . ucfirst($type);
-        return $class->new(line => $tok->{line}, col => $tok->{col}, file => $tok->{file});
+        return $class->new( line => $tok->{line}, col => $tok->{col}, file => $tok->{file} );
     }
 
     method _parse_return() {

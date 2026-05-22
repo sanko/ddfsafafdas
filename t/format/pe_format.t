@@ -12,10 +12,12 @@ subtest 'setup_layout with debug=0' => sub {
     my $l  = Brocken::Format::Layout->new( file_align => 0x200, section_align => 0x1000 );
     $pe->_setup_layout( $l, 4096, 4096, 'x64', 'win64', 0 );
     my @names = map { $_->{name} } $l->sections;
-    is scalar(@names), 3,        '3 sections without debug';
+    is scalar(@names), 5,        '5 sections (text, data, idata, pdata, xdata)';
     is $names[0],      '.text',  'first is .text';
     is $names[1],      '.data',  'second is .data';
     is $names[2],      '.idata', 'third is .idata';
+    is $names[3],      '.pdata', 'fourth is .pdata (required by win64)';
+    is $names[4],      '.xdata', 'fifth is .xdata (required by win64)';
 };
 subtest 'setup_layout with debug=1 win64' => sub {
     my $pe = Brocken::Format::PE->new;

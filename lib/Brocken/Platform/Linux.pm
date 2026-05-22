@@ -314,6 +314,22 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
             $as->add_imm( 'rsp', 16 );
         }
         elsif ( $op eq 'intrinsic_exit' ) {
+            if ( $driver->coverage && $driver->coverage_table_size > 0 ) {
+                if ( $arch eq 'x64' ) {
+                    $as->mov_imm( 'rax', 1 );
+                    $as->mov_imm( 'rdi', 2 );
+                    $as->lea_rva( 'rsi', "DATA:" . $driver->coverage_table_offset );
+                    $as->mov_imm( 'rdx', $driver->coverage_table_size );
+                    $as->syscall();
+                }
+                else {
+                    $as->mov_imm( 'x8', 64 );
+                    $as->mov_imm( 'x0', 2 );
+                    $as->lea_rva( 'x1', "DATA:" . $driver->coverage_table_offset );
+                    $as->mov_imm( 'x2', $driver->coverage_table_size );
+                    $as->syscall(1);
+                }
+            }
             my $val = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {
                 $as->mov_imm( 'rax', 60 );

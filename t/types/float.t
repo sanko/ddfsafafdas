@@ -34,15 +34,15 @@ BROCKEN
     my $optimizer = Brocken::Compiler::Optimizer->new();
     $optimizer->optimize( $lowering->builder );
     my $format = $driver->format;
-    my $data   = $ds->get_raw_data();
+    my $data   = $ds->raw_data();
     $format->pre_layout( 65536, length($data), 'x64', 'win64' );
     my $codegen = Brocken::Codegen->new( arch => 'x64' );
     my @insts   = $lowering->builder->instructions;
     $codegen->compile( \@insts, $driver );
     my $as = $driver->as;
     $as->resolve( $driver->text_rva, $driver->data_rva );
-    my %all_labels = $as->labels;
-    $format->set_labels( \%all_labels );
+    my $all_labels = $as->labels;
+    $format->set_labels( $all_labels );
     my @exports = sort(qw(pass_float));
     $format->set_exported_funcs( \@exports );
     my $text    = $as->code;

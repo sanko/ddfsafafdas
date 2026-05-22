@@ -204,42 +204,54 @@ package Brocken::Format::PE {
         }
 
         method _build_xdata () {
-            my $locals      = 4096;
-            my $shadow      = 32;
-            my $total_local = $locals + $shadow;
-            my $scaled      = $total_local / 8;
+            # SEH register numbers (AMD64 ABI)
+            my %SEH_REG = ( rax => 0, rcx => 1, rdx => 2, rbx => 3, rsp => 4, rbp => 5, rsi => 6, rdi => 7,
+                r8 => 8, r9 => 9, r10 => 10, r11 => 11, r12 => 12, r13 => 13, r14 => 14, r15 => 15 );
 
-            # Header: Ver=1, PrologueSize=20 (0x14), NumCodes=10, FrameReg=5 (RBP), FrameOffset=0
-            my $hdr = pack( 'C C C C', 1, 0x14, 10, 5 );
+            my @regs      = @{ $self->preserved_regs // [] };
+            my $locals    = 4096;
+            my $shadow    = 32;
+            my $total_loc = $locals + $shadow;
+            my $scaled    = $total_loc / 8;
 
-            # Unwind Codes (Reverse order of prologue instructions)
-            # 1. sub rsp, 4128 (Offset 0x0D, Op=1: UWOP_ALLOC_LARGE, Info=0)
-            my $codes = pack( 'CC', 0x0D, 0x01 );
-            $codes .= pack( 'S<', $scaled );
+            my $codes = '';
 
-            # 2. mov rbp, rsp (Offset 0x0A, Op=3: UWOP_SET_FPREG, Info=0)
-            $codes .= pack( 'CC', 0x0A, 0x03 );
+            # Compute push sizes: regs 0-7 use 1 byte (no REX), regs 8-15 use 2 bytes (REX.B prefix)
+            my $offset     = 0;
+            my @push_info;
+            for my $r (@regs) {
+                my $reg_num = $SEH_REG{$r};
+                my $size    = ( $reg_num < 8 ) ? 1 : 2;
+                $offset += $size;
+                push @push_info, { reg_num => $reg_num, offset => $offset };
+            }
+            # mov rbp, rsp = 3 bytes
+            my $set_fp_offset = $offset + 3;
+            # sub rsp, imm32 = 7 bytes
+            my $alloc_offset = $set_fp_offset + 7;
+            my $prologue_size = $alloc_offset;
 
-            # 3. push r15 (Offset 0x08, Op=0: UWOP_PUSH_NONVOL, Info=15)
-            $codes .= pack( 'CC', 0x08, 0xF0 );
+            # Emit unwind codes in reverse prologue order (last instruction first)
+            # SEH coding: second byte = (OpInfo << 4) | UnwindOp
+            # UWOP_ALLOC_LARGE (op=1, info=0)
+            $codes .= pack( 'CC', $prologue_size, ( 0 << 4 ) | 1 ) . pack( 'S<', $scaled );
+            # UWOP_SET_FPREG (op=3, info=0)
+            $codes .= pack( 'CC', $set_fp_offset, ( 0 << 4 ) | 3 );
 
-            # 4. push r13 (Offset 0x06, Op=0, Info=13)
-            $codes .= pack( 'CC', 0x06, 0xD0 );
+            # push regs (UWOP_PUSH_NONVOL, op=0, info=register_number)
+            for my $pi ( reverse @push_info ) {
+                $codes .= pack( 'CC', $pi->{offset}, ( $pi->{reg_num} << 4 ) | 0 );
+            }
 
-            # 5. push r12 (Offset 0x04, Op=0, Info=12)
-            $codes .= pack( 'CC', 0x04, 0xC0 );
+            # Count how many 16-bit code words we have
+            my $num_codes = length($codes) / 2;
 
-            # 6. push rsi (Offset 0x03, Op=0, Info=6)
-            $codes .= pack( 'CC', 0x03, 0x60 );
+            # Pad to DWORD alignment
+            my $pad = ( 4 - ( length($codes) % 4 ) ) % 4;
+            $codes .= "\0" x $pad;
 
-            # 7. push rdi (Offset 0x02, Op=0, Info=7)
-            $codes .= pack( 'CC', 0x02, 0x70 );
-
-            # 8. push rbx (Offset 0x01, Op=0, Info=3)
-            $codes .= pack( 'CC', 0x01, 0x30 );
-
-            # 9. push rbp (Offset 0x00, Op=0, Info=5)
-            $codes .= pack( 'CC', 0x00, 0x50 );
+            # Header: Ver=1, PrologueSize, NumCodes, FrameReg=5 (RBP), FrameOffset=0
+            my $hdr = pack( 'C C C C', 1, $prologue_size, $num_codes, 5 );
             return $hdr . $codes;
         }
 

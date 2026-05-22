@@ -59,6 +59,10 @@ package Brocken::Compiler {
         field $global_iso_offset      : reader : writer = undef;
         field $exception_table_offset : reader : writer = undef;
         field $data_segment           : reader : writer = undef;
+        field $coverage               : param  : reader = undef;
+        field $coverage_table_offset      : reader = undef;
+        field $coverage_table_size        : reader = undef;
+        field $coverage_probe_lines       : reader = undef;
         #
         ADJUST {
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
@@ -216,6 +220,29 @@ package Brocken::Compiler {
                 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
                 $lowering->lower_program($ast);
                 my @instructions = $lowering->builder->instructions();
+                my $probe_count  = 0;
+
+                if ( $self->coverage ) {
+                    require Brocken::Compiler::Optimizer;
+                    my $opt = Brocken::Compiler::Optimizer->new();
+                    $probe_count = $opt->insert_coverage_probes( \@instructions );
+                    if ( $probe_count > 0 ) {
+                        $coverage_table_size   = $probe_count;
+                        $coverage_table_offset = $ds->add_raw_bytes( "\0" x $probe_count );
+
+                        my @probe_lines;
+                        my $next_line = 0;
+                        for my $inst ( reverse @instructions ) {
+                            if ( $inst->{op} eq 'source_loc' ) {
+                                $next_line = $inst->{args}[0];
+                            }
+                            elsif ( $inst->{op} eq 'coverage_probe' ) {
+                                $probe_lines[ $inst->{args}[0] ] = $next_line;
+                            }
+                        }
+                        $coverage_probe_lines = \@probe_lines;
+                    }
+                }
                 $self->format->pre_layout( scalar(@instructions) * 64 + 8192, length( $ds->raw_data ) + 16384, $arch, $os, $debug );
                 my $codegen = Brocken::Codegen->new( arch => $arch );
                 $codegen->compile( \@instructions, $self );
@@ -245,6 +272,7 @@ package Brocken::Compiler {
                     }
                     $self->format->layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
                 }
+                $self->format->set_preserved_regs( $self->preserved_regs );
                 $self->format->write_bin( $output_file, $self->as->code, $ds->raw_data(), $arch, $os, $type );
                 return $output_file;
             }

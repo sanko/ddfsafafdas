@@ -186,6 +186,9 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->call_rva( $driver->import_rva('SetEvent'), $driver->text_rva );
         }
         elsif ( $op eq 'intrinsic_exit' ) {
+            if ( $driver->coverage && $driver->coverage_table_size > 0 ) {
+                $self->_emit_coverage_dump_x64( $as, $driver );
+            }
             my $val = $v->( $inst->{args}[0] );
             if ( $inst->{args}[0] =~ /^%/ ) {
                 $as->mov_reg( 'rcx', $val );
@@ -256,6 +259,20 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
         $as->load_reg_mem( 'rsp', 'r10', $driver->fcb_offset('sp') );
         for my $r ( reverse @$regs ) { $as->pop_reg($r); }
         $as->append_code( pack( 'C', 0xC3 ) );
+    }
+
+    method _emit_coverage_dump_x64( $as, $driver ) {
+        return unless $driver->coverage_table_size > 0;
+        $as->mov_imm( 'rcx', -12 );
+        $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
+        $as->mov_reg( 'r10', 'rax' );
+        $as->mov_reg( 'rcx', 'r10' );
+        $as->lea_rva( 'rdx', "DATA:" . $driver->coverage_table_offset );
+        $as->mov_imm( 'r8', $driver->coverage_table_size );
+        $as->lea_reg_disp( 'r9', 'rsp', 40 );
+        $as->mov_imm( 'r11', 0 );
+        $as->store_mem_disp_reg( 'rsp', 32, 'r11' );
+        $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
     }
 }
 1;
