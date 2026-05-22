@@ -142,8 +142,11 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'mov' ) {
             my $src = $inst->{args}[0];
-            if ( $src =~ /^%/ ) { $as->mov_reg( $d_reg, $reg_map->{$src} ) if $d_reg ne $reg_map->{$src}; }
-            else                { $as->mov_imm( $d_reg, $v->($src) ); }
+            if    ( $src =~ /^%/ ) { $as->mov_reg( $d_reg, $reg_map->{$src} ) if $d_reg ne $reg_map->{$src}; }
+            elsif ( $src =~ /^[a-z]/i ) {    # Safely handle physical register names (like 'rax')
+                $as->mov_reg( $d_reg, $src ) if $d_reg ne $src;
+            }
+            else { $as->mov_imm( $d_reg, $v->($src) ); }
         }
         elsif ( $op =~ /^(add|sub|mul|and|or|xor|div|mod)$/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };

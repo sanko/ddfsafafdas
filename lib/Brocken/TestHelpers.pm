@@ -16,7 +16,7 @@ sub test_brocken {
     require File::Temp;
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $tmp_fh;
-    my $p = Brocken::Compiler->new();
+    my $p = Brocken::Compiler->new( debug => 4 );
     eval { $p->compile_source( $source, $exe ); };
 
     if ( my $err = $@ ) {
@@ -27,7 +27,8 @@ sub test_brocken {
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
         alarm($timeout);
-        open my $fh, '-|', $run or die "Cannot run $run: $!";
+        system( q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run );
+        open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
         local $/;
         my $out = <$fh>;
         close $fh;

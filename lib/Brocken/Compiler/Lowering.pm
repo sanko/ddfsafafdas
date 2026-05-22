@@ -241,16 +241,19 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func', $ret_ir_type, [$result] );
         }
 
-        # --- GC Runtime ---
         method inject_runtime() {
-            $self->inject_runtime_gc_mark_obj();
-            $self->inject_runtime_gc_sweep();
+
+            # Discard M_gc_mark_obj and M_gc_sweep as they are obsolete
             $self->inject_runtime_gc_collect();
             $self->inject_runtime_gc_alloc();
-            #
+
+            # Generational Nursery & Semi-Space GC
+            $self->inject_runtime_gc_alloc_tenured();
+            $self->inject_runtime_minor_collect();
+            $self->inject_runtime_promote_object();
+            $self->inject_runtime_evacuate_major();
             $self->inject_runtime_init_env();
             $self->inject_runtime_init_argv();
-            #
             $self->inject_runtime_print_int();
             $self->inject_runtime_print_any();
             $self->inject_runtime_dump();
@@ -260,13 +263,9 @@ package Brocken::Compiler::Lowering {
             $self->inject_runtime_concat();
             $self->inject_runtime_to_string();
             $self->inject_runtime_unwind();
-
-            # String Ops
             $self->inject_runtime_str_eq();
             $self->inject_runtime_str_cmp();
             $self->inject_runtime_str_slice();
-
-            # Hash Map Runtime
             $self->inject_runtime_hash_djb2();
             $self->inject_runtime_hash_new();
             $self->inject_runtime_hash_lookup_slot();
@@ -277,6 +276,61 @@ package Brocken::Compiler::Lowering {
             $self->inject_runtime_hash_values();
             $self->inject_runtime_hash_exists();
             $self->inject_runtime_hash_delete();
+        }
+
+        method inject_runtime_promote_object() {
+            $driver->reset_locals();
+            $builder->emit_label('M_promote_object');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $p             = $builder->emit( 'get_arg', 'ptr', [0] );
+            my $l_not_nursery = $builder->new_label();
+            my $l_null_or_smi = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $p, 0 ] ), $l_null_or_smi, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $p, 1 ] ), $l_null_or_smi, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $n_base     = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_base') ] );
+            my $n_limit    = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_limit') ] );
+            my $in_nursery = $builder->emit( 'and', 'i64',
+                [ $builder->emit( 'cmp_ge', 'Int', [ $p, $n_base ] ), $builder->emit( 'cmp_lt', 'Int', [ $p, $n_limit ] ) ] );
+            $builder->emit_cond_br( $in_nursery, $builder->new_label(), $l_not_nursery );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            my $hdr            = $builder->emit( 'load_mem_disp', 'i64', [ $p, -8 ] );
+            my $l_do_promote   = $builder->new_label();
+            my $l_is_forwarded = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $builder->emit( 'shr', 'i64', [ $hdr, 61 ] ), 1 ] ),
+                $l_is_forwarded, $l_do_promote );
+            $builder->emit_label($l_is_forwarded);
+            $builder->emit( 'leave_func', 'ptr',
+                [ $builder->emit( 'and', 'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFFFF") ] ) ] ) ] );
+            $builder->emit_label($l_do_promote);
+            my $sz             = $builder->emit( 'and', 'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFF") ] ) ] );
+            my $payload_sz     = $builder->emit( 'sub', 'i64', [ $sz,  8 ] );
+            my $psz_with_flags = $builder->emit( 'or', 'i64',
+                [ $payload_sz, $builder->emit( 'and', 'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ] ) ] );
+            my $new_p = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc_tenured', $psz_with_flags, $builder->emit( 'constant', 'i64', [0] ) ] );
+            my $ci_s  = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $ci_s, 0 ] );
+            my $l_cs = $builder->new_label();
+            my $l_cd = $builder->new_label();
+            $builder->emit_label($l_cs);
+            my $ci = $builder->emit( 'local_load', 'i64', [$ci_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $ci, $payload_sz ] ), $l_cd, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+
+            # FIX: Use calculated address explicitly to avoid implicit displacement registers
+            my $src_ptr = $builder->emit( 'add', 'ptr', [ $builder->emit( 'sub', 'ptr', [ $p,     8 ] ), $ci ] );
+            my $dst_ptr = $builder->emit( 'add', 'ptr', [ $builder->emit( 'sub', 'ptr', [ $new_p, 8 ] ), $ci ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $dst_ptr, 0, $builder->emit( 'load_mem_disp', 'i64', [ $src_ptr, 0 ] ) ] );
+            $builder->emit( 'local_store', 'void', [ $ci_s, $builder->emit( 'add', 'i64', [ $ci, 8 ] ) ] );
+            $builder->emit_jump($l_cs);
+            $builder->emit_label($l_cd);
+            $builder->emit( 'store_mem_disp', 'void',
+                [ $p, -8, $builder->emit( 'or', 'i64', [ $builder->emit( 'constant', 'i64', [ 1 << 61 ] ), $new_p ] ) ] );
+            $builder->emit( 'leave_func', 'ptr', [$new_p] );
+            $builder->emit_label($l_not_nursery);
+            $builder->emit_label($l_null_or_smi);
+            $builder->emit( 'leave_func', 'ptr', [$p] );
         }
 
         method inject_runtime_unwind() {
@@ -683,91 +737,187 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func',     'void', [0] );
         }
 
+        # --- Major Generation Evacuating Collector ---
         method inject_runtime_gc_collect() {
             $driver->reset_locals();
             $builder->emit_label('M_gc_collect');
             $builder->emit( 'enter_func', 'void', [] );
-            $builder->emit(
-                'store_iso_disp',
-                'void',
-                [   $driver->iso_offset('gc_cycle'),
-                    $builder->emit( 'add', 'i64', [ $builder->emit( 'load_iso_disp', 'i64', [ $driver->iso_offset('gc_cycle') ] ), 1 ] )
-                ]
-            );
-            my $bh_s = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $bh_s, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_base') ] ) ] );
-            my $l_c1 = $builder->new_label();
-            my $l_c2 = $builder->new_label();
-            $builder->emit_label($l_c1);
-            my $cbh       = $builder->emit( 'local_load', 'ptr', [$bh_s] );
-            my $l_c1_body = $builder->new_label();
-            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $cbh, 0 ] ), $l_c2, $l_c1_body );
-            $builder->emit_label($l_c1_body);
-            my $bm_s = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $bm_s, 16 ] );
-            my $l_cl = $builder->new_label();
-            my $l_ce = $builder->new_label();
-            $builder->emit_label($l_cl);
-            my $bo        = $builder->emit( 'local_load', 'i64', [$bm_s] );
-            my $l_cl_body = $builder->new_label();
-            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $bo, 528 ] ), $l_ce, $l_cl_body );
-            $builder->emit_label($l_cl_body);
-            $builder->emit( 'store_mem_byte', 'void', [ $cbh, $bo, 0 ] );
-            $builder->emit( 'local_store', 'void', [ $bm_s, $builder->emit( 'add', 'i64', [ $bo, 1 ] ) ] );
-            $builder->emit_jump($l_cl);
-            $builder->emit_label($l_ce);
-            $builder->emit( 'local_store', 'void', [ $bh_s, $builder->emit( 'load_mem_disp', 'ptr', [ $cbh, 0 ] ) ] );
-            $builder->emit_jump($l_c1);
-            $builder->emit_label($l_c2);
-            my $fs = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $fs, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('fiber_head') ] ) ] );
+            my $to_base  = $builder->emit( 'load_iso_disp', 'ptr', [88] );    # tospace_base
+            my $to_limit = $builder->emit( 'load_iso_disp', 'ptr', [96] );    # tospace_limit
+
+            # 104 is tospace_ptr
+            $builder->emit( 'store_iso_disp', 'void', [ 104, $builder->emit( 'add', 'ptr', [ $to_base, 1024 ] ) ] );
+            $self->_emit_root_scan('M_evacuate_major');
+            my $scan_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $scan_s, $builder->emit( 'add', 'ptr', [ $to_base, 1032 ] ) ] );
+            $self->_emit_cheney_scan( $scan_s, sub { $builder->emit( 'add', 'ptr', [ $builder->emit( 'load_iso_disp', 'ptr', [104] ), 8 ] ) },
+                'M_evacuate_major' );
+            my $from_base  = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_base') ] );
+            my $from_limit = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] );
+
+            # Swap Spaces
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_base'),  $to_base ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'),   $builder->emit( 'load_iso_disp', 'ptr', [104] ) ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_limit'), $to_limit ] );
+            $builder->emit( 'store_iso_disp', 'void', [ 88, $from_base ] );
+            $builder->emit( 'store_iso_disp', 'void', [ 96, $from_limit ] );
+
+            # Reset Nursery
+            $builder->emit( 'store_iso_disp', 'void',
+                [ $driver->iso_offset('nursery_ptr'), $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_base') ] ) ] );
+            $builder->emit( 'leave_func', 'void', [] );
+        }
+
+        # --- Helper for emitting Root Scans ---
+        method _emit_root_scan($evac_fn) {
+
+            # Fibers
+            my $fs_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $fs_slot, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('fiber_head') ] ) ] );
             my $l_fl = $builder->new_label();
             my $l_fd = $builder->new_label();
             $builder->emit_label($l_fl);
-            my $fib       = $builder->emit( 'local_load', 'ptr', [$fs] );
-            my $l_fl_body = $builder->new_label();
-            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $fib, 0 ] ), $l_fd, $l_fl_body );
-            $builder->emit_label($l_fl_body);
-            $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $fib ] );
-            my $cur_s = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $cur_s, $builder->emit( 'load_mem_disp', 'ptr', [ $fib, 24 ] ) ] );
-            my $l_sl = $builder->new_label();
-            my $l_sd = $builder->new_label();
-            $builder->emit_label($l_sl);
-            my $cs        = $builder->emit( 'local_load', 'ptr', [$cur_s] );
-            my $l_sl_body = $builder->new_label();
-            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $cs, $builder->emit( 'load_mem_disp', 'ptr', [ $fib, 32 ] ) ] ),
-                $l_sd, $l_sl_body );
-            $builder->emit_label($l_sl_body);
-            $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_mem_disp', 'ptr', [ $cs, 0 ] ) ] );
-            $builder->emit( 'local_store', 'void', [ $cur_s, $builder->emit( 'add', 'ptr', [ $cs, 8 ] ) ] );
-            $builder->emit_jump($l_sl);
-            $builder->emit_label($l_sd);
-            $builder->emit( 'local_store', 'void', [ $fs, $builder->emit( 'load_mem_disp', 'ptr', [ $fib, 48 ] ) ] );
+            my $fib = $builder->emit( 'local_load', 'ptr', [$fs_slot] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $fib, 0 ] ), $l_fd, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $promoted_fib = $builder->emit( 'call_func', 'ptr', [ $evac_fn, $fib ] );
+            my $l_not_head   = $builder->new_label();
+            my $is_head
+                = $builder->emit( 'cmp_eq', 'Int', [ $fib, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('fiber_head') ] ) ] );
+            $builder->emit_cond_br( $is_head, $builder->new_label(), $l_not_head );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('fiber_head'), $promoted_fib ] );
+            $builder->emit_label($l_not_head);
+            $fib = $promoted_fib;
+
+            # Exact Root Scan: Shadow Stack (Only tracks guaranteed pointers)
+            my $sh_base     = $builder->emit( 'load_mem_disp', 'ptr', [ $fib, 24 ] );
+            my $sh_ptr_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $sh_ptr_slot, $builder->emit( 'load_mem_disp', 'ptr', [ $fib, 32 ] ) ] );
+            my $l_sh_l = $builder->new_label();
+            my $l_sh_d = $builder->new_label();
+            $builder->emit_label($l_sh_l);
+            my $csh = $builder->emit( 'local_load', 'ptr', [$sh_ptr_slot] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_le', 'Int', [ $csh, $sh_base ] ), $l_sh_d, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $sh_prev     = $builder->emit( 'sub',           'ptr', [ $csh,     8 ] );
+            my $sh_val      = $builder->emit( 'load_mem_disp', 'ptr', [ $sh_prev, 0 ] );
+            my $promoted_sh = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $sh_val ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $sh_prev, 0, $promoted_sh ] );
+            $builder->emit( 'local_store', 'void', [ $sh_ptr_slot, $sh_prev ] );
+            $builder->emit_jump($l_sh_l);
+            $builder->emit_label($l_sh_d);
+
+            # Exception object
+            my $exc          = $builder->emit( 'load_mem_disp', 'ptr', [ $fib,     64 ] );
+            my $promoted_exc = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $exc ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fib, 64, $promoted_exc ] );
+
+            # Next fiber
+            my $nxt      = $builder->emit( 'load_mem_disp', 'ptr', [ $fib, 48 ] );
+            my $l_no_nxt = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $nxt, 0 ] ), $l_no_nxt, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $promoted_nxt = $builder->emit( 'call_func', 'ptr', [ $evac_fn, $nxt ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $fib, 48, $promoted_nxt ] );
+            $builder->emit_label($l_no_nxt);
+            $builder->emit( 'local_store', 'void', [ $fs_slot, $nxt ] );
             $builder->emit_jump($l_fl);
             $builder->emit_label($l_fd);
-            my $stm = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('state_ptr') ] );
 
+            # GC State Block
+            my $stm = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('state_ptr') ] );
             for ( my $i = 0; $i < $state_count; $i++ ) {
-                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_mem_disp', 'ptr', [ $stm, 4096 + ( $i * 8 ) ] ) ] );
+                my $addr     = $builder->emit( 'add',           'ptr', [ $stm,     4096 + ( $i * 8 ) ] );
+                my $val      = $builder->emit( 'load_mem_disp', 'ptr', [ $addr,    0 ] );
+                my $promoted = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $val ] );
+                $builder->emit( 'store_mem_disp', 'void', [ $addr, 0, $promoted ] );
             }
-            for my $off ( 200, 208, 216, 224, 240 ) {
-                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_iso_disp', 'ptr', [$off] ) ] );
+
+            # Globals (Include current_fcb and System Handles)
+            for my $off ( 24, 176, 184, 192, 200, 208, 216, 224, 240 ) {
+                my $val      = $builder->emit( 'load_iso_disp', 'ptr', [$off] );
+                my $promoted = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $val ] );
+                $builder->emit( 'store_iso_disp', 'void', [ $off, $promoted ] );
             }
             for ( my $off = 256; $off < $our_var_next_offset; $off += 8 ) {
-                $builder->emit( 'call_func', 'void', [ 'M_gc_mark_obj', $builder->emit( 'load_iso_disp', 'ptr', [$off] ) ] );
+                my $val      = $builder->emit( 'load_iso_disp', 'ptr', [$off] );
+                my $promoted = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $val ] );
+                $builder->emit( 'store_iso_disp', 'void', [ $off, $promoted ] );
             }
-            $builder->emit( 'call_func',  'void', ['M_gc_sweep'] );
-            $builder->emit( 'leave_func', 'void', [0] );
         }
 
-        method inject_runtime_gc_alloc() {
+        # --- Helper for emitting Cheney Linear Scanning ---
+        method _emit_cheney_scan( $scan_ptr_s, $limit_val_gen, $evac_fn ) {
+            my $l_cl = $builder->new_label();
+            my $l_cd = $builder->new_label();
+            $builder->emit_label($l_cl);
+            my $sp        = $builder->emit( 'local_load', 'ptr', [$scan_ptr_s] );
+            my $limit_val = $limit_val_gen->();
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $sp, $limit_val ] ), $l_cd, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $hdr        = $builder->emit( 'load_mem_disp', 'i64', [ $sp,  -8 ] );
+            my $sz         = $builder->emit( 'and',           'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFF") ] ) ] );
+            my $is_leaf    = $builder->emit( 'cmp_eq',        'Int', [ $builder->emit( 'shr', 'i64', [ $hdr, 62 ] ), 3 ] );
+            my $l_next_obj = $builder->new_label();
+            $builder->emit_cond_br( $is_leaf, $l_next_obj, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $first    = $builder->emit( 'load_mem_disp', 'i64', [ $sp,    0 ] );
+            my $tag      = $builder->emit( 'and',           'i64', [ $first, 3 ] );
+            my $l_is_arr = $builder->new_label();
+            my $l_is_obj = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $tag, 0 ] ), $l_is_arr, $l_is_obj );
+            $builder->emit_label($l_is_arr);
+            my $count = $builder->emit( 'shr', 'i64', [ $first, 2 ] );
+            my $i_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $i_s, 0 ] );
+            my $l_al = $builder->new_label();
+            my $l_ad = $builder->new_label();
+            $builder->emit_label($l_al);
+            my $i = $builder->emit( 'local_load', 'i64', [$i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $count ] ), $l_ad, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $el_p     = $builder->emit( 'add', 'ptr', [ $sp, $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $i, 8 ] ) ] ) ] );
+            my $val      = $builder->emit( 'load_mem_disp', 'ptr', [ $el_p,    0 ] );
+            my $promoted = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $val ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $el_p, 0, $promoted ] );
+            $builder->emit( 'local_store', 'void', [ $i_s, $builder->emit( 'add', 'i64', [ $i, 1 ] ) ] );
+            $builder->emit_jump($l_al);
+            $builder->emit_label($l_ad);
+            $builder->emit_jump($l_next_obj);
+            $builder->emit_label($l_is_obj);
+            my $p_ct = $builder->emit( 'load_mem_disp', 'i64', [ $first, -8 ] );
+            $builder->emit( 'local_store', 'void', [ $i_s, 0 ] );
+            my $l_ol = $builder->new_label();
+            my $l_od = $builder->new_label();
+            $builder->emit_label($l_ol);
+            $i = $builder->emit( 'local_load', 'i64', [$i_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $p_ct ] ), $l_od, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $voff = $builder->emit( 'load_mem_disp', 'i64',
+                [ $builder->emit( 'sub', 'ptr', [ $first, $builder->emit( 'add', 'i64', [ 16, $builder->emit( 'mul', 'i64', [ $i, 8 ] ) ] ) ] ), 0 ]
+            );
+            my $field_p = $builder->emit( 'add', 'ptr', [ $sp, $voff ] );
+            $val      = $builder->emit( 'load_mem_disp', 'ptr', [ $field_p, 0 ] );
+            $promoted = $builder->emit( 'call_func',     'ptr', [ $evac_fn, $val ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $field_p, 0, $promoted ] );
+            $builder->emit( 'local_store', 'void', [ $i_s, $builder->emit( 'add', 'i64', [ $i, 1 ] ) ] );
+            $builder->emit_jump($l_ol);
+            $builder->emit_label($l_od);
+            $builder->emit_jump($l_next_obj);
+            $builder->emit_label($l_next_obj);
+            $builder->emit( 'local_store', 'void', [ $scan_ptr_s, $builder->emit( 'add', 'ptr', [ $sp, $sz ] ) ] );
+            $builder->emit_jump($l_cl);
+            $builder->emit_label($l_cd);
+        }
+
+        method inject_runtime_gc_alloc_tenured() {
             $driver->reset_locals();
-            $builder->emit_label('M_gc_alloc');
+            $builder->emit_label('M_gc_alloc_tenured');
             $builder->emit( 'enter_func', 'void', [] );
-            my $sz_slot = $driver->alloc_local_slot();
-            my $psz     = $builder->emit( 'get_arg', 'i64', [0] );
-            my $sz_raw  = $builder->emit(
+            my $psz      = $builder->emit( 'get_arg', 'i64', [0] );
+            my $allow_gc = $builder->emit( 'get_arg', 'i64', [1] );
+            my $sz       = $builder->emit(
                 'and', 'i64',
                 [   $builder->emit(
                         'add', 'i64', [ $builder->emit( 'and', 'i64', [ $psz, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFF") ] ) ] ), 15 ]
@@ -775,176 +925,190 @@ package Brocken::Compiler::Lowering {
                     $builder->emit( 'constant', 'i64', [-8] )
                 ]
             );
-            $builder->emit( 'local_store', 'void', [ $sz_slot, $sz_raw ] );
-            my $cyc = $builder->emit( 'and', 'i64', [ $builder->emit( 'load_iso_disp', 'i64', [ $driver->iso_offset('gc_cycle') ] ), 0xFF ] );
-            my $hdr
-                = $builder->emit( 'or', 'i64', [ $builder->emit( 'local_load', 'i64', [$sz_slot] ), $builder->emit( 'shl', 'i64', [ $cyc, 40 ] ) ] );
-            my $fhdr_slot = $driver->alloc_local_slot();
-            $builder->emit(
-                'local_store',
-                'void',
-                [   $fhdr_slot,
-                    $builder->emit(
-                        'or', 'i64',
-                        [ $hdr, $builder->emit( 'and', 'i64', [ $psz, $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ] ) ]
-                    )
-                ]
-            );
-            my $rs      = $driver->alloc_local_slot();
-            my $l_f     = $builder->new_label();
-            my $l_s     = $builder->new_label();
-            my $ap_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $ap_slot, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] ) ] );
-            $builder->emit_cond_br(
-                $builder->emit(
-                    'cmp_lt', 'Int',
-                    [   $builder->emit(
-                            'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$ap_slot] ), $builder->emit( 'local_load', 'i64', [$sz_slot] ) ]
-                        ),
-                        $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] )
-                    ]
-                ),
-                $l_f, $l_s
-            );
-            $builder->emit_label($l_f);
-            $builder->emit(
-                'store_iso_disp',
-                'void',
-                [   $driver->iso_offset('heap_ptr'),
-                    $builder->emit(
-                        'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$ap_slot] ), $builder->emit( 'local_load', 'i64', [$sz_slot] ) ]
-                    )
-                ]
-            );
-            $builder->emit( 'store_mem_disp', 'void',
-                [ $builder->emit( 'local_load', 'ptr', [$ap_slot] ), 0, $builder->emit( 'local_load', 'i64', [$fhdr_slot] ) ] );
-            $builder->emit( 'local_store', 'void', [ $rs, $builder->emit( 'local_load', 'ptr', [$ap_slot] ) ] );
-            my $l_z = $builder->new_label();
-            $builder->emit_jump($l_z);
-            $builder->emit_label($l_s);
-            $builder->emit( 'call_func',   'void', ['M_gc_collect'] );
-            $builder->emit( 'local_store', 'void', [ $ap_slot, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] ) ] );
-            my $l_f2 = $builder->new_label();
-            my $l_s2 = $builder->new_label();
-            $builder->emit_cond_br(
-                $builder->emit(
-                    'cmp_lt', 'Int',
-                    [   $builder->emit(
-                            'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$ap_slot] ), $builder->emit( 'local_load', 'i64', [$sz_slot] ) ]
-                        ),
-                        $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] )
-                    ]
-                ),
-                $l_f2, $l_s2
-            );
-            $builder->emit_label($l_f2);
-            $builder->emit(
-                'store_iso_disp',
-                'void',
-                [   $driver->iso_offset('heap_ptr'),
-                    $builder->emit(
-                        'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$ap_slot] ), $builder->emit( 'local_load', 'i64', [$sz_slot] ) ]
-                    )
-                ]
-            );
-            $builder->emit( 'store_mem_disp', 'void',
-                [ $builder->emit( 'local_load', 'ptr', [$ap_slot] ), 0, $builder->emit( 'local_load', 'i64', [$fhdr_slot] ) ] );
-            $builder->emit( 'local_store', 'void', [ $rs, $builder->emit( 'local_load', 'ptr', [$ap_slot] ) ] );
-            $builder->emit_jump($l_z);
-            $builder->emit_label($l_s2);
-            my $raw_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $raw_slot, $builder->emit( 'intrinsic_alloc', 'ptr', [131072] ) ] );
-            my $fr_slot = $driver->alloc_local_slot();
-            $builder->emit(
-                'local_store',
-                'void',
-                [   $fr_slot,
-                    $builder->emit(
-                        'and', 'i64',
-                        [   $builder->emit( 'add',      'ptr', [ $builder->emit( 'local_load', 'ptr', [$raw_slot] ), 65535 ] ),
-                            $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFFFF0000") ] )
-                        ]
-                    )
-                ]
-            );
-            $builder->emit(
-                'store_mem_disp',
-                'void',
-                [   $builder->emit( 'local_load', 'ptr', [$fr_slot] ),
-                    0, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_base') ] )
-                ]
-            );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_base'), $builder->emit( 'local_load', 'ptr', [$fr_slot] ) ] );
-
-            # --- Heap Block Signature ---
-            my $fr = $builder->emit( 'local_load', 'ptr', [$fr_slot] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fr, 8, $builder->emit( 'constant', 'i64', [0x424b4e4845415036] ) ] );
-            my $mz = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $mz, $builder->emit( 'local_load', 'ptr', [$fr_slot] ) ] );
-            my $l_mzl = $builder->new_label();
-            my $l_mze = $builder->new_label();
-            $builder->emit_label($l_mzl);
-            my $cmz        = $builder->emit( 'local_load', 'ptr', [$mz] );
-            my $l_mzl_body = $builder->new_label();
-            $builder->emit_cond_br(
-                $builder->emit(
-                    'cmp_lt', 'Int', [ $cmz, $builder->emit( 'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$fr_slot] ), 1024 ] ) ]
-                ),
-                $l_mzl_body,
-                $l_mze
-            );
-            $builder->emit_label($l_mzl_body);
-            $builder->emit( 'store_mem_disp', 'void', [ $cmz, 0, 0 ] );
-            $builder->emit( 'local_store', 'void', [ $mz, $builder->emit( 'add', 'ptr', [ $cmz, 8 ] ) ] );
-            $builder->emit_jump($l_mzl);
-            $builder->emit_label($l_mze);
-            my $st_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void',
-                [ $st_slot, $builder->emit( 'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$fr_slot] ), 1024 ] ) ] );
-            $builder->emit( 'store_mem_disp', 'void',
-                [ $builder->emit( 'local_load', 'ptr', [$st_slot] ), 0, $builder->emit( 'local_load', 'i64', [$fhdr_slot] ) ] );
-            $builder->emit(
-                'store_iso_disp',
-                'void',
-                [   $driver->iso_offset('heap_ptr'),
-                    $builder->emit(
-                        'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$st_slot] ), $builder->emit( 'local_load', 'i64', [$sz_slot] ) ]
-                    )
-                ]
-            );
-            $builder->emit( 'store_iso_disp', 'void',
-                [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$fr_slot] ), 65536 ] ) ] );
-            $builder->emit( 'local_store', 'void', [ $rs, $builder->emit( 'local_load', 'ptr', [$st_slot] ) ] );
-            $builder->emit_label($l_z);
-            my $res_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $res_slot, $builder->emit( 'local_load', 'ptr', [$rs] ) ] );
-            my $obj_slot = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void',
-                [ $obj_slot, $builder->emit( 'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$res_slot] ), 8 ] ) ] );
-            my $zp = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $zp, $builder->emit( 'local_load', 'ptr', [$obj_slot] ) ] );
+            my $fhdr = $builder->emit( 'or', 'i64',
+                [ $sz, $builder->emit( 'and', 'i64', [ $psz, $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ] ) ] );
+            my $l_alloc = $builder->new_label();
+            my $l_gc    = $builder->new_label();
+            my $hp      = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] );
+            my $hl      = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $builder->emit( 'add', 'ptr', [ $hp, $sz ] ), $hl ] ), $l_gc, $l_alloc );
+            $builder->emit_label($l_gc);
+            my $l_panic = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $allow_gc, 1 ] ), $builder->new_label(), $l_panic );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'call_func', 'void', ['M_gc_collect'] );
+            $hp = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] );
+            $hl = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $builder->emit( 'add', 'ptr', [ $hp, $sz ] ), $hl ] ), $l_panic, $l_alloc );
+            $builder->emit_label($l_alloc);
+            my $n_next = $builder->emit( 'add', 'ptr', [ $hp, $sz ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'), $n_next ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $hp, 0, $fhdr ] );
+            my $obj_ptr = $builder->emit( 'add', 'ptr', [ $hp, 8 ] );
+            my $zp_s    = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $zp_s, $obj_ptr ] );
             my $l_zl = $builder->new_label();
             my $l_ze = $builder->new_label();
             $builder->emit_label($l_zl);
-            my $l_zl_body = $builder->new_label();
-            $builder->emit_cond_br(
-                $builder->emit(
-                    'cmp_lt', 'Int',
-                    [   $builder->emit( 'local_load', 'ptr', [$zp] ),
-                        $builder->emit(
-                            'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$res_slot] ), $builder->emit( 'local_load', 'i64', [$sz_slot] ) ]
-                        )
-                    ]
-                ),
-                $l_zl_body,
-                $l_ze
-            );
-            $builder->emit_label($l_zl_body);
-            $builder->emit( 'store_mem_disp', 'void', [ $builder->emit( 'local_load', 'ptr', [$zp] ), 0, 0 ] );
-            $builder->emit( 'local_store', 'void', [ $zp, $builder->emit( 'add', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$zp] ), 8 ] ) ] );
+            my $zp = $builder->emit( 'local_load', 'ptr', [$zp_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $zp, $n_next ] ), $builder->new_label(), $l_ze );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'store_mem_disp', 'void', [ $zp, 0, 0 ] );
+            $builder->emit( 'local_store', 'void', [ $zp_s, $builder->emit( 'add', 'ptr', [ $zp, 8 ] ) ] );
             $builder->emit_jump($l_zl);
             $builder->emit_label($l_ze);
-            $builder->emit( 'leave_func', 'void', [ $builder->emit( 'local_load', 'ptr', [$obj_slot] ) ] );
+            $builder->emit( 'leave_func', 'ptr', [$obj_ptr] );
+            $builder->emit_label($l_panic);
+            my $msg = $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("Fatal: Out of Memory\n") ] );
+            $builder->emit( 'intrinsic_print_stderr', 'void', [$msg] );
+            $builder->emit( 'intrinsic_exit',         'void', [ $builder->emit( 'constant', 'i64', [1] ) ] );
+            $builder->emit( 'leave_func',             'ptr',  [0] );
+        }
+
+        method inject_runtime_gc_alloc() {
+            $driver->reset_locals();
+            $builder->emit_label('M_gc_alloc');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $psz    = $builder->emit( 'get_arg', 'i64', [0] );
+            my $sz_raw = $builder->emit(
+                'and', 'i64',
+                [   $builder->emit(
+                        'add', 'i64', [ $builder->emit( 'and', 'i64', [ $psz, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFF") ] ) ] ), 15 ]
+                    ),
+                    $builder->emit( 'constant', 'i64', [-8] )
+                ]
+            );
+            my $sz_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $sz_slot, $sz_raw ] );
+            my $fhdr = $builder->emit( 'or', 'i64',
+                [ $sz_raw, $builder->emit( 'and', 'i64', [ $psz, $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ] ) ] );
+            my $fhdr_slot = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $fhdr_slot, $fhdr ] );
+            my $sz            = $builder->emit( 'local_load', 'i64', [$sz_slot] );
+            my $l_try_tenured = $builder->new_label();
+
+            # Massive objects bypass nursery
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $sz, 32768 ] ), $l_try_tenured, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $n_ptr           = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_ptr') ] );
+            my $n_limit         = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_limit') ] );
+            my $n_next          = $builder->emit( 'add',           'ptr', [ $n_ptr, $sz ] );
+            my $l_nursery_alloc = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_le', 'Int', [ $n_next, $n_limit ] ), $l_nursery_alloc, $l_try_tenured );
+            $builder->emit_label($l_nursery_alloc);
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_ptr'), $n_next ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $n_ptr, 0, $builder->emit( 'local_load', 'i64', [$fhdr_slot] ) ] );
+            my $obj_ptr = $builder->emit( 'add', 'ptr', [ $n_ptr, 8 ] );
+            my $zp_s    = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $zp_s, $obj_ptr ] );
+            my $l_zl = $builder->new_label();
+            my $l_ze = $builder->new_label();
+            $builder->emit_label($l_zl);
+            my $zp = $builder->emit( 'local_load', 'ptr', [$zp_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $zp, $n_next ] ), $builder->new_label(), $l_ze );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            $builder->emit( 'store_mem_disp', 'void', [ $zp, 0, 0 ] );
+            $builder->emit( 'local_store', 'void', [ $zp_s, $builder->emit( 'add', 'ptr', [ $zp, 8 ] ) ] );
+            $builder->emit_jump($l_zl);
+            $builder->emit_label($l_ze);
+            $builder->emit( 'leave_func', 'ptr', [$obj_ptr] );
+            $builder->emit_label($l_try_tenured);
+            $builder->emit( 'leave_func', 'ptr',
+                [ $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc_tenured', $psz, $builder->emit( 'constant', 'i64', [1] ) ] ) ] );
+        }
+
+        # --- Major Evacuation Copy Routine ---
+        method inject_runtime_evacuate_major() {
+            $driver->reset_locals();
+            $builder->emit_label('M_evacuate_major');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $p             = $builder->emit( 'get_arg', 'ptr', [0] );
+            my $l_not_managed = $builder->new_label();
+            my $l_null_or_smi = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $p, 0 ] ), $l_null_or_smi, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $p, 1 ] ), $l_null_or_smi, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $in_nursery = $builder->emit(
+                'and', 'i64',
+                [   $builder->emit( 'cmp_ge', 'Int', [ $p, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_base') ] ) ] ),
+                    $builder->emit( 'cmp_lt', 'Int', [ $p, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_limit') ] ) ] )
+                ]
+            );
+            my $in_from = $builder->emit(
+                'and', 'i64',
+                [   $builder->emit( 'cmp_ge', 'Int', [ $p, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_base') ] ) ] ),
+                    $builder->emit( 'cmp_lt', 'Int', [ $p, $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_limit') ] ) ] )
+                ]
+            );
+            $builder->emit_cond_br( $builder->emit( 'or', 'i64', [ $in_nursery, $in_from ] ), $builder->new_label(), $l_not_managed );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            my $hdr            = $builder->emit( 'load_mem_disp', 'i64', [ $p, -8 ] );
+            my $l_do_evacuate  = $builder->new_label();
+            my $l_is_forwarded = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $builder->emit( 'shr', 'i64', [ $hdr, 61 ] ), 1 ] ),
+                $l_is_forwarded, $l_do_evacuate );
+            $builder->emit_label($l_is_forwarded);
+            $builder->emit( 'leave_func', 'ptr',
+                [ $builder->emit( 'and', 'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFFFF") ] ) ] ) ] );
+            $builder->emit_label($l_do_evacuate);
+            my $sz            = $builder->emit( 'and',           'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFF") ] ) ] );
+            my $new_hdr_p     = $builder->emit( 'load_iso_disp', 'ptr', [104] );               # tospace_ptr
+            my $new_payload_p = $builder->emit( 'add',           'ptr', [ $new_hdr_p, 8 ] );
+            my $ci_s          = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $ci_s, 0 ] );
+            my $l_cs = $builder->new_label();
+            my $l_cd = $builder->new_label();
+            $builder->emit_label($l_cs);
+            my $ci = $builder->emit( 'local_load', 'i64', [$ci_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $ci, $sz ] ), $l_cd, $builder->new_label() );
+            $builder->emit_label( $builder->last_instruction->{false_l} );
+            my $src_ptr = $builder->emit( 'add', 'ptr', [ $builder->emit( 'sub', 'ptr', [ $p, 8 ] ), $ci ] );
+            my $dst_ptr = $builder->emit( 'add', 'ptr', [ $new_hdr_p, $ci ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $dst_ptr, 0, $builder->emit( 'load_mem_disp', 'i64', [ $src_ptr, 0 ] ) ] );
+            $builder->emit( 'local_store', 'void', [ $ci_s, $builder->emit( 'add', 'i64', [ $ci, 8 ] ) ] );
+            $builder->emit_jump($l_cs);
+            $builder->emit_label($l_cd);
+            $builder->emit( 'store_iso_disp', 'void', [ 104, $builder->emit( 'add', 'ptr', [ $new_hdr_p, $sz ] ) ] );
+            $builder->emit( 'store_mem_disp', 'void',
+                [ $p, -8, $builder->emit( 'or', 'i64', [ $builder->emit( 'constant', 'i64', [ 1 << 61 ] ), $new_payload_p ] ) ] );
+            $builder->emit( 'leave_func', 'ptr', [$new_payload_p] );
+            $builder->emit_label($l_not_managed);
+            $builder->emit_label($l_null_or_smi);
+            $builder->emit( 'leave_func', 'ptr', [$p] );
+        }
+
+        # --- Minor Generation Collector ---
+        method inject_runtime_minor_collect() {
+            $driver->reset_locals();
+            $builder->emit_label('M_minor_collect');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $orig_heap_ptr = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] );
+            $self->_emit_root_scan('M_promote_object');
+
+            # Old-to-Young sweep
+            my $sweep_s = $driver->alloc_local_slot();
+            $builder->emit(
+                'local_store',
+                'void',
+                [   $sweep_s, $builder->emit( 'add', 'ptr', [ $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_base') ] ), 1032 ] )
+                ]
+            );
+
+            # Pass 1: Static limit (original end of heap)
+            my $limit_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $limit_s, $builder->emit( 'add', 'ptr', [ $orig_heap_ptr, 8 ] ) ] );
+            $self->_emit_cheney_scan( $sweep_s, sub { $builder->emit( 'local_load', 'ptr', [$limit_s] ) }, 'M_promote_object' );
+
+            # Pass 2: Dynamic limit for newly promoted objects
+            my $scan_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $scan_s, $builder->emit( 'add', 'ptr', [ $orig_heap_ptr, 8 ] ) ] );
+            $self->_emit_cheney_scan( $scan_s,
+                sub { $builder->emit( 'add', 'ptr', [ $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('heap_ptr') ] ), 8 ] ) },
+                'M_promote_object' );
+            $builder->emit( 'store_iso_disp', 'void',
+                [ $driver->iso_offset('nursery_ptr'), $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('nursery_base') ] ) ] );
+            $builder->emit( 'leave_func', 'void', [] );
         }
 
         method inject_runtime_print_int() {
@@ -1262,7 +1426,7 @@ package Brocken::Compiler::Lowering {
                 [   'M_gc_alloc',
                     $builder->emit(
                         'or', 'i64',
-                        [ $builder->emit( 'add', 'i64', [ $final_pos, 24 ] ), $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ]
+                        [ $builder->emit( 'add', 'i64', [ $final_pos, 16 ] ), $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ]
                     )
                 ]
             );
@@ -1705,7 +1869,7 @@ package Brocken::Compiler::Lowering {
                         [   'M_gc_alloc',
                             $builder->emit(
                                 'or', 'i64',
-                                [   $builder->emit( 'add',      'i64', [ $builder->emit( 'local_load', 'i64', [$tl_slot] ), 24 ] ),
+                                [   $builder->emit( 'add',      'i64', [ $builder->emit( 'local_load', 'i64', [$tl_slot] ), 16 ] ),
                                     $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] )
                                 ]
                             )
@@ -1878,7 +2042,7 @@ package Brocken::Compiler::Lowering {
                 [   'M_gc_alloc',
                     $builder->emit(
                         'or', 'i64',
-                        [   $builder->emit( 'add',      'i64', [ $builder->emit( 'local_load', 'i64', [$sl_slot] ), 24 ] ),
+                        [   $builder->emit( 'add',      'i64', [ $builder->emit( 'local_load', 'i64', [$sl_slot] ), 16 ] ),
                             $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] )
                         ]
                     )
@@ -1948,15 +2112,26 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_base'),  $ms ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_ptr'),   $ms ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_limit'), $builder->emit( 'add', 'ptr', [ $ms, 1048576 ] ) ] );
-            my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [131072] );
+
+            # --- Generational Nursery Initialization (64KB) ---
+            my $raw_nursery = $builder->emit( 'intrinsic_alloc', 'ptr', [65536] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_base'), $raw_nursery ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_ptr'),  $raw_nursery ] );
+            $builder->emit( 'store_iso_disp', 'void',
+                [ $driver->iso_offset('nursery_limit'), $builder->emit( 'add', 'ptr', [ $raw_nursery, 65536 ] ) ] );
+
+            # --- Tenured Heap Initialization (Two 2MB Semi-Spaces) ---
+            my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4194304] );
             my $mask     = $builder->emit( 'constant',        'i64', [ hex("FFFFFFFFFFFF0000") ] );
             my $hp       = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, 65535 ] ), $mask ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_base'),  $hp ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_min'),   $hp ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_max'),   $builder->emit( 'add',      'ptr', [ $hp, 65536 ] ) ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'),   $builder->emit( 'add',      'ptr', [ $hp, 1024 ] ) ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_limit'), $builder->emit( 'add',      'ptr', [ $hp, 65536 ] ) ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('gc_cycle'),   $builder->emit( 'constant', 'i64', [1] ) ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'),   $builder->emit( 'add', 'ptr', [ $hp, 1024 ] ) ] );
+            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $hp, 2097152 ] ) ] );
+
+            # Setup ToSpace boundaries at offset 88 and 96
+            my $ts_base = $builder->emit( 'add', 'ptr', [ $hp, 2097152 ] );
+            $builder->emit( 'store_iso_disp', 'void', [ 88, $ts_base ] );
+            $builder->emit( 'store_iso_disp', 'void', [ 96, $builder->emit( 'add', 'ptr', [ $ts_base, 2097152 ] ) ] );
 
             # --- Heap Block Signature ---
             $builder->emit( 'store_mem_disp', 'void', [ $hp, 8, $builder->emit( 'constant', 'i64', [0x424b4e4845415036] ) ] );
@@ -1999,7 +2174,6 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'call_func',      'void', ['M_init_env'] );
 
                 # 5. Instantiate empty @ARGV Array
-                # Tag: (0 items << 2) | 1 = 1
                 my $argv_arr = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $builder->emit( 'constant', 'i64', [8] ) ] );
                 $builder->emit( 'store_mem_disp', 'void', [ $argv_arr, 0, $builder->emit( 'constant', 'i64', [1] ) ] );
                 $builder->emit( 'store_iso_disp', 'void', [ 208, $argv_arr ] );
@@ -2020,7 +2194,7 @@ package Brocken::Compiler::Lowering {
                 my $exec_path = $builder->emit( 'call_func', 'ptr', [ 'M_str_slice', $buf, $builder->emit( 'constant', 'i64', [0] ), $len ] );
                 $builder->emit( 'store_iso_disp', 'void', [ 224, $exec_path ] );    # $^X
 
-                # Settle $0 (We parse back to the last backslash to get the filename)
+                # Settle $0
                 my $last_slash = $driver->alloc_local_slot();
                 $builder->emit( 'local_store', 'void', [ $last_slash, -1 ] );
                 my $i_slot = $driver->alloc_local_slot();
@@ -2032,7 +2206,7 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_cond_br( $builder->emit( 'cmp_ge', 'Int', [ $i, $len ] ), $l_slash_done, $builder->new_label() );
                 $builder->emit_label( $builder->last_instruction->{false_l} );
                 my $char          = $builder->emit( 'load_mem_byte', 'Int', [ $buf,  $i ] );
-                my $is_slash      = $builder->emit( 'cmp_eq',        'Int', [ $char, ord('\\') ] );    # check backslash
+                my $is_slash      = $builder->emit( 'cmp_eq',        'Int', [ $char, ord('\\') ] );
                 my $l_store_slash = $builder->new_label();
                 my $l_skip_slash  = $builder->new_label();
                 $builder->emit_cond_br( $is_slash, $l_store_slash, $l_skip_slash );
@@ -2068,11 +2242,7 @@ package Brocken::Compiler::Lowering {
                 my $tagged_epoch = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $epoch, 1 ] ), 1 ] );
                 $builder->emit( 'store_iso_disp', 'void', [ 248, $tagged_epoch ] );
 
-                # 10. Instantiate and Populate @ARGV Array (Using Command Line parser)
-                #~ my $argv_arr = $builder->emit('call_func', 'ptr', ['M_gc_alloc', $builder->emit('constant', 'i64', [8])]);
-                #~ $builder->emit('store_mem_disp', 'void', [$argv_arr, 0, $builder->emit('constant', 'i64', [1])]); # tag count 0
-                #~ $builder->emit('store_iso_disp', 'void', [ 208, $argv_arr ]);
-                # Compile runtime bootstrap for ARGV splitting
+                # 10. Instantiate and Populate @ARGV Array
                 $builder->emit( 'call_func', 'void', ['M_init_argv'] );
             }
             $builder->emit_jump($l_done);
@@ -2196,18 +2366,16 @@ package Brocken::Compiler::Lowering {
             my $start   = $builder->emit( 'get_arg', 'i64', [1] );
             my $len     = $builder->emit( 'get_arg', 'i64', [2] );
 
-            # Allocate String: size = 16 (Header) + len + 8 (padding boundary)
-            my $sz  = $builder->emit( 'add', 'i64', [ $len, 24 ] );
-            my $str = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $sz ] );
+            # Pass the Leaf flag and the exact requested payload size to M_gc_alloc
+            # M_gc_alloc aligns and computes the full size automatically, writing the proper header.
+            my $payload_sz     = $builder->emit( 'add', 'i64', [ $len,        16 ] );
+            my $psz_with_flags = $builder->emit( 'or',  'i64', [ $payload_sz, $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ] );
+            my $str            = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $psz_with_flags ] );
             $builder->emit( 'shadow_push', 'void', [$str] );
-
-            # Tag: Leaf/String Bit Set | Byte Length
-            my $tag = $builder->emit( 'or', 'i64', [ $len, $builder->emit( 'constant', 'i64', [ hex("C000000000000000") ] ) ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $str, -8, $tag ] );
 
             # Store metadata
             $builder->emit( 'store_mem_disp', 'void', [ $str, 0, $len ] );    # Byte len
-            $builder->emit( 'store_mem_disp', 'void', [ $str, 8, $len ] );    # Char len (assume ASCII for env)
+            $builder->emit( 'store_mem_disp', 'void', [ $str, 8, $len ] );    # Char len
 
             # Copy bytes
             my $dest_ptr = $builder->emit( 'add', 'ptr', [ $str,     16 ] );
@@ -3707,9 +3875,18 @@ package Brocken::Compiler::Lowering {
             if ( $node->name eq 'values' ) {
                 return ( $builder->emit( 'call_func', 'ptr', [ 'M_hash_values', ( $self->lower( $node->args->[0] ) )[0] ] ), 'Array' );
             }
-            my @as        = map { ( $self->lower($_) )[0] } @{ $node->args };
+            my @as;
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
-            my $res       = $builder->emit( 'call_func',  'i64', [ "M_" . $node->name, @as ] );
+            for my $arg ( @{ $node->args } ) {
+                my ( $r, $t ) = $self->lower($arg);
+                push @as, $r;
+
+                # Always push pointers to shadow stack to protect them during function invocation
+                if ( $t =~ /^(Any|String|Array|Hash|Tuple|Fiber|Class|Undef)$/ || $t !~ /^(Int|Float|i64|double|ptr|void)$/ ) {
+                    $builder->emit( 'shadow_push', 'void', [$r] );
+                }
+            }
+            my $res = $builder->emit( 'call_func', 'i64', [ "M_" . $node->name, @as ] );
             $builder->emit( 'shadow_set', 'void', [$sp_backup] );
             return ( $res, 'Any' );
         }
@@ -3729,6 +3906,9 @@ package Brocken::Compiler::Lowering {
         method lower_Return($node) {
             die "Semantic Error: 'return' is not allowed inside a defer block.\n" if $defer_active_depth > 0;
             my ($rv) = defined $node->expr ? $self->lower( $node->expr ) : ( $builder->emit( 'constant', 'i64', [1] ), 'Int' );
+
+            # Protect RV from GC while defers run
+            $builder->emit( 'shadow_push', 'void', [$rv] );
             $self->_emit_all_defers();
             if ( $routine_types[-1] eq 'fiber' ) {
                 $builder->emit(
@@ -3744,7 +3924,11 @@ package Brocken::Compiler::Lowering {
                 );
                 $builder->emit( 'intrinsic_exit', 'void', [0] );
             }
-            else { $builder->emit( 'leave_func', 'void', [$rv] ); }
+            else {
+                # Pop value just before leaving
+                $rv = $builder->emit( 'shadow_pop', 'ptr', [] );
+                $builder->emit( 'leave_func', 'void', [$rv] );
+            }
             return ( undef, 'void' );
         }
 
@@ -3796,8 +3980,24 @@ package Brocken::Compiler::Lowering {
             }
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
             my ( $or, $ot ) = $self->lower($inv);
-            my @as = map { ( $self->lower($_) )[0] } @{ $node->args };
-            if ( $ot eq 'Fiber' && $mn eq 'switch' ) { return ( $builder->emit( 'call_func', 'Any', [ 'M_fiber_switch', $or, @as ] ), 'Any' ); }
+
+            # Protect invocant
+            $builder->emit( 'shadow_push', 'void', [$or] );
+            my @as;
+            for my $arg ( @{ $node->args } ) {
+                my ( $r, $t ) = $self->lower($arg);
+                push @as, $r;
+
+                # Protect arguments
+                if ( $t =~ /^(Any|String|Array|Hash|Tuple|Fiber|Class|Undef)$/ || $t !~ /^(Int|Float|i64|double|ptr|void)$/ ) {
+                    $builder->emit( 'shadow_push', 'void', [$r] );
+                }
+            }
+            if ( $ot eq 'Fiber' && $mn eq 'switch' ) {
+                my $res = $builder->emit( 'call_func', 'Any', [ 'M_fiber_switch', $or, @as ] );
+                $builder->emit( 'shadow_set', 'void', [$sp_backup] );
+                return ( $res, 'Any' );
+            }
             my $l_not_null = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $or, 0 ] ), $builder->new_label(), $l_not_null );
             $builder->emit_label( $builder->last_instruction->{true_l} );
