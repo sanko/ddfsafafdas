@@ -79,6 +79,9 @@ class Brocken::Parser {
         'sleep'         => '_parse_sleep',
         'exists'        => '_parse_exists',
         'delete'        => '_parse_delete',
+        'refcount'      => '_parse_ident_or_call',
+        'retain'        => '_parse_ident_or_call',
+        'release'       => '_parse_ident_or_call',
         '...'           => '_parse_yada'
     );
 
@@ -207,8 +210,22 @@ class Brocken::Parser {
         $self->advance();
         my $type = $self->_parse_type_spec();
         my $ntok = $self->expect('VAR');
-        $self->expect('=');
-        my $val = $self->parse_expression(0);
+        my $val;
+
+        # FIX: Allow uninitialized variables by defaulting to the undef singleton
+        if ( $self->current->{value} eq '=' ) {
+            $self->advance();
+            $val = $self->parse_expression(0);
+        }
+        else {
+            $val = Brocken::AST::Expr::Const->new(
+                value => 'undef',
+                type  => 'Undef',
+                line  => $ntok->{line},
+                col   => $ntok->{col},
+                file  => $ntok->{file}
+            );
+        }
         $self->_consume_stmt_terminator();
         return Brocken::AST::Stmt::VarDecl->new(
             name  => $ntok->{value},

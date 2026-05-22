@@ -25,6 +25,7 @@ class Brocken::Lexer {
         say print dump
         use require eval
         exists delete
+        refcount retain release
         eq ne lt gt le ge
         Int String Any Bool Class Fiber Array Fun Pointer Struct Callback
         Float double

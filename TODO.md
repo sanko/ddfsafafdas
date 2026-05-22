@@ -3,8 +3,8 @@
 We wrote a compiler in pure perl. Implement the following features:
 
  - [x] __LINE__, __FILE__
- - [x] Add the ability to handle `#line` directives like perl, C, etc. Implement a nur
- - [ ] Enhance our RC Immix implementation with a nursery for short lived allocations.
+ - [x] Add the ability to handle `#line` directives like perl, C, etc.
+ - [x] Enhance our Immix implementation with a nursery for short lived allocations. (Implemented Generational Semi-Space Evacuating GC).
  - [x] Implement `our` for package level globals.
  - [x] `ddx` / `dd` keywords: `ddx` prints pretty-printed value to STDERR, `dd` returns stringified
  - [x] `...` yada-yada stub from Perl
@@ -12,7 +12,7 @@ We wrote a compiler in pure perl. Implement the following features:
      - [x] `next`
      - [x] `last`
      - [x] `redo`
-     - [x] `for` loop.  All of these examples should work:
+     - [ ] `for` loop. (Basic Array iteration is done, but needs Range, Hash, and Destructuring support). All of these examples should work:
          ```perl
             for (@ary) { s/foo/bar/ }
 
@@ -43,8 +43,6 @@ We wrote a compiler in pure perl. Implement the following features:
             }
          ```
 
-See our TODO.md file for moe.
-
 # Language Milestones & TODO
 
 ## Milestone 0: The Binary Foundation
@@ -74,7 +72,7 @@ See our TODO.md file for moe.
 - [x] Variant Types: Implement the 16-byte `Any` struct (Tag + Payload) for gradual typing.
 - [x] The Shadow Stack: IR instructions to push/pop pointers for the GC.
 - [x] The Allocator: Bump-pointer allocation in a pre-allocated `.data` or `mmap` arena.
-- [x] Immix GC: Transition the current stub into a Mark-Region collector.
+- [x] Generational Semi-Space GC: Replaced the basic Mark-Region stub with a high-performance minor nursery and major evacuating collector.
 - [x] Smart Strings: UTF-8 strings with the O(1) offset-map header.
 - [x] Defined-OR: Implement the `//` operator in Parser/Lowering.
 - [x] First class `undef`. Formalize `undef` as a distinct type/singleton rather than just a raw `0` pointer, enabling strict type checks and safer `//` evaluation.
@@ -122,7 +120,7 @@ See our TODO.md file for moe.
 
 ## Milestone 8: Advanced Optimizations & GC
 - [ ] Escape Analysis & Allocation Swap: Trace object lifetimes in the Optimizer. If an object never escapes its local function, swap `call M_gc_alloc` for a fast `sub rsp, size` stack allocation to eliminate GC overhead.
-- [ ] Generational GC (The Nursery): Implement a "Sticky" Immix generation. Allocate all new objects in a small (e.g., 2MB) window and only scan this nursery for quick collections. Tenured objects get promoted to the main heap.
+- [x] Generational GC (The Nursery): Implemented a 64KB nursery for fast bumps and a 2MB dual semi-space for tenured promotions.
 
 ## Milestone 9: Distributed Runtime & M:N Scheduling (Long Term)
 - [ ] Work-Stealing Scheduler: Map thousands of lightweight Fibers dynamically onto a pool of OS Isolates.
