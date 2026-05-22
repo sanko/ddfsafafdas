@@ -173,7 +173,7 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->store_mem_disp_byte( 'rsp', 48, $src );
                 $as->mov_imm( 'rax', $SYS_write );
                 $as->mov_imm( 'rdi', 1 );
-                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );    # lea rsi, [rsp+48]
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
                 $as->mov_imm( 'rdx', 1 );
                 $as->syscall();
             }
@@ -183,7 +183,51 @@ class Brocken::Platform::Darwin : isa(Brocken::Platform) {
                 $as->sturb_mem_disp_reg( 'sp', 48, $src );
                 $as->mov_imm( 'x16', $SYS_write );
                 $as->mov_imm( 'x0',  1 );
-                $as->add_imm( 'x17', 0 );                                                        # dummy to get SP
+                $as->add_imm( 'x17', 0 );
+                $as->mov_reg( 'x1', 'sp' );
+                $as->add_imm( 'x1', 48 );
+                $as->mov_imm( 'x2', 1 );
+                $as->syscall(1);
+            }
+        }
+        elsif ( $op eq 'intrinsic_print_stderr' ) {
+            my $p = $reg_map->{ $inst->{args}[0] };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rsi', $p );
+                $as->load_reg_mem( 'rdx', 'rsi', 0 );
+                $as->add_imm( 'rsi', 16 );
+                $as->mov_imm( 'rdi', 2 );
+                $as->mov_imm( 'rax', $SYS_write );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x1', $p );
+                $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->add_imm( 'x1', 16 );
+                $as->mov_imm( 'x0',  2 );
+                $as->mov_imm( 'x16', $SYS_write );
+                $as->syscall(1);
+            }
+        }
+        elsif ( $op eq 'intrinsic_print_stderr_char' ) {
+            my $char = $v->( $inst->{args}[0] );
+            if ( $arch eq 'x64' ) {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11';
+                $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->store_mem_disp_byte( 'rsp', 48, $src );
+                $as->mov_imm( 'rax', $SYS_write );
+                $as->mov_imm( 'rdi', 2 );
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
+                $as->mov_imm( 'rdx', 1 );
+                $as->syscall();
+            }
+            else {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x17';
+                $as->mov_imm( 'x17', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->sturb_mem_disp_reg( 'sp', 48, $src );
+                $as->mov_imm( 'x16', $SYS_write );
+                $as->mov_imm( 'x0',  2 );
+                $as->add_imm( 'x17', 0 );
                 $as->mov_reg( 'x1', 'sp' );
                 $as->add_imm( 'x1', 48 );
                 $as->mov_imm( 'x2', 1 );

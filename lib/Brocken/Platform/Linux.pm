@@ -176,6 +176,31 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
             }
         }
+        elsif ( $op eq 'intrinsic_print_stderr_char' ) {
+            my $char = $v->( $inst->{args}[0] );
+            if ( $arch eq 'x64' ) {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11';
+                $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->store_mem_disp_byte( 'rsp', 48, $src );
+                $as->mov_imm( 'rax', 1 );
+                $as->mov_imm( 'rdi', 2 );
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
+                $as->mov_imm( 'rdx', 1 );
+                $as->syscall();
+            }
+            else {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x16';
+                $as->mov_imm( 'x16', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->sturb_mem_disp_reg( 'sp', 48, $src );
+                $as->mov_imm( 'x8', 64 );
+                $as->mov_imm( 'x0', 2 );
+                $as->add_imm( 'x16', 0 );
+                $as->mov_reg( 'x1', 'sp' );
+                $as->add_imm( 'x1', 48 );
+                $as->mov_imm( 'x2', 1 );
+                $as->syscall();
+            }
+        }
         elsif ( $op eq 'intrinsic_print_char' ) {
             my $char = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {

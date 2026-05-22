@@ -101,6 +101,20 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
             $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
             $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
         }
+        elsif ( $op eq 'intrinsic_print_stderr_char' ) {
+            my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11';
+            $as->mov_imm( 'r11', $v->( $inst->{args}[0] ) ) if $inst->{args}[0] !~ /^%/;
+            $as->store_mem_disp_byte( 'rsp', 48, $src );
+            $as->mov_imm( 'rcx', -12 );
+            $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
+            $as->mov_reg( 'rcx', 'rax' );
+            $as->lea_reg_disp( 'rdx', 'rsp', 48 );
+            $as->mov_imm( 'r8', 1 );
+            $as->lea_reg_disp( 'r9', 'rsp', 40 );
+            $as->mov_imm( 'rax', 0 );
+            $as->store_mem_disp_reg( 'rsp', 32, 'rax' );
+            $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
+        }
         elsif ( $op eq 'intrinsic_open' ) {
             my ( $path, $mode ) = ( $reg_map->{ $inst->{args}[0] }, $reg_map->{ $inst->{args}[1] } );
             state $open_id = 0;
