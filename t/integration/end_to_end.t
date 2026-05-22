@@ -8,14 +8,20 @@ use File::Temp qw(tempfile);
 
 sub compile_and_run {
     my ( $source, %opts ) = @_;
-    my $timeout = $opts{timeout} // 15;
-    my $debug   = $opts{debug}   // 0;
-    my $type    = $opts{type}    // 'exe';
+    my $timeout  = $opts{timeout}  // 15;
+    my $debug    = $opts{debug}    // 0;
+    my $type     = $opts{type}     // 'exe';
+    my $filename = $opts{filename};
     require Brocken::Compiler;
     my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $fh;
     my $p = Brocken::Compiler->new( debug => $debug, type => $type );
-    eval { $p->compile_source( $source, $exe ); };
+    if ( defined $filename ) {
+        eval { $p->compile_source( $source, $exe, $filename ); };
+    }
+    else {
+        eval { $p->compile_source( $source, $exe ); };
+    }
 
     if ( my $err = $@ ) {
         return ( undef, "compilation: $err" );
@@ -186,5 +192,34 @@ subtest 'Nested blocks' => sub {
     is scalar(@lines), 2,   '2 lines output';
     is $lines[0],      '2', 'inner x = 2';
     is $lines[1],      '1', 'outer x = 1';
+};
+subtest '__LINE__' => sub {
+    my ( $out, $err ) = compile_and_run('say __LINE__;');
+    $err ? ( skip_all "Native compilation not available" ) : ();
+    is $out, '1', '__LINE__ at line 1';
+};
+subtest '__LINE__ at line 2' => sub {
+    my ( $out, $err ) = compile_and_run(
+        "say 1;\nsay __LINE__;"
+    );
+    $err ? ( skip_all "Native compilation not available" ) : ();
+    my @lines = split /\n/, $out;
+    is scalar(@lines), 2, 'two lines output';
+    is $lines[1],      '2', '__LINE__ at line 2';
+};
+subtest '__LINE__ in expression' => sub {
+    my ( $out, $err ) = compile_and_run('say __LINE__ + 10;');
+    $err ? ( skip_all "Native compilation not available" ) : ();
+    is $out, '11', '__LINE__ + 10';
+};
+subtest '__FILE__' => sub {
+    my ( $out, $err ) = compile_and_run('say __FILE__;');
+    $err ? ( skip_all "Native compilation not available" ) : ();
+    like $out, qr/eval_\d+/, '__FILE__ contains eval_N';
+};
+subtest '__FILE__ custom name' => sub {
+    my ( $out, $err ) = compile_and_run( 'say __FILE__;', filename => 'my_file.brk' );
+    $err ? ( skip_all "Native compilation not available" ) : ();
+    is $out, 'my_file.brk', '__FILE__ returns custom filename';
 };
 done_testing;

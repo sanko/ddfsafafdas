@@ -214,7 +214,7 @@ package Brocken::Compiler {
                 require Brocken::Codegen;
                 require Brocken::Compiler::DataSegment;
                 $source_file = $filename;
-                my $tokens   = Brocken::Lexer->new( source => $source )->lex();
+                my $tokens   = Brocken::Lexer->new( source => $source, file => $filename )->lex();
                 my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
                 my $ds       = Brocken::Compiler::DataSegment->new();
                 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );

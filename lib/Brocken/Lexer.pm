@@ -101,6 +101,13 @@ class Brocken::Lexer {
                 next;
             }
             if ( $remaining =~ /^([+\-*\/=<>\[\].:!?%])/ ) { push @tokens, $self->_make_token( 'OP', $1 ); $self->_advance(1); next; }
+            if ( $remaining =~ /^(__LINE__|__FILE__)/ ) {
+                my $val = $1;
+                if ( $val eq '__LINE__' ) { push @tokens, $self->_make_token( 'NUM', $line ) }
+                else                       { push @tokens, $self->_make_token( 'STRING', $file ) }
+                $self->_advance( length($val) );
+                next;
+            }
             if ( $remaining =~ /^([\$@%]?[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)/ ) {
                 my $val  = $1;
                 my $type = $KEYWORDS{$val} ? 'KEYWORD' : ( $val =~ /^[\$@%]/ ? 'VAR' : 'IDENT' );

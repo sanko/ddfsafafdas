@@ -3216,6 +3216,23 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
                 return ( undef, 'void' );
             }
+            if ( $node->name eq 'ddx' ) {
+                my $sep = '';
+                for my $arg ( @{ $node->args } ) {
+                    my ( $r, $t ) = $self->lower($arg);
+                    my $str = $t eq 'String'
+                        ? $r
+                        : $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $r ] );
+                    $builder->emit( 'intrinsic_print_stderr', 'void', [$str] );
+                }
+                $builder->emit( 'intrinsic_print_stderr', 'void',
+                    [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
+                return ( undef, 'void' );
+            }
+            if ( $node->name eq 'dd' ) {
+                my ( $r, $t ) = $self->lower( $node->args->[0] );
+                return ( $t eq 'String' ? $r : $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $r ] ), 'String' );
+            }
             if ( $node->name eq 'keys' ) {
                 return ( $builder->emit( 'call_func', 'ptr', [ 'M_hash_keys', ( $self->lower( $node->args->[0] ) )[0] ] ), 'Array' );
             }

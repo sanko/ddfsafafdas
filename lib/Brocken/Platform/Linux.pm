@@ -157,6 +157,25 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
             }
         }
+        elsif ( $op eq 'intrinsic_print_stderr' ) {
+            my $p = $reg_map->{ $inst->{args}[0] };
+            if ( $arch eq 'x64' ) {
+                $as->mov_reg( 'rsi', $p );
+                $as->load_reg_mem( 'rdx', 'rsi', 0 );
+                $as->add_imm( 'rsi', 16 );
+                $as->mov_imm( 'rdi', 2 );
+                $as->mov_imm( 'rax', 1 );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'x1', $p );
+                $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->add_imm( 'x1', 16 );
+                $as->mov_imm( 'x0', 2 );
+                $as->mov_imm( 'x8', 64 );
+                $as->syscall();
+            }
+        }
         elsif ( $op eq 'intrinsic_print_char' ) {
             my $char = $v->( $inst->{args}[0] );
             if ( $arch eq 'x64' ) {

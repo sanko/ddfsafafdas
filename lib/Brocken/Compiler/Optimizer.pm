@@ -109,7 +109,7 @@ class Brocken::Compiler::Optimizer {
             elsif ($current_enter) {
 
                 # Instructions that disqualify a leaf
-                if ( $i->{op} =~ /^call_/ || $i->{op} =~ /^intrinsic_(print|alloc|sleep|read|write|open|close)/ ) {
+                if ( $i->{op} =~ /^call_/ || $i->{op} =~ /^intrinsic_(print|print_stderr|alloc|sleep|read|write|open|close)/ ) {
                     $is_leaf = 0;
                 }
             }

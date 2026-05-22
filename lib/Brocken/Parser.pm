@@ -51,7 +51,7 @@ class Brocken::Parser {
         'exit'      => '_parse_exit',
         'say'       => '_parse_builtin_call',
         'print'     => '_parse_builtin_call',
-        'dump'      => '_parse_builtin_call',
+        'ddx'       => '_parse_builtin_call',
         'sleep'     => '_parse_builtin_call',
         'interrupt' => '_parse_builtin_call',
         '{'         => '_parse_block_stmt'
