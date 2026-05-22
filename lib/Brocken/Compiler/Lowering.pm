@@ -3350,6 +3350,9 @@ package Brocken::Compiler::Lowering {
             else                         { $builder->emit( 'intrinsic_exit', 'void', [ $builder->emit( 'constant', 'i64', [0] ) ] ); }
             while (@fragments) { my $f = shift @fragments; $builder->push_instruction($_) for @$f; }
             $builder->emit( 'intrinsic_emit_runtime', 'void', [] ) unless $self->skip_runtime;
+
+            # Record the final L_MAIN_START local stack frame size
+            $driver->set_func_local_size( 'L_MAIN_START', $driver->local_ptr );
         }
 
         method lower_Const($node) {
@@ -4302,6 +4305,9 @@ package Brocken::Compiler::Lowering {
             @defer_stack       = @old_defers;
             $current_func_name = $saved_func_name;
             @func_locals       = @saved_func_locals;
+
+            # Record the final fiber stack size
+            $driver->set_func_local_size( $l1, $driver->local_ptr );
             my @ir = $builder->instructions;
             $builder->set_instructions( @saved, @ir );
             $builder->emit_label($l2);
@@ -4480,6 +4486,9 @@ package Brocken::Compiler::Lowering {
                     $routine_depth--;
                     $current_scope = $current_scope->parent;
                     @defer_stack   = @old_defers;
+
+                    # Record the final anonymous sub stack size
+                    $driver->set_func_local_size( $lb, $driver->local_ptr );
                 }
             );
             $driver->set_local_ptr($op);
@@ -4560,6 +4569,9 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func', 'void', [0] );
             $routine_depth--;
             $current_scope = $current_scope->parent;
+
+            # Record the final sub stack size
+            $driver->set_func_local_size( $fn, $driver->local_ptr );
             push @exported_funcs, $node->name;
             $self->_generate_export_thunk($node);
             return ( undef, 'void' );
@@ -4655,11 +4667,16 @@ package Brocken::Compiler::Lowering {
                 $builder->emit( 'leave_func', 'void', [0] );
                 $routine_depth--;
                 $current_scope = $current_scope->parent;
+
+                # Record the final class method stack size
+                $driver->set_func_local_size( $fn_name, $driver->local_ptr );
                 push @exported_funcs, $node->name . "::" . $m->name;
                 $self->_generate_export_thunk( $m, $fn_name, "E_" . $node->name . "::" . $m->name );
             }
             return ( undef, 'void' );
         }
+        field %callback_pools;
+        field $callback_pool_count = 0;
 
         method lower_NativeDecl($node) {
             my $lib_name  = $node->library;
@@ -4690,9 +4707,7 @@ package Brocken::Compiler::Lowering {
                     $builder->emit_label($thunk_name);
                     $builder->emit( 'enter_func', 'void', [] );
 
-                    # --- 1. CRITICAL FIX: CAPTURE REGISTERS IMMEDIATELY ---
-                    # C functions (like LoadLibrary) will clobber rcx/rdx.
-                    # We must save the incoming arguments to stack slots immediately.
+                    # --- 1. CAPTURE RAW REGS IMMEDIATELY ---
                     my @saved_slots;
                     my $arg_idx = 0;
                     for my $t (@arg_types) {
@@ -4745,18 +4760,27 @@ package Brocken::Compiler::Lowering {
                             # Skip the 16-byte Brocken object header!
                             push @raw_args, $builder->emit( 'add', 'ptr', [ $arg, 16 ] );
                         }
+                        elsif ( $t eq 'Array' ) {
+
+                            # Pass raw pointer to flat C array elements (skip tag word)
+                            push @raw_args, $builder->emit( 'add', 'ptr', [ $arg, 8 ] );
+                        }
                         else {
                             push @raw_args, $arg;    # Raw pass-through
                         }
                     }
 
-                    # Execute the C function matching the Windows x64 ABI perfectly!
-                    my $ret_val = $builder->emit( 'call_reg', 'i64', [ $final_c_ptr, @raw_args ] );
+                    # FEATURE: Float return type registers (mapped to xmm0)
+                    my $ret_ir_type = ( $ret_type eq 'Float' || $ret_type eq 'double' || $ret_type eq 'float' ) ? 'double' : 'i64';
+                    my $ret_val     = $builder->emit( 'call_reg', $ret_ir_type, [ $final_c_ptr, @raw_args ] );
 
                     # --- Box Return Value ---
                     my $boxed_ret;
                     if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
                         $boxed_ret = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $ret_val, 1 ] ), 1 ] );
+                    }
+                    elsif ( $ret_type eq 'Float' || $ret_type eq 'double' || $ret_type eq 'float' ) {
+                        $boxed_ret = $ret_val;    # Raw pass-through
                     }
                     elsif ( $ret_type eq 'void' ) {
                         $boxed_ret = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
@@ -4770,6 +4794,120 @@ package Brocken::Compiler::Lowering {
                 }
             );
             return ( undef, 'void' );
+        }
+
+        method _get_or_create_callback_pool($sig_str) {
+            return $callback_pools{$sig_str} if exists $callback_pools{$sig_str};
+            my $pool_id = ++$callback_pool_count;
+            $callback_pools{$sig_str} = $pool_id;
+            my ( $arg_str, $ret_type ) = $sig_str =~ /^\((.*?)\)->(.*)$/;
+            $arg_str  //= '';
+            $ret_type //= 'void';
+            my @arg_types = length($arg_str) ? split( ',', $arg_str ) : ();
+            map {s/^\s+|\s+$//g} @arg_types;
+            $ret_type =~ s/^\s+|\s+$//g;
+
+            # Pre-allocate 4 static slots and a slot counter for this signature
+            my $slots_offset     = $data_segment->add_raw_bytes( pack( 'Q<*', (0) x 4 ) );
+            my $next_slot_offset = $data_segment->add_raw_bytes( pack( 'Q<', 0 ) );
+            my $res_name         = "M_reserve_callback_$pool_id";
+            $self->capture_fragment(
+                $res_name,
+                sub {
+                    $driver->reset_locals();
+                    $builder->emit_label($res_name);
+                    $builder->emit( 'enter_func', 'void', [] );
+                    my $sub_ptr          = $builder->emit( 'get_arg',        'ptr', [0] );
+                    my $idx_addr         = $builder->emit( 'load_data_addr', 'ptr', [$next_slot_offset] );
+                    my $idx              = $builder->emit( 'load_mem_disp',  'i64', [ $idx_addr, 0 ] );
+                    my $slots_addr       = $builder->emit( 'load_data_addr', 'ptr', [$slots_offset] );
+                    my $offset           = $builder->emit( 'mul',            'i64', [ $idx,        8 ] );
+                    my $slot_target_addr = $builder->emit( 'add',            'ptr', [ $slots_addr, $offset ] );
+                    $builder->emit( 'store_mem_disp', 'void', [ $slot_target_addr, 0, $sub_ptr ] );
+
+                    # Increment index modulo 4
+                    my $next_idx = $builder->emit( 'and', 'i64', [ $builder->emit( 'add', 'i64', [ $idx, 1 ] ), 3 ] );
+                    $builder->emit( 'store_mem_disp', 'void', [ $idx_addr, 0, $next_idx ] );
+                    my $ret_slot    = $driver->alloc_local_slot();
+                    my @labels      = map {"M_tramp_${pool_id}_$_"} 0 .. 3;
+                    my @cond_labels = map { $builder->new_label() } 0 .. 3;
+                    my $l_done      = $builder->new_label();
+                    for my $i ( 0 .. 3 ) {
+                        $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $idx, $i ] ), $cond_labels[$i], $builder->new_label() );
+                        $builder->emit_label( $builder->last_instruction->{false_l} );
+                    }
+                    for my $i ( 0 .. 3 ) {
+                        $builder->emit_label( $cond_labels[$i] );
+                        my $addr = $builder->emit( 'load_func_addr', 'ptr', [ $labels[$i] ] );
+                        $builder->emit( 'local_store', 'void', [ $ret_slot, $addr ] );
+
+                        # Removed redundant shadow_push which leaked slots
+                        $builder->emit_jump($l_done);
+                    }
+                    $builder->emit_label($l_done);
+                    $builder->emit( 'leave_func', 'ptr', [ $builder->emit( 'local_load', 'ptr', [$ret_slot] ) ] );
+                }
+            );
+
+            # Generate the 4 AOT static trampoline functions
+            for my $i ( 0 .. 3 ) {
+                my $tramp_name = "M_tramp_${pool_id}_$i";
+                $self->capture_fragment(
+                    $tramp_name,
+                    sub {
+                        $driver->reset_locals();
+                        $builder->emit_label($tramp_name);
+                        $builder->emit( 'enter_func', 'void', [] );
+
+                        # --- 1. SAVE CALLER'S R14 & LOAD OUR ISOLATE ---
+                        # C callers (like user32.dll) clobber r14. We must restore ours!
+                        my $caller_r14_s = $driver->alloc_local_slot();
+                        my $old_r14      = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+                        $builder->emit( 'local_store', 'void', [ $caller_r14_s, $old_r14 ] );
+                        my $giso_ptr = $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] );
+                        my $iso      = $builder->emit( 'load_mem_disp',  'ptr', [ $giso_ptr, 0 ] );
+                        $builder->emit( 'set_isolate_ctx', 'void', [$iso] );
+
+                        # Retrieve the target Brocken sub
+                        my $slots_addr = $builder->emit( 'load_data_addr', 'ptr', [$slots_offset] );
+                        my $target_sub = $builder->emit( 'load_mem_disp',  'ptr', [ $slots_addr, $i * 8 ] );
+
+                        # Box C arguments back to Brocken Any variants
+                        my @boxed_args;
+                        my $arg_idx = 0;
+                        for my $t (@arg_types) {
+                            my $raw = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
+                            if ( $t eq 'Int' || $t eq 'Bool' ) {
+                                push @boxed_args, $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $raw, 1 ] ), 1 ] );
+                            }
+                            else {
+                                push @boxed_args, $raw;
+                            }
+                        }
+
+                        # Call target Brocken sub
+                        my $ret_val = $builder->emit( 'call_reg', 'i64', [ $target_sub, @boxed_args ] );
+
+                        # Unbox return value back to C ABI
+                        my $raw_ret;
+                        if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
+                            $raw_ret = $builder->emit( 'shr', 'i64', [ $ret_val, 1 ] );
+                        }
+                        elsif ( $ret_type eq 'void' ) {
+                            $raw_ret = 0;
+                        }
+                        else {
+                            $raw_ret = $ret_val;
+                        }
+
+                        # --- 2. RESTORE CALLER'S R14 ---
+                        my $orig_r14 = $builder->emit( 'local_load', 'ptr', [$caller_r14_s] );
+                        $builder->emit( 'set_isolate_ctx', 'void', [$orig_r14] );
+                        $builder->emit( 'leave_func',      'i64',  [$raw_ret] );
+                    }
+                );
+            }
+            return $pool_id;
         }
 
         method register_classes($nodes) {

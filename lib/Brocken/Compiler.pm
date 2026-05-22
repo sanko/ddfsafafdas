@@ -63,6 +63,9 @@ package Brocken::Compiler {
         field $coverage_table_offset  : reader = undef;
         field $coverage_table_size    : reader = undef;
         field $coverage_probe_lines   : reader = undef;
+        field %func_local_sizes;
+        method set_func_local_size( $name, $sz ) { $func_local_sizes{$name} = $sz; }
+        method get_func_local_size($name)        { $func_local_sizes{$name} // 0; }
         #
         ADJUST {
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
@@ -156,6 +159,12 @@ package Brocken::Compiler {
             return $local_ptr;
         }
 
+        method alloc_local_chunk ($size) {
+            $local_ptr += $size;
+            die 'Stack Overflow: Local area exceeded 4096 bytes' if $local_ptr > 4096;
+            return $local_ptr;
+        }
+
         method iso_offset ($name) {
             state $ISO = {
                 heap_ptr          => 0,
@@ -214,14 +223,22 @@ package Brocken::Compiler {
                 require Brocken::Codegen;
                 require Brocken::Compiler::DataSegment;
                 $source_file = $filename;
+
+                # In lib/Brocken/Compiler.pm (inside compile_source)
                 my $tokens   = Brocken::Lexer->new( source => $source, file => $filename )->lex();
                 my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
                 my $ds       = Brocken::Compiler::DataSegment->new();
                 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
                 $lowering->lower_program($ast);
                 my @instructions = $lowering->builder->instructions();
-                my $probe_count  = 0;
 
+                # --- RUN OPTIMIZER ---
+                require Brocken::Compiler::Optimizer;
+                my $opt = Brocken::Compiler::Optimizer->new();
+
+                # Run static Escape Analysis before register allocation and code generation!
+                $opt->escape_analysis( \@instructions );
+                my $probe_count = 0;
                 if ( $self->coverage ) {
                     require Brocken::Compiler::Optimizer;
                     my $opt = Brocken::Compiler::Optimizer->new();

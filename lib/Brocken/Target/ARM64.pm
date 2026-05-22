@@ -374,6 +374,23 @@ class Brocken::Target::ARM64 : isa(Brocken::Target) {
                 $as->stur_mem_disp_reg( 'x16', $driver->fcb_offset('shadow_ptr'), $v->( $inst->{args}[0] ) );
             }
         }
+        elsif ( $op eq 'stack_alloc' ) {
+            my $psz            = $inst->{args}[0];
+            my $aligned_sz     = $inst->{args}[1];
+            my $slot           = $inst->{slot};
+            my $hdr_offset     = -$slot;
+            my $payload_offset = -$slot + 8;
+            my $fhdr           = $aligned_sz | ( $psz & hex("C000000000000000") );
+            $as->mov_imm( 'x16', $fhdr );
+            $as->stur_mem_disp_reg( 'x29', $hdr_offset, 'x16' );
+
+            for ( my $off = $payload_offset; $off < $hdr_offset + $aligned_sz; $off += 8 ) {
+                $as->mov_imm( 'x16', 0 );
+                $as->stur_mem_disp_reg( 'x29', $off, 'x16' );
+            }
+            $as->mov_reg( $d_reg, 'x29' );
+            $as->sub_imm( $d_reg, abs($payload_offset) );
+        }
         elsif ( $op eq 'shadow_pop' ) {
             $as->ldur_reg_mem( 'x15', 'x28', $driver->iso_offset('current_fcb') );
             $as->ldur_reg_mem( 'x17', 'x15', $driver->fcb_offset('shadow_ptr') );

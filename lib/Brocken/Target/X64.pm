@@ -1,6 +1,6 @@
 use v5.40;
 use feature 'class';
-no warnings 'experimental::class';
+no warnings 'experimental::class', 'portable';
 
 class Brocken::Target::X64 : isa(Brocken::Target) {
 
@@ -439,8 +439,27 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
                 $as->store_mem_disp_reg( 'r11', $driver->fcb_offset('shadow_ptr'), $src );
             }
         }
+        elsif ( $op eq 'stack_alloc' ) {
+            my $psz            = $inst->{args}[0];
+            my $aligned_sz     = $inst->{args}[1];
+            my $slot           = $inst->{slot};      # Read the pre-scanned slot offset
+            my $hdr_offset     = -$slot;
+            my $payload_offset = -$slot + 8;
 
-        # Inside Brocken::Target::X64::emit_op
+            # Form the proper GC header (aligned_size + Leaf flags)
+            my $fhdr = $aligned_sz | ( $psz & hex("C000000000000000") );
+            $as->mov_imm( 'r11', $fhdr );
+            $as->store_mem_disp_reg( 'rbp', $hdr_offset, 'r11' );
+
+            # Inline zero-out the stack payload
+            for ( my $off = $payload_offset; $off < $hdr_offset + $aligned_sz; $off += 8 ) {
+                $as->mov_imm( 'r11', 0 );
+                $as->store_mem_disp_reg( 'rbp', $off, 'r11' );
+            }
+
+            # Destination register gets the address of the payload
+            $as->lea_reg_disp( $d_reg, 'rbp', $payload_offset );
+        }
         elsif ( $op eq 'shadow_pop' ) {
 
             # r14 = Isolate, current_fcb offset is 24, shadow_ptr offset in FCB is 32

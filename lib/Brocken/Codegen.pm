@@ -10,6 +10,7 @@ class Brocken::Codegen {
     # Start spills at a high offset to avoid clashing with function locals
     field $spill_slot_ptr = 2048;
 
+    # In lib/Brocken/Codegen.pm (inside Class Brocken::Codegen)
     method compile( $instructions, $driver ) {
         my $target  = $driver->target;
         my $as      = $driver->as;
@@ -23,7 +24,23 @@ class Brocken::Codegen {
                 if ($is_func) {
                     $driver->close_last_func_range( length( $as->code ) );
 
-                    # INITIALIZE try_ranges here
+                    # FIX: Initialize local_ptr to the exact lowered size of this specific function
+                    # to prevent stack overlap and memory corruption!
+                    my $func_size = $driver->get_func_local_size( $inst->{name} );
+                    $driver->set_local_ptr($func_size);
+
+                    # Pre-scan and allocate dynamic stack_alloc slots strictly after lowered locals
+                    my $scan_idx = $i + 2;
+                    while ( $scan_idx < @$instructions ) {
+                        my $s_inst = $instructions->[$scan_idx];
+                        last if $s_inst->{op} eq 'enter_func';
+                        if ( $s_inst->{op} eq 'stack_alloc' ) {
+                            my $aligned_sz = $s_inst->{args}[1];
+                            my $slot       = $driver->alloc_local_chunk($aligned_sz);
+                            $s_inst->{slot} = $slot;
+                        }
+                        $scan_idx++;
+                    }
                     my $fr     = { name => $inst->{name}, start => length( $as->code ), ctx_size => $driver->context_size, try_ranges => [] };
                     my $params = $driver->get_debug_func_params( $inst->{name} );
                     $fr->{params} = $params if @$params;

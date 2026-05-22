@@ -6,6 +6,84 @@ use Brocken::AST;
 
 class Brocken::Compiler::Optimizer {
 
+    method escape_analysis($insts) {
+        my %allocs;        # Map vreg -> Allocation Info
+        my %escaped;       # Map vreg -> 1 (Escaped)
+        my %const_vals;    # Map vreg -> Constant Numeric Value
+
+        # Pass 1: Map all constants and find GC allocations
+        for my $i ( 0 .. $#$insts ) {
+            my $inst = $insts->[$i];
+            if ( $inst->{op} eq 'constant' ) {
+                $const_vals{ $inst->{dest} } = $inst->{args}[0];
+            }
+            if ( $inst->{op} eq 'call_func' && $inst->{args}[0] eq 'M_gc_alloc' ) {
+                $allocs{ $inst->{dest} } = { idx => $i, size_raw_reg => $inst->{args}[1] };
+            }
+        }
+
+        # Pass 2: Analyze variable uses across the entire IR sequence
+        for my $i ( 0 .. $#$insts ) {
+            my $inst = $insts->[$i];
+            my @uses;
+            if ( $inst->{args} ) {
+                @uses = grep { defined && !ref($_) && /^%/ } @{ $inst->{args} };
+            }
+            push @uses, $inst->{reg} if $inst->{op} eq 'cond_br' && $inst->{reg} =~ /^%/;
+            for my $u (@uses) {
+                next unless exists $allocs{$u};
+
+                # Escape Conditions:
+                # 1. Passed as an argument to a function or method call
+                if ( $inst->{op} =~ /^call_/ || $inst->{op} =~ /^tail_call_/ ) {
+                    $escaped{$u} = 1;
+                }
+
+                # 2. Returned from the current subroutine
+                elsif ( $inst->{op} eq 'leave_func' ) {
+                    $escaped{$u} = 1;
+                }
+
+                # 3. Stored in a global/package variable (Isolate Context)
+                elsif ( $inst->{op} eq 'store_iso_disp' ) {
+                    $escaped{$u} = 1;
+                }
+
+                # 4. Stored inside another object (as the stored value at argument 2)
+                elsif ( $inst->{op} eq 'store_mem_disp' ) {
+                    if ( defined $inst->{args}[2] && $inst->{args}[2] eq $u ) {
+                        $escaped{$u} = 1;
+                    }
+                }
+            }
+        }
+
+        # Pass 3: Mutate non-escaping allocations into static stack allocations
+        for my $v ( keys %allocs ) {
+            next if $escaped{$v};
+            my $size_reg = $allocs{$v}{size_raw_reg};
+            my $size_val = undef;
+            if ( defined $size_reg ) {
+                if ( $size_reg !~ /^%/ ) {
+                    $size_val = $size_reg;
+                }
+                elsif ( exists $const_vals{$size_reg} ) {
+                    $size_val = $const_vals{$size_reg};
+                }
+            }
+
+            # If the size is not statically known, we cannot stack allocate it
+            next unless defined $size_val;
+            my $alloc_inst = $insts->[ $allocs{$v}{idx} ];
+            $alloc_inst->{op} = 'stack_alloc';
+            my $size_raw = $size_val & 0xFFFFFFFFFF;
+
+            # Statically align and compute total size (including 8-byte header)
+            my $aligned_sz = ( $size_raw + 15 ) & -8;
+            $alloc_inst->{args} = [ $size_val, $aligned_sz ];
+        }
+    }
+
     method optimize($builder) {
         my @instructions = $builder->instructions();
         return unless @instructions;
@@ -54,27 +132,19 @@ class Brocken::Compiler::Optimizer {
         for ( my $i = 0; $i < @$insts - 1; $i++ ) {
             my $curr = $insts->[$i];
             next unless $curr->{op} eq 'call_func' || $curr->{op} eq 'call_reg';
-
-            # Look ahead for shadow_set + leave_func or just leave_func
             my $next_idx       = $i + 1;
             my $has_shadow_set = 0;
             if ( $next_idx < @$insts && $insts->[$next_idx]{op} && $insts->[$next_idx]{op} eq 'shadow_set' ) {
                 $has_shadow_set = 1;
                 $next_idx++;
             }
-
-            # Skip labels or jmps that lead to the same leave_func
             while ( $next_idx < @$insts && $insts->[$next_idx]{op} && ( $insts->[$next_idx]{op} eq 'label' || $insts->[$next_idx]{op} eq 'jmp' ) ) {
                 $next_idx++;
             }
             if ( $next_idx < @$insts && $insts->[$next_idx]{op} && $insts->[$next_idx]{op} eq 'leave_func' ) {
                 my $leave = $insts->[$next_idx];
                 if ( defined $leave->{args}[0] && defined $curr->{dest} && $leave->{args}[0] eq $curr->{dest} ) {
-
-                    # Pattern matched: %res = call ...; [shadow_set ...;] leave_func %res
                     if ($has_shadow_set) {
-
-                        # Move shadow_set BEFORE the tail call so it actually runs
                         my $ss = $insts->[ $i + 1 ];
                         $insts->[ $i + 1 ] = $curr;
                         $insts->[$i]       = $ss;
@@ -107,8 +177,6 @@ class Brocken::Compiler::Optimizer {
                 $current_enter = undef;
             }
             elsif ($current_enter) {
-
-                # Instructions that disqualify a leaf
                 if ( $i->{op} =~ /^call_/ || $i->{op} =~ /^intrinsic_(print|print_stderr|alloc|sleep|read|write|open|close)/ ) {
                     $is_leaf = 0;
                 }
