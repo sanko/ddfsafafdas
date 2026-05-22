@@ -27,7 +27,9 @@ sub test_brocken {
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
         alarm($timeout);
-        system( q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run );
+
+        #~ Test2::V0::diag( 'Running '. $run);
+        #~ system( q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run );
         open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
         local $/;
         my $out = <$fh>;

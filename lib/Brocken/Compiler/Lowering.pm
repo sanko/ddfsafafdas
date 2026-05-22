@@ -3739,62 +3739,238 @@ package Brocken::Compiler::Lowering {
         }
 
         method lower_For($node) {
-            my ( $source_reg, $source_type ) = $self->lower( $node->source );
 
-            # For now, only support Array source
-            die "For loop source must be an Array" unless $source_type eq 'Array';
+            # Protect loop variables within a dedicated lexical scope
+            $current_scope = Brocken::Scope->new( parent => $current_scope );
             my $l_cond = $builder->new_label();
             my $l_next = $builder->new_label();
             my $l_redo = $builder->new_label();
             my $l_last = $builder->new_label();
-            my $idx_s  = $driver->alloc_local_slot();
-            $builder->emit( 'local_store', 'void', [ $idx_s, $builder->emit( 'constant', 'i64', [0] ) ] );
             push @loop_stack, { next_l => $l_next, last_l => $l_last, redo_l => $l_redo };
-            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("LoopStart\n") ] ) ] );
 
-            # Initial condition check
+            # Allocate local slots for loop variables at compile time
+            my @vars = ref( $node->var ) eq 'ARRAY' ? @{ $node->var } : ( $node->var );
+            my @var_slots;
+            if ( $node->is_my ) {
+                for my $vname (@vars) {
+                    my $sl = $driver->alloc_local_slot();
+                    $current_scope->define( $vname, 'Any', 0, undef, $sl );
+                    push @var_slots, $sl;
+                }
+            }
+
+            # --- 1. FAST PATH: ZERO-ALLOCATION RANGE ITERATION (e.g. `1 .. 1000000`) ---
+            if ( $node->source isa Brocken::AST::Expr::BinOp && ( $node->source->op eq '..' || $node->source->op eq '...' ) ) {
+                my ( $lr, $lt ) = $self->lower( $node->source->left );
+                $builder->emit( 'shadow_push', 'void', [$lr] );
+                my ( $rr, $rt ) = $self->lower( $node->source->right );
+                $builder->emit( 'shadow_pop', 'void', [] );
+
+                # Untag bounds
+                my $l_val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $lr, 1 ] ), 2 ] );
+                my $r_val = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $rr, 1 ] ), 2 ] );
+                if ( $node->source->op eq '...' ) {
+                    $r_val = $builder->emit( 'sub', 'i64', [ $r_val, 1 ] );    # Exclusive range
+                }
+                my $idx_s = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $idx_s, $l_val ] );
+                my $limit_s = $driver->alloc_local_slot();
+                $builder->emit( 'local_store', 'void', [ $limit_s, $r_val ] );
+                $builder->emit_jump($l_cond);
+                $builder->emit_label($l_redo);
+                my $idx        = $builder->emit( 'local_load', 'i64', [$idx_s] );
+                my $tagged_val = $builder->emit( 'or',         'i64', [ $builder->emit( 'shl', 'i64', [ $idx, 1 ] ), 1 ] );
+
+                if ( $node->is_my ) {
+                    $builder->emit( 'local_store', 'void', [ $var_slots[0], $tagged_val ] );
+
+                    # Initialize any extra destructured vars to undef (useless for ranges, but safe)
+                    for my $i ( 1 .. $#var_slots ) {
+                        $builder->emit( 'local_store', 'void', [ $var_slots[$i], $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] ) ] );
+                    }
+                }
+                else {
+                    my $s = $current_scope->resolve( $vars[0] );
+                    if ($s) {
+                        if ( defined $s->isolate_offset ) {
+                            $builder->emit( 'store_iso_disp', 'void', [ $s->isolate_offset, $tagged_val ] );
+                        }
+                        else {
+                            $builder->emit( 'local_store', 'void', [ $s->stack_offset, $tagged_val ] );
+                        }
+                    }
+                }
+                $self->lower( $node->body );
+                $builder->emit_jump($l_next);
+                $builder->emit_label($l_next);
+                my $curr_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+                $builder->emit( 'local_store', 'void', [ $idx_s, $builder->emit( 'add', 'i64', [ $curr_idx, 1 ] ) ] );
+                $builder->emit_jump($l_cond);
+                $builder->emit_label($l_cond);
+                my $chk_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
+                my $limit   = $builder->emit( 'local_load', 'i64', [$limit_s] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_le', 'Int', [ $chk_idx, $limit ] ), $l_redo, $l_last );
+                $builder->emit_label($l_last);
+                pop @loop_stack;
+                $current_scope = $current_scope->parent;
+                return ( undef, 'void' );
+            }
+
+            # --- 2. DYNAMIC PATH: HASH & ARRAY ITERATION WITH DESTRUCTURING ---
+            my ( $source_reg, $source_type ) = $self->lower( $node->source );
+            $builder->emit( 'shadow_push', 'void', [$source_reg] );
+            my $is_hash  = $builder->new_label();
+            my $is_arr   = $builder->new_label();
+            my $do_iter  = $builder->new_label();
+            my $tag_word = $builder->emit( 'load_mem_disp', 'i64', [ $source_reg, 0 ] );
+            my $type_tag = $builder->emit( 'and',           'i64', [ $tag_word,   3 ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $type_tag, 3 ] ), $is_hash, $is_arr );
+
+            # Hash Setup (Extract Keys Array dynamically)
+            $builder->emit_label($is_hash);
+            my $keys_arr   = $builder->emit( 'call_func', 'ptr', [ 'M_hash_keys', $source_reg ] );
+            my $hash_src_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $hash_src_s, $source_reg ] );
+            my $iter_src_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $iter_src_s, $keys_arr ] );
+
+            # Push newly allocated keys array to shadow stack to protect it during iteration
+            $builder->emit( 'shadow_push', 'void', [$keys_arr] );
+            my $is_hash_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $is_hash_s, 1 ] );
+            $builder->emit_jump($do_iter);
+
+            # Array Setup
+            $builder->emit_label($is_arr);
+            $builder->emit( 'local_store', 'void', [ $iter_src_s, $source_reg ] );
+            $builder->emit( 'local_store', 'void', [ $is_hash_s,  0 ] );
+            $builder->emit_jump($do_iter);
+            $builder->emit_label($do_iter);
+            my $idx_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $idx_s, 0 ] );
             $builder->emit_jump($l_cond);
             $builder->emit_label($l_redo);
+            my $arr             = $builder->emit( 'local_load', 'ptr', [$iter_src_s] );
+            my $idx             = $builder->emit( 'local_load', 'i64', [$idx_s] );
+            my $is_hash_flag    = $builder->emit( 'local_load', 'i64', [$is_hash_s] );
+            my $num_vars        = scalar(@vars);
+            my $l_destruct_hash = $builder->new_label();
+            my $l_destruct_arr  = $builder->new_label();
+            my $l_destruct_done = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $is_hash_flag, 1 ] ), $l_destruct_hash, $l_destruct_arr );
 
-            # Get element
-            my $idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
-
-            # Ptr to element: source + 8 + (idx * 8)
-            my $ptr
-                = $builder->emit( 'add', 'ptr', [ $source_reg, $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $idx, 8 ] ), 8 ] ) ] );
-            my $val = $builder->emit( 'load_mem_disp', 'Any', [ $ptr, 0 ] );
-
-            # Define loop variable
-            if ( $node->is_my ) {
-                my $sl = $driver->alloc_local_slot();
-                $current_scope->define( $node->var, 'Any', 0, undef, $sl );
-                $builder->emit( 'local_store', 'void', [ $sl, $val ] );
+            # --- Extract Hash Element ---
+            $builder->emit_label($l_destruct_hash);
+            my $k_ptr = $builder->emit( 'add', 'ptr', [ $arr, $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $idx, 8 ] ) ] ) ] );
+            my $k_val = $builder->emit( 'load_mem_disp', 'Any', [ $k_ptr, 0 ] );
+            my $v_val;
+            if ( $num_vars > 1 ) {
+                my $hash_obj = $builder->emit( 'local_load', 'ptr', [$hash_src_s] );
+                $v_val = $builder->emit( 'call_func', 'Any', [ 'M_hash_lookup', $hash_obj, $k_val ] );
             }
+            if ( $node->is_my ) {
+                $builder->emit( 'local_store', 'void', [ $var_slots[0], $k_val ] );
+                if ( $num_vars > 1 ) {
+                    $builder->emit( 'local_store', 'void', [ $var_slots[1], $v_val ] );
+                }
+
+                # Undefine any extra vars
+                for my $i ( 2 .. $#vars ) {
+                    $builder->emit( 'local_store', 'void', [ $var_slots[$i], $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] ) ] );
+                }
+            }
+            else {
+                my $s = $current_scope->resolve( $vars[0] );
+                $builder->emit( 'local_store', 'void', [ $s->stack_offset, $k_val ] ) if $s;
+                if ( $num_vars > 1 ) {
+                    my $s2 = $current_scope->resolve( $vars[1] );
+                    $builder->emit( 'local_store', 'void', [ $s2->stack_offset, $v_val ] ) if $s2;
+                }
+            }
+            $builder->emit_jump($l_destruct_done);
+
+            # --- Extract Array Element(s) ---
+            $builder->emit_label($l_destruct_arr);
+            my $raw_len = $builder->emit( 'load_mem_disp', 'i64', [ $arr,     0 ] );
+            my $len     = $builder->emit( 'shr',           'i64', [ $raw_len, 2 ] );
+            for my $v_idx ( 0 .. $num_vars - 1 ) {
+                my $cur_elem_idx = $builder->emit( 'add', 'i64', [ $idx, $v_idx ] );
+                my $l_in_bounds  = $builder->new_label();
+                my $l_oob        = $builder->new_label();
+                my $l_val_ready  = $builder->new_label();
+                my $val_s        = $driver->alloc_local_slot();
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $cur_elem_idx, $len ] ), $l_in_bounds, $l_oob );
+                $builder->emit_label($l_in_bounds);
+                my $ptr = $builder->emit( 'add', 'ptr',
+                    [ $arr, $builder->emit( 'add', 'i64', [ 8, $builder->emit( 'mul', 'i64', [ $cur_elem_idx, 8 ] ) ] ) ] );
+                $builder->emit( 'local_store', 'void', [ $val_s, $builder->emit( 'load_mem_disp', 'Any', [ $ptr, 0 ] ) ] );
+                $builder->emit_jump($l_val_ready);
+                $builder->emit_label($l_oob);
+                $builder->emit( 'local_store', 'void', [ $val_s, $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] ) ] );
+                $builder->emit_jump($l_val_ready);
+                $builder->emit_label($l_val_ready);
+
+                if ( $node->is_my ) {
+                    $builder->emit( 'local_store', 'void', [ $var_slots[$v_idx], $builder->emit( 'local_load', 'Any', [$val_s] ) ] );
+                }
+                else {
+                    my $s = $current_scope->resolve( $vars[$v_idx] );
+                    if ($s) {
+                        if ( defined $s->isolate_offset ) {
+                            $builder->emit( 'store_iso_disp', 'void', [ $s->isolate_offset, $builder->emit( 'local_load', 'Any', [$val_s] ) ] );
+                        }
+                        else {
+                            $builder->emit( 'local_store', 'void', [ $s->stack_offset, $builder->emit( 'local_load', 'Any', [$val_s] ) ] );
+                        }
+                    }
+                }
+            }
+            $builder->emit_jump($l_destruct_done);
+            $builder->emit_label($l_destruct_done);
+
+            # Execute Loop Body
             $self->lower( $node->body );
 
             # Fallthrough to increment
             $builder->emit_jump($l_next);
             $builder->emit_label($l_next);
-            my $curr_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
-            my $next_idx = $builder->emit( 'add', 'i64', [ $curr_idx, 1 ] );
-            $builder->emit( 'local_store', 'void', [ $idx_s, $next_idx ] );
+            my $curr_idx   = $builder->emit( 'local_load', 'i64', [$idx_s] );
+            my $l_inc_hash = $builder->new_label();
+            my $l_inc_arr  = $builder->new_label();
+            my $l_inc_done = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $builder->emit( 'local_load', 'i64', [$is_hash_s] ), 1 ] ),
+                $l_inc_hash, $l_inc_arr );
+            $builder->emit_label($l_inc_hash);
+            $builder->emit( 'local_store', 'void', [ $idx_s, $builder->emit( 'add', 'i64', [ $curr_idx, 1 ] ) ] );
+            $builder->emit_jump($l_inc_done);
+            $builder->emit_label($l_inc_arr);
+            my $stride_val = ref( $node->var ) eq 'ARRAY' ? scalar( @{ $node->var } ) : 1;
+            $builder->emit( 'local_store', 'void', [ $idx_s, $builder->emit( 'add', 'i64', [ $curr_idx, $stride_val ] ) ] );
+            $builder->emit_jump($l_inc_done);
+            $builder->emit_label($l_inc_done);
             $builder->emit_jump($l_cond);
+
+            # --- Loop Condition Verification ---
             $builder->emit_label($l_cond);
-
-            # Re-check condition: i < len(source)
-            # Length = (first_word >> 2)
-            my $raw_len = $builder->emit( 'load_mem_disp', 'i64', [ $source_reg, 0 ] );
-            my $len     = $builder->emit( 'shr',           'i64', [ $raw_len,    2 ] );
-
-            # Debug print length
-            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("Len: ") ] ) ] );
-            $builder->emit( 'call_func', 'void',
-                [ 'M_print_int', $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $len, 1 ] ), 1 ] ) ] );
-            $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
-            my $chk_idx = $builder->emit( 'local_load', 'i64', [$idx_s] );
-            $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $chk_idx, $len ] ), $l_redo, $l_last );
+            my $arr_for_len = $builder->emit( 'local_load',    'ptr', [$iter_src_s] );
+            my $raw_len2    = $builder->emit( 'load_mem_disp', 'i64', [ $arr_for_len, 0 ] );
+            my $len2        = $builder->emit( 'shr',           'i64', [ $raw_len2,    2 ] );
+            my $chk_idx     = $builder->emit( 'local_load',    'i64', [$idx_s] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $chk_idx, $len2 ] ), $l_redo, $l_last );
             $builder->emit_label($l_last);
+
+            # Pop shadow stack (If hash, pop keys array. Original source gets popped right after)
+            my $l_pop_hash = $builder->new_label();
+            my $l_pop_done = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $builder->emit( 'local_load', 'i64', [$is_hash_s] ), 1 ] ),
+                $l_pop_hash, $l_pop_done );
+            $builder->emit_label($l_pop_hash);
+            $builder->emit( 'shadow_pop', 'void', [] );    # Pop keys array
+            $builder->emit_jump($l_pop_done);
+            $builder->emit_label($l_pop_done);
+            $builder->emit( 'shadow_pop', 'void', [] );    # Pop original source
             pop @loop_stack;
+            $current_scope = $current_scope->parent;       # End loop lexical scope
             return ( undef, 'void' );
         }
 
