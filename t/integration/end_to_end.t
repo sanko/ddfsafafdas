@@ -3,7 +3,7 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use File::Temp qw(tempfile);
 
 sub compile_and_run {

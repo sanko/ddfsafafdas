@@ -1,7 +1,8 @@
 use v5.40;
-use lib 'lib', '../../lib';
+use lib 'lib';
 use Brocken::TestHelpers qw(test_brocken);
 use Test2::V0;
+$^O eq 'MSWin32' or plan skip_all => 'Windows-only test (msvcrt.dll)';
 test_brocken(
     name   => 'C FFI via msvcrt.dll (puts and strlen)',
     source => q{

@@ -29,7 +29,7 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
     }
 
     method import_rva($name) {
-        my $imports = { dlopen => 0, dlsym => 8, };
+        my $imports = { dlopen => 0, dlsym => 8, pthread_create => 16 };
         return $self->layout->get('.got')->{rva} + ( $imports->{$name} // die "Unknown ELF import: $name" );
     }
     method image_base () { return $self->type eq 'shared' ? 0 : 0x400000; }
@@ -94,7 +94,7 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
 
         # 2. Setup Dynamic Strings Table
         my @exports = @{ $self->exported_funcs // [] };
-        my @imports = ( 'dlopen', 'dlsym' );
+        my @imports = ( 'dlopen', 'dlsym', 'pthread_create' );
         my @libs    = ('libc.so.6');
         my $dynstr  = "\0";
         my %str_off;
@@ -138,10 +138,13 @@ class Brocken::Format::ELF : isa(Brocken::Format) {
         my $dlsym_slot    = $base + $got_rva + 8;
         my $dlsym_sym_idx = $sym_indices{'dlsym'};
         $rela_dyn .= pack( 'Q< Q< q<', $dlsym_slot, ( $dlsym_sym_idx << 32 ) | $rel_type, 0 );
+        my $pthread_slot    = $base + $got_rva + 16;
+        my $pthread_sym_idx = $sym_indices{'pthread_create'};
+        $rela_dyn .= pack( 'Q< Q< q<', $pthread_slot, ( $pthread_sym_idx << 32 ) | $rel_type, 0 );
         $l->get('.rela.dyn')->{size} = length($rela_dyn);
 
-        # 5. Setup GOT section payload (just two zeroed slots)
-        my $got = pack( 'Q< Q<', 0, 0 );
+        # 5. Setup GOT section payload (just three zeroed slots)
+        my $got = pack( 'Q< Q< Q<', 0, 0, 0 );
         $l->get('.got')->{size} = length($got);
 
         # 6. Setup Hash Table

@@ -93,7 +93,7 @@ We wrote a compiler in pure perl. Implement the following features:
 
 ## Milestone 4: Advanced Runtime (Concurrency)
 - [x] Fibers: Context switching by saving/restoring `rsp`/`sp` and registers.
-- [ ] Isolates (OS Threads): Wrapping `CreateThread` (Win) and `clone`/`pthread` (Linux).
+- [x] Isolates (OS Threads): Wrapping `CreateThread` (Win) and `pthread` (Unix).
 - [x] Windows TEB (Thread Environment Block) security mitigations.
 - [ ] Channels: Lock-free ring buffers for Isolate-to-Isolate communication.
 
@@ -101,12 +101,12 @@ We wrote a compiler in pure perl. Implement the following features:
 - [ ] Symbol lookup: Implement pure-Perl manual Export Directory parsing for PE/ELF.
 - [x] Stabilize shared library output (.dll/.so): Handled Entry Points and PE SEH metadata.
 - [x] Type System: Implemented Brocken::Type mirroring Affix types.
-- [x] Compiler/IR: `call_native` IR op and lowering logic exists.
+- [x] Compiler/IR: `call_native` IR op and lowering logic exists. Handled Floats and Pointers.
 - [x] Reverse trampolines: Safe ABI boundaries for Host-to-Guest callback execution.
 
 ## Milestone 6: Developer Experience & Correctness
 - [x] Exception Stack Traces: Tie `M_unwind` into the DWARF line-tables to produce human-readable traces mapping `rip` to `source_locs`.
-- [ ] Compiler Test Suite and Fuzzing: Expand tests to stress-test the Register Allocator.
+- [x] Compiler Test Suite and Fuzzing: Expanded tests for Register Allocator, Optimizer, and Threads.
 - [ ] IR-Diff Tool: Utility to verify output consistency between compiler versions.
 - [ ] LSP Stub: Basic IDE support for symbol definitions and type tooltips using POD6.
 
@@ -114,12 +114,12 @@ We wrote a compiler in pure perl. Implement the following features:
 - [ ] FFI (`Affix`): Declarative C-ABI bindings using opaque pointers.
 - [ ] PCRE-compatible Regex engine compiled directly to machine code.
 - [ ] Software-Defined MMU & Sandboxing:
-  - [ ] Context Isolation: Pin the Isolate struct to a global register.
+  - [x] Context Isolation: Pin the Isolate struct to a global register (R14/x28).
   - [ ] Fuel System: Inject decrement/check instructions on loop backedges.
   - [ ] Memory Guarding: Check Isolate byte-limits before OS/GC allocations.
 
 ## Milestone 8: Advanced Optimizations & GC
-- [ ] Escape Analysis & Allocation Swap: Trace object lifetimes in the Optimizer. If an object never escapes its local function, swap `call M_gc_alloc` for a fast `sub rsp, size` stack allocation to eliminate GC overhead.
+- [x] Escape Analysis & Allocation Swap: Trace object lifetimes in the Optimizer. If an object never escapes its local function, swap `call M_gc_alloc` for a fast `sub rsp, size` stack allocation to eliminate GC overhead.
 - [x] Generational GC (The Nursery): Implemented a 64KB nursery for fast bumps and a 2MB dual semi-space for tenured promotions.
 
 ## Milestone 9: Distributed Runtime & M:N Scheduling (Long Term)

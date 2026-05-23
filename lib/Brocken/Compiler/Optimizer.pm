@@ -5,6 +5,19 @@ no warnings 'portable', 'experimental::class';
 use Brocken::AST;
 
 class Brocken::Compiler::Optimizer {
+    field $opts : param : reader = {};
+
+    ADJUST {
+        # Setup defaults
+        $opts = {
+            escape    => 1,
+            tail_call => 1,
+            leaf      => 1,
+            dce       => 1,
+            loop_fuse => 1,
+            %$opts
+        };
+    }
 
     method escape_analysis($insts) {
         my %allocs;        # Map vreg -> Allocation Info
@@ -87,8 +100,10 @@ class Brocken::Compiler::Optimizer {
     method optimize($builder) {
         my @instructions = $builder->instructions();
         return unless @instructions;
-        $self->_tail_call_optimization( \@instructions );
-        $self->_identify_leaf_functions( \@instructions );
+
+        $self->_tail_call_optimization( \@instructions ) if $opts->{tail_call};
+        $self->_identify_leaf_functions( \@instructions ) if $opts->{leaf};
+
         my $changed = 1;
         while ($changed) {
             $changed = 0;
@@ -102,25 +117,29 @@ class Brocken::Compiler::Optimizer {
                 $use_count{ $i->{reg} }++ if $i->{op} eq 'cond_br' && $i->{reg};
                 if ( $i->{op} eq 'shadow_push' ) { $shadow_map{ $i->{args}[0] } = $i; }
             }
-            for my $i (@instructions) {
-                next if $i->{op} eq 'nop';
-                next unless defined $i->{dest};
-                next if $i->{op} =~ /^(?:call_|tail_call_|store_|intrinsic_|shadow_|mark_try_|leave_func)/;
-                if ( ( $use_count{ $i->{dest} } // 0 ) == 0 ) {
-                    $i->{op} = 'nop';
-                    $changed = 1;
+            if ( $opts->{dce} ) {
+                for my $i (@instructions) {
+                    next if $i->{op} eq 'nop';
+                    next unless defined $i->{dest};
+                    next if $i->{op} =~ /^(?:call_|tail_call_|store_|intrinsic_|shadow_|mark_try_|leave_func)/;
+                    if ( ( $use_count{ $i->{dest} } // 0 ) == 0 ) {
+                        $i->{op} = 'nop';
+                        $changed = 1;
+                    }
                 }
             }
-            for my $i (@instructions) {
-                next unless $i->{op} eq 'map_op';
-                my $src_reg = $i->{args}[0];
-                my $prev    = $def{$src_reg};
-                if ( $prev && $prev->{op} eq 'map_op' && ( $use_count{$src_reg} // 0 ) <= 2 ) {
-                    $i->{args}[1] = $self->substitute_ast( $i->{args}[1], '$_', $prev->{args}[1] );
-                    $i->{args}[0] = $prev->{args}[0];
-                    $prev->{op}   = 'nop';
-                    if ( $shadow_map{$src_reg} ) { $shadow_map{$src_reg}->{op} = 'nop'; }
-                    $changed = 1;
+            if ( $opts->{loop_fuse} ) {
+                for my $i (@instructions) {
+                    next unless $i->{op} eq 'map_op';
+                    my $src_reg = $i->{args}[0];
+                    my $prev    = $def{$src_reg};
+                    if ( $prev && $prev->{op} eq 'map_op' && ( $use_count{$src_reg} // 0 ) <= 2 ) {
+                        $i->{args}[1] = $self->substitute_ast( $i->{args}[1], '$_', $prev->{args}[1] );
+                        $i->{args}[0] = $prev->{args}[0];
+                        $prev->{op}   = 'nop';
+                        if ( $shadow_map{$src_reg} ) { $shadow_map{$src_reg}->{op} = 'nop'; }
+                        $changed = 1;
+                    }
                 }
             }
             @instructions = grep { $_->{op} ne 'nop' } @instructions;

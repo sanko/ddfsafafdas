@@ -28,7 +28,10 @@ sub get_null() {
 BROCKEN
     my $tokens   = Brocken::Lexer->new( source => $source )->lex();
     my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-    my $driver   = Brocken::Compiler->new( os => 'win64', arch => 'x64', type => 'shared', debug => 0 );
+    my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
+    my $out_ext   = $^O eq 'MSWin32' ? '.dll' : '.so';
+    my $out_name  = "test_pointer${out_ext}";
+    my $driver   = Brocken::Compiler->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
     my $ds       = Brocken::Compiler::DataSegment->new();
     my $lowering = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
@@ -37,7 +40,7 @@ BROCKEN
     $optimizer->optimize( $lowering->builder );
     my $format = $driver->format;
     my $data   = $ds->raw_data();
-    $format->pre_layout( 65536, length($data), 'x64', 'win64' );
+    $format->pre_layout( 65536, length($data), 'x64', $target_os );
     my $codegen = Brocken::Codegen->new( arch => 'x64' );
     my @insts   = $lowering->builder->instructions;
     $codegen->compile( \@insts, $driver );
@@ -48,10 +51,9 @@ BROCKEN
     my @exports = sort(qw(pass_ptr get_null));
     $format->set_exported_funcs( \@exports );
     my $text    = $as->code;
-    my $out_dll = 'test_pointer.dll';
-    $format->write_bin( $out_dll, $text, $data, 'x64', 'win64', 'shared' );
-    ok( -f $out_dll, 'Pointer DLL generated' );
-    pass('Pointer type parameters parsed and DLL generated');
-    unlink $out_dll if -f $out_dll;
+    $format->write_bin( $out_name, $text, $data, 'x64', $target_os, 'shared' );
+    ok( -f $out_name, 'Pointer shared library generated' );
+    pass('Pointer type parameters parsed and shared library generated');
+    unlink $out_name if -f $out_name;
 };
 done_testing();

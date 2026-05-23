@@ -22,7 +22,7 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
     }
 
     method import_rva($name) {
-        my $imports = { dlopen => 0, dlsym => 8, };
+        my $imports = { dlopen => 0, dlsym => 8, pthread_create => 16 };
         return $self->layout->get('.got')->{rva} + ( $imports->{$name} // die "Unknown Mach-O import: $name" );
     }
     method image_base () { return 0x100000000; }
@@ -53,7 +53,7 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
         my $lc_load_libsystem = pack( 'L< L< L< L< L< L<', 0xC, 24 + length($lib_name), 24, 2, 0x010000, 0x010000 ) . $lib_name;
 
         # 2. Setup Dyld Binding Opcode Bytecode Info
-        # Binds '_dlopen' and '_dlsym' from dylib ordinal 1 to Segment 2 (__DATA), offsets 0 and 8 (in .got)
+        # Binds '_dlopen', '_dlsym', and '_pthread_create' from dylib ordinal 1 to Segment 2 (__DATA), offsets 0, 8, and 16 (in .got)
         my $bind_info = '';
         $bind_info .= pack( 'C', 0x11 );                                                                 # BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | 1
         $bind_info .= pack( 'C', 0x51 );                                                                 # BIND_OPCODE_SET_TYPE_IMM | 1
@@ -62,6 +62,8 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
         $bind_info .= pack( 'C', 0x90 );                  # BIND_OPCODE_DO_BIND
         $bind_info .= pack( 'C', 0x40 ) . "_dlsym\0";     # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_dlsym"
         $bind_info .= pack( 'C', 0x90 );                  # BIND_OPCODE_DO_BIND
+        $bind_info .= pack( 'C', 0x40 ) . "_pthread_create\0";     # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_pthread_create"
+        $bind_info .= pack( 'C', 0x90 );                           # BIND_OPCODE_DO_BIND
         $bind_info .= pack( 'C', 0x00 );                  # BIND_OPCODE_DONE
         my $bind_info_size = length($bind_info);
         while ( length($bind_info) % 8 != 0 ) { $bind_info .= "\0"; }
@@ -138,11 +140,12 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
             }
         }
         my @text_sections = grep { $_->{name} eq '.text' } $l->sections;
+        my $t_sec         = $text_sections[0];
         my @data_sections = grep { $_->{name} eq '.data' || $_->{name} eq '.got' } $l->sections;
         my $t_vmsize      = 0;
         for (@text_sections) { $t_vmsize += $_->{size}; }
         my $t_vmsize_aligned = ( $t_vmsize + $page_size - 1 ) & ~( $page_size - 1 );
-        my $t_fileoff        = $text_sections[0]->{off};
+        my $t_fileoff        = $t_sec->{off};
         my $d_vmsize         = 0;
         for (@data_sections) { $d_vmsize += $_->{size}; }
         my $d_vmsize_aligned = ( $d_vmsize + $page_size - 1 ) & ~( $page_size - 1 );
@@ -256,7 +259,7 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
         print $fh $data // '';
         my $got_sec = $l->get('.got');
         seek( $fh, $got_sec->{off}, 0 );
-        print $fh pack( 'Q< Q<', 0, 0 );                 # Two null slots for dlopen/dlsym
+        print $fh pack( 'Q< Q< Q<', 0, 0, 0 );                 # Three null slots for dlopen/dlsym/pthread_create
         seek( $fh, $le_sec->{off}, 0 );
         print $fh $bind_info . $trie . $symtab . $strtab;
 

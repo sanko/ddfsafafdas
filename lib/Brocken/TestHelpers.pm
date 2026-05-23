@@ -11,12 +11,13 @@ sub test_brocken {
     my $source   = $args{source};
     my $expected = $args{expected};
     my $timeout  = $args{timeout} // 30;
+    my $opts     = $args{opts} // {};
     require Brocken;
     require Test2::V0;
     require File::Temp;
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $tmp_fh;
-    my $p = Brocken::Compiler->new( debug => 4 );
+    my $p = Brocken::Compiler->new( debug => 4, %$opts );
     eval { $p->compile_source( $source, $exe ); };
 
     if ( my $err = $@ ) {
@@ -35,12 +36,24 @@ sub test_brocken {
 
         #~ Test2::V0::diag( 'Running '. $run);
         #~ system( q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run );
-        $run = q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run;
+        #~ $run = q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run;
         open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
         local $/;
         my $out = <$fh>;
         close $fh;
         alarm(0);
+
+        # Filter out common GDB noise
+        #~ $out =~ s/^\[New Thread.*?\r?\n//mg;
+        #~ $out =~ s/^\[Thread.*?exited with code.*?\]\r?\n//mg;
+        #~ $out =~ s/^\[Inferior.*?exited normally\]\r?\n//mg;
+        #~ $out =~ s/^No stack\.\r?\n//mg;
+        #~ $out =~ s/^No registers\.\r?\n//mg;
+        #~ $out =~ s/^The program has no registers now\.\r?\n//mg;
+        #~ $out =~ s/^No frame selected\.\r?\n//mg;
+        #~ $out =~ s/^Value can't be converted to integer\.\r?\n//mg;
+        #~ $out =~ s/^No symbol ".*?" in current context\.\r?\n//mg;
+
         $out;
     };
     my $err = $@;
@@ -52,13 +65,14 @@ sub test_brocken {
     chomp $output if defined $output;
     if ( ref $expected eq 'ARRAY' ) {
         my @out_lines = split /\n/, $output;
-        my $ok        = ( @out_lines == @$expected );
-        if ($ok) {
-            for my $i ( 0 .. $#$expected ) {
-                $ok = 0 unless defined $out_lines[$i] && $out_lines[$i] eq $expected->[$i];
-            }
-        }
-        Test2::V0::ok( $ok, $name ) or Test2::V0::diag( join( "\n", 'Expected: ', @$expected, 'Got:', @out_lines ) );
+        Test2::V0::is( \@out_lines,$expected, $name);
+        #my $ok        = ( @out_lines == @$expected );
+        #if ($ok) {
+            #for my $i ( 0 .. $#$expected ) {
+            #    $ok = 0 unless defined $out_lines[$i] && $out_lines[$i] eq $expected->[$i];
+            #}
+        #}
+        #~ Test2::V0::ok( $ok, $name ) or Test2::V0::diag( join( "\n", 'Expected: ', @$expected, 'Got:', @out_lines ) );
     }
     elsif ( ref $expected eq 'Regexp' ) {
         Test2::V0::like( $output, $expected, $name );

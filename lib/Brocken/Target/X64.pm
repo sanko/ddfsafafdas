@@ -378,16 +378,9 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
                 $as->load_reg_mem( 'r14', 'r11', 0 );
                 $as->mark_label($l_has_iso);
             }
-            if ( $op eq 'enter_func' ) {
+            if ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
                 for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
                 $as->mov_reg( 'rbp', 'rsp' );
-            }
-            else {
-                # enter_leaf_func: can omit rbp setup if we don't need it for unwinding/debugging,
-                # but for now let's just omit the preserved regs if we are feeling brave.
-                # Actually, a leaf function still might use preserved regs if the register
-                # allocator assigned them.
-                for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
             }
             $as->sub_imm( 'rsp', $driver->frame_local_size );
             if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {

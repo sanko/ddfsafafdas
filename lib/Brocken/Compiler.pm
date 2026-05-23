@@ -63,11 +63,21 @@ package Brocken::Compiler {
         field $coverage_table_offset  : reader = undef;
         field $coverage_table_size    : reader = undef;
         field $coverage_probe_lines   : reader = undef;
+        # Enable all optimizations by default, allowing selective overrides
+        field $optimizations : param : reader = {};
         field %func_local_sizes;
         method set_func_local_size( $name, $sz ) { $func_local_sizes{$name} = $sz; }
         method get_func_local_size($name)        { $func_local_sizes{$name} // 0; }
         #
         ADJUST {
+            $optimizations = {
+                escape    => 1,
+                tail_call => 1,
+                leaf      => 1,
+                dce       => 1,
+                loop_fuse => 1,
+                %$optimizations
+            };
             my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
             $os //= $detected_os;
             my $detected_arch = 'x64';
@@ -236,10 +246,18 @@ package Brocken::Compiler {
 
                 # --- RUN OPTIMIZER ---
                 require Brocken::Compiler::Optimizer;
-                my $opt = Brocken::Compiler::Optimizer->new();
+                my $opt = Brocken::Compiler::Optimizer->new( opts => $self->optimizations );
 
                 # Run static Escape Analysis before register allocation and code generation!
-                $opt->escape_analysis( \@instructions );
+                if ( $self->optimizations->{escape} ) {
+                    $opt->escape_analysis( \@instructions );
+                }
+
+                $opt->optimize( $lowering->builder );
+
+                # Get potentially modified instructions (after escape analysis might have changed ops to stack_alloc)
+                @instructions = $lowering->builder->instructions();
+
                 my $probe_count = 0;
                 if ( $self->coverage ) {
                     require Brocken::Compiler::Optimizer;

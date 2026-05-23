@@ -27,7 +27,8 @@ package Brocken::Format::PE {
             GetSystemTimeAsFileTime     => 136,
             GetCommandLineA             => 144,
             LoadLibraryA                => 152,
-            GetProcAddress              => 160
+            GetProcAddress              => 160,
+            CreateThread                => 168 # Register CreateThread Win32 FFI
         );
 
         method import_rva($n) {

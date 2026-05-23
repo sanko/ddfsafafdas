@@ -3,7 +3,7 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use File::Temp qw(tempfile);
 
 sub compile_and_run {
@@ -15,7 +15,7 @@ sub compile_and_run {
     my $p = Brocken::Compiler->new();
     eval { $p->compile_source( $source, $exe ); };
     return ( undef, "compilation: $@" ) if $@;
-    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
+    my $run    = $exe; #( $^O eq 'MSWin32' ? '' : './' ) . $exe;
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" }
             if $^O ne 'MSWin32';

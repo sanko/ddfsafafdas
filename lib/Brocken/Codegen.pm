@@ -20,7 +20,7 @@ class Brocken::Codegen {
             my $inst = $instructions->[$i];
             my $op   = $inst->{op};
             if ( $op eq 'label' ) {
-                my $is_func = $i + 1 < @$instructions && $instructions->[ $i + 1 ]{op} eq 'enter_func';
+                my $is_func = $i + 1 < @$instructions && $instructions->[ $i + 1 ]{op} =~ /^enter_(?:leaf_)?func$/;
                 if ($is_func) {
                     $driver->close_last_func_range( length( $as->code ) );
 
@@ -33,7 +33,7 @@ class Brocken::Codegen {
                     my $scan_idx = $i + 2;
                     while ( $scan_idx < @$instructions ) {
                         my $s_inst = $instructions->[$scan_idx];
-                        last if $s_inst->{op} eq 'enter_func';
+                        last if $s_inst->{op} =~ /^enter_(?:leaf_)?func$/;
                         if ( $s_inst->{op} eq 'stack_alloc' ) {
                             my $aligned_sz = $s_inst->{args}[1];
                             my $slot       = $driver->alloc_local_chunk($aligned_sz);
