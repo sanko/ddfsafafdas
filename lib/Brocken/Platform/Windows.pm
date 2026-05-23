@@ -111,14 +111,14 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
         }
         elsif ( $op eq 'intrinsic_spawn_thread' ) {
             my $d = $reg_map->{ $inst->{dest} };
-            $as->sub_imm( 'rsp', 48 ); # Allocate shadow + parameter space (6 arguments)
-            $as->mov_imm( 'rcx', 0 );  # lpThreadAttributes = NULL
-            $as->mov_imm( 'rdx', 0 );  # dwStackSize = 0 (Default)
-            $as->lea_rva( 'r8', 'M_thread_entry', $driver->text_rva ); # lpStartAddress
-            $as->mov_reg( 'r9', $reg_map->{ $inst->{args}[0] } ); # lpParameter (target sub ptr)
+            $as->sub_imm( 'rsp', 48 );                                    # Allocate shadow + parameter space (6 arguments)
+            $as->mov_imm( 'rcx', 0 );                                     # lpThreadAttributes = NULL
+            $as->mov_imm( 'rdx', 0 );                                     # dwStackSize = 0 (Default)
+            $as->lea_rva( 'r8', 'M_thread_entry', $driver->text_rva );    # lpStartAddress
+            $as->mov_reg( 'r9', $reg_map->{ $inst->{args}[0] } );         # lpParameter (target sub ptr)
             $as->mov_imm( 'rax', 0 );
-            $as->store_mem_disp_reg( 'rsp', 32, 'rax' ); # dwCreationFlags = 0
-            $as->store_mem_disp_reg( 'rsp', 40, 'rax' ); # lpThreadId = NULL
+            $as->store_mem_disp_reg( 'rsp', 32, 'rax' );                  # dwCreationFlags = 0
+            $as->store_mem_disp_reg( 'rsp', 40, 'rax' );                  # lpThreadId = NULL
             $as->call_rva( $driver->import_rva('CreateThread'), $driver->text_rva );
             $as->add_imm( 'rsp', 48 );
             $as->mov_reg( $d, 'rax' );
@@ -126,7 +126,7 @@ class Brocken::Platform::Windows : isa(Brocken::Platform) {
         elsif ( $op eq 'intrinsic_print' || $op eq 'intrinsic_print_char' ) {
             my $is_char = ( $op eq 'intrinsic_print_char' );
             my $p       = $reg_map->{ $inst->{args}[0] };
-            $as->sub_imm( 'rsp', 48 );                                # Allocate Shadow Space + 16 bytes for parameter passing/alignment
+            $as->sub_imm( 'rsp', 48 );                                    # Allocate Shadow Space + 16 bytes for parameter passing/alignment
             if ($is_char) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $p : 'r11';
                 $as->mov_imm( 'r11', $v->( $inst->{args}[0] ) ) if $inst->{args}[0] !~ /^%/;

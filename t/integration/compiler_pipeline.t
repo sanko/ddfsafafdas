@@ -4,7 +4,8 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-use File::Temp qw(tempfile);
+use Brocken::TestHelpers qw(test_brocken);
+use File::Temp           qw(tempfile);
 subtest 'Full pipeline: lex -> parse -> lower -> optimize -> codegen -> format' => sub {
     require Brocken::Lexer;
     require Brocken::Parser;
@@ -31,34 +32,14 @@ subtest 'Full pipeline: lex -> parse -> lower -> optimize -> codegen -> format' 
     ok scalar(@after) <= scalar(@before), 'optimizer reduces or maintains instruction count';
 };
 subtest 'Compile and run simple program' => sub {
-    require Brocken::Compiler;
-    my $source = 'say 42;';
-    my $p      = Brocken::Compiler->new;
-    my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
-    close $fh;
-    eval { $p->compile_source( $source, $exe ); };
-    if ( my $err = $@ ) {
-        diag "Compilation failed (may be expected in CI without native toolchain): $err";
-        skip_all "Native compilation not available in this environment";
-    }
-    ok -e $exe, 'compiled binary exists';
-    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
-    my $output = `$run 2>&1`;
-    chomp $output if defined $output;
-    is $output, '42', 'program outputs 42';
+    my ( $out, $err ) = test_brocken( source => 'say 42;' );
+    $err ? ( skip_all $err ) : ();
+    is $out, '42', 'program outputs 42';
 };
 subtest 'Compile and run with debug=0' => sub {
-    require Brocken::Compiler;
-    my $source = 'say "hello";';
-    my $p      = Brocken::Compiler->new( debug => 0 );
-    my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
-    close $fh;
-    eval { $p->compile_source( $source, $exe ); };
-    if ( my $err = $@ ) {
-        diag "Compilation failed: $err";
-        skip_all "Native compilation not available";
-    }
-    ok -e $exe, 'debug=0 binary exists';
+    my ( $out, $err ) = test_brocken( source => 'say "hello";', opts => { debug => 0 } );
+    $err ? ( skip_all $err ) : ();
+    is $out, 'hello', 'debug=0 program outputs hello';
 };
 subtest 'Shared library compilation' => sub {
     require Brocken::Compiler;
@@ -68,8 +49,7 @@ subtest 'Shared library compilation' => sub {
     close $fh;
     eval { $p->compile_source( $source, $dll ); };
     if ( my $err = $@ ) {
-        diag "Shared lib compilation failed: $err";
-        skip_all "Shared library compilation not available";
+        skip_all "Shared lib compilation failed: $err";
     }
     ok -e $dll, 'shared library exists';
 };

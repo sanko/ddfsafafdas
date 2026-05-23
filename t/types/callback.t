@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use v5.40;
-use lib '../../lib';
+use lib 'lib';
 use Test::More;
 use Brocken;
 use Brocken::Compiler;
@@ -38,15 +38,15 @@ sub return_null() {
     return 0;
 }
 BROCKEN
-    my $tokens2  = Brocken::Lexer->new( source => $source2 )->lex();
-    my $ast2     = Brocken::Parser->new( tokens => $tokens2 )->parse();
+    my $tokens2   = Brocken::Lexer->new( source => $source2 )->lex();
+    my $ast2      = Brocken::Parser->new( tokens => $tokens2 )->parse();
     my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
-    my $out_ext   = $^O eq 'MSWin32' ? '.dll' : '.so';
+    my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
     my $out_name  = "test_fun${out_ext}";
-    my $out_file  = ($^O eq 'MSWin32' ? '' : './') . $out_name;
-    my $driver   = Brocken::Compiler->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
-    my $ds       = Brocken::Compiler::DataSegment->new();
-    my $lowering = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
+    my $out_file  = ( $^O eq 'MSWin32' ? '' : './' ) . $out_name;
+    my $driver    = Brocken::Compiler->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
+    my $ds        = Brocken::Compiler::DataSegment->new();
+    my $lowering  = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
     $lowering->lower_program($ast2);
     my $optimizer = Brocken::Compiler::Optimizer->new();
@@ -63,7 +63,7 @@ BROCKEN
     $format->set_labels($all_labels);
     my @exports = sort(qw(pass_callback return_null));
     $format->set_exported_funcs( \@exports );
-    my $text    = $as->code;
+    my $text = $as->code;
     $format->write_bin( $out_file, $text, $data, 'x64', $target_os, 'shared' );
     ok( -f $out_file, 'Callback shared library generated' );
     affix $out_file, 'pass_callback', [ Callback [ [Int] => Int ] ], Int;

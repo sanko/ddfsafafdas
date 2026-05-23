@@ -2,7 +2,7 @@ use v5.40;
 use utf8;
 use feature 'class';
 no warnings 'experimental::class', 'portable';
-use lib 'lib', '../../lib';
+use lib 'lib';
 use Test2::V0;
 use File::Temp qw[tempfile];
 require Brocken;

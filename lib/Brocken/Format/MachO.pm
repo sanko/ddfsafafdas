@@ -58,13 +58,13 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
         $bind_info .= pack( 'C', 0x11 );                                                                 # BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | 1
         $bind_info .= pack( 'C', 0x51 );                                                                 # BIND_OPCODE_SET_TYPE_IMM | 1
         $bind_info .= pack( 'C', 0x72 ) . $_uleb->( $l->get('.got')->{rva} - $l->get('.data')->{rva} );  # BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | 2
-        $bind_info .= pack( 'C', 0x40 ) . "_dlopen\0";    # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_dlopen"
-        $bind_info .= pack( 'C', 0x90 );                  # BIND_OPCODE_DO_BIND
-        $bind_info .= pack( 'C', 0x40 ) . "_dlsym\0";     # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_dlsym"
-        $bind_info .= pack( 'C', 0x90 );                  # BIND_OPCODE_DO_BIND
-        $bind_info .= pack( 'C', 0x40 ) . "_pthread_create\0";     # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_pthread_create"
-        $bind_info .= pack( 'C', 0x90 );                           # BIND_OPCODE_DO_BIND
-        $bind_info .= pack( 'C', 0x00 );                  # BIND_OPCODE_DONE
+        $bind_info .= pack( 'C', 0x40 ) . "_dlopen\0";            # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_dlopen"
+        $bind_info .= pack( 'C', 0x90 );                          # BIND_OPCODE_DO_BIND
+        $bind_info .= pack( 'C', 0x40 ) . "_dlsym\0";             # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_dlsym"
+        $bind_info .= pack( 'C', 0x90 );                          # BIND_OPCODE_DO_BIND
+        $bind_info .= pack( 'C', 0x40 ) . "_pthread_create\0";    # BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | 0, "_pthread_create"
+        $bind_info .= pack( 'C', 0x90 );                          # BIND_OPCODE_DO_BIND
+        $bind_info .= pack( 'C', 0x00 );                          # BIND_OPCODE_DONE
         my $bind_info_size = length($bind_info);
         while ( length($bind_info) % 8 != 0 ) { $bind_info .= "\0"; }
 
@@ -259,7 +259,7 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
         print $fh $data // '';
         my $got_sec = $l->get('.got');
         seek( $fh, $got_sec->{off}, 0 );
-        print $fh pack( 'Q< Q< Q<', 0, 0, 0 );                 # Three null slots for dlopen/dlsym/pthread_create
+        print $fh pack( 'Q< Q< Q<', 0, 0, 0 );           # Three null slots for dlopen/dlsym/pthread_create
         seek( $fh, $le_sec->{off}, 0 );
         print $fh $bind_info . $trie . $symtab . $strtab;
 

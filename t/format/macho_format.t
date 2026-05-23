@@ -19,9 +19,11 @@ subtest 'MachO pre_layout without debug' => sub {
     my $f = Brocken::Format::MachO->new;
     $f->pre_layout( 4096, 4096, 'x64', 'macos', 0 );
     my @sections = $f->layout->sections;
-    is scalar(@sections),    2,       'two sections without debug';
-    is $sections[0]->{name}, '.text', 'first is .text';
-    is $sections[1]->{name}, '.data', 'second is .data';
+    is scalar(@sections),    4,           '4 sections without debug';
+    is $sections[0]->{name}, '.text',     'first is .text';
+    is $sections[1]->{name}, '.data',     'second is .data';
+    is $sections[2]->{name}, '.got',      'third is .got';
+    is $sections[3]->{name}, '.linkedit', 'fourth is .linkedit';
 };
 subtest 'MachO pre_layout as shared library' => sub {
     my $f = Brocken::Format::MachO->new( type => 'shared' );

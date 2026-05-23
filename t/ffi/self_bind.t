@@ -1,5 +1,5 @@
 use v5.40;
-use lib 'lib', '../../lib';
+use lib 'lib';
 use Test2::V0;
 use File::Temp qw(tempdir);
 use File::Spec;

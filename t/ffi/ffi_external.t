@@ -23,7 +23,7 @@ subtest 'Win32::API VirtualAlloc lifecycle' => sub {
     pass 'memory freed';
 };
 subtest 'Affix symbol resolution' => sub {
-    $^O eq 'MSWin32' or skip_all 'Windows-only test';
+    $^O eq 'MSWin32'                                                               or skip_all 'Windows-only test';
     eval { require Affix; Affix->import(qw(load_library find_symbol address)); 1 } or skip_all "Affix not available";
     my $lib = load_library('kernel32.dll');
     ok $lib, 'kernel32 library loaded';

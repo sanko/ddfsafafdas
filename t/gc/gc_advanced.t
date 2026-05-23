@@ -4,34 +4,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-use File::Temp qw(tempfile);
-
-sub compile_and_run {
-    my ( $source, %opts ) = @_;
-    my $timeout = $opts{timeout} // 30;
-    require Brocken::Compiler;
-    my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
-    close $fh;
-    my $p = Brocken::Compiler->new();
-    eval { $p->compile_source( $source, $exe ); };
-    return ( undef, "compilation: $@" ) if $@;
-    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
-    my $output = eval {
-        local $SIG{ALRM} = sub { die "TIMEOUT\n" }
-            if $^O ne 'MSWin32';
-        alarm($timeout) if $^O ne 'MSWin32';
-        open my $fh2, '-|', $run or die "Cannot run $run: $!";
-        local $/;
-        my $out = <$fh2>;
-        close $fh2;
-        alarm(0) if $^O ne 'MSWin32';
-        $out;
-    };
-    alarm(0)                          if $^O ne 'MSWin32';
-    return ( undef, "execution: $@" ) if $@;
-    chomp $output                     if defined $output;
-    return ( $output, undef );
-}
+use Brocken::TestHelpers qw(test_brocken);
 my $NODE_CLASS = q{
     class Node {
         field $next; field $val;
@@ -48,8 +21,8 @@ my $NODE_CLASS = q{
     }
 };
 subtest 'GC: block scoping' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $next; field $val; }
         say "Starting...";
         { my $head = Node->new(); my $n2 = Node->new(); say "Created two nodes"; }
@@ -62,8 +35,8 @@ subtest 'GC: block scoping' => sub {
     like $out, qr/After block/,       'block: after block';
 };
 subtest 'GC: recursive constructor' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Point { field $x; field $y; method new() { my $p = Point->new(); return $p; } }
         say "Starting...";
         eval { my $p = Point->new(); };
@@ -74,12 +47,12 @@ subtest 'GC: recursive constructor' => sub {
     like $out, qr/Starting/, 'recursive constructor: started';
 };
 subtest 'GC: stress 100 nodes' => sub {
-    my ( $out, $err ) = compile_and_run("${NODE_CLASS}say \"Starting...\"; my \$list = create_nodes(100); say \"Done - exiting\";");
+    my ( $out, $err ) = test_brocken( source => "${NODE_CLASS}say \"Starting...\"; my \$list = create_nodes(100); say \"Done - exiting\";" );
     $err ? ( skip_all $err ) : ();
     like $out, qr/Done - exiting/, '100 nodes: completed';
 };
 subtest 'GC: stress 1k nodes' => sub {
-    my ( $out, $err ) = compile_and_run("${NODE_CLASS}say \"Starting...\"; my \$list = create_nodes(1000); say \"Done - exiting\";");
+    my ( $out, $err ) = test_brocken( source => "${NODE_CLASS}say \"Starting...\"; my \$list = create_nodes(1000); say \"Done - exiting\";" );
     $err ? ( skip_all $err ) : ();
     like $out, qr/Done - exiting/, '1k nodes: completed';
 };

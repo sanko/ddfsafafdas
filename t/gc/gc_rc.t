@@ -3,35 +3,8 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib', '../../lib';
-use File::Temp qw(tempfile);
-
-sub compile_and_run {
-    my ( $source, %opts ) = @_;
-    my $timeout = $opts{timeout} // 15;
-    require Brocken::Compiler;
-    my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
-    close $fh;
-    my $p = Brocken::Compiler->new();
-    eval { $p->compile_source( $source, $exe ); };
-    return ( undef, "compilation: $@" ) if $@;
-    my $run    = $exe; #( $^O eq 'MSWin32' ? '' : './' ) . $exe;
-    my $output = eval {
-        local $SIG{ALRM} = sub { die "TIMEOUT\n" }
-            if $^O ne 'MSWin32';
-        alarm($timeout) if $^O ne 'MSWin32';
-        open my $fh2, '-|', $run or die "Cannot run $run: $!";
-        local $/;
-        my $out = <$fh2>;
-        close $fh2;
-        alarm(0) if $^O ne 'MSWin32';
-        $out;
-    };
-    alarm(0)                          if $^O ne 'MSWin32';
-    return ( undef, "execution: $@" ) if $@;
-    chomp $output                     if defined $output;
-    return ( $output, undef );
-}
+use lib 'lib';
+use Brocken::TestHelpers qw(test_brocken);
 my $NODE_CLASS = q{
     class Node {
         field $next; field $val;
@@ -42,15 +15,15 @@ my $NODE_CLASS = q{
 };
 subtest 'RC: linked list with 10 nodes' => sub {
     my ( $out, $err )
-        = compile_and_run(
-        "${NODE_CLASS}my \$head = Node->new(); \$head->set_val(0); my \$i = 0; while (\$i < 10) { my \$new = Node->new(); \$new->set_val(\$i + 1); \$new->set_next(\$head); \$head = \$new; \$i = \$i + 1; } say \"Head val: \" . \$head->get_val(); say \"Done\";"
+        = test_brocken( source =>
+            "${NODE_CLASS}my \$head = Node->new(); \$head->set_val(0); my \$i = 0; while (\$i < 10) { my \$new = Node->new(); \$new->set_val(\$i + 1); \$new->set_next(\$head); \$head = \$new; \$i = \$i + 1; } say \"Head val: \" . \$head->get_val(); say \"Done\";"
         );
     $err ? ( skip_all $err ) : ();
     like $out, qr/Head val: 10/, '10-node list head val = 10';
 };
 subtest 'RC: single object create' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $val; method get_val() { return $val; } }
         say "Before new"; my $head = Node->new(); say "After new"; say "Done";
     }
@@ -60,8 +33,8 @@ subtest 'RC: single object create' => sub {
     like $out, qr/After new/,  'single object: after new';
 };
 subtest 'RC: orphaned objects in loop' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $next; field $val; method get_val() { return $val; } }
         say "Before loop";
         my $i = 0;
@@ -74,8 +47,8 @@ subtest 'RC: orphaned objects in loop' => sub {
     like $out, qr/Loop iter.*Loop iter.*Loop iter/s, 'orphaned: 3 iterations';
 };
 subtest 'RC: set_next chaining' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $next; field $val; method get_val() { return $val; } method set_next(Any $n) { $next = $n; } }
         my $head = Node->new(); my $i = 0;
         while ($i < 3) { my $new = Node->new(); $new->set_next($head); $head = $new; $i = $i + 1; }
@@ -87,15 +60,15 @@ subtest 'RC: set_next chaining' => sub {
 };
 subtest 'RC: 3-node linked list with values' => sub {
     my ( $out, $err )
-        = compile_and_run(
-        "${NODE_CLASS}my \$head = Node->new(); \$head->set_val(0); my \$i = 0; while (\$i < 3) { my \$new = Node->new(); \$new->set_val(\$i + 1); \$new->set_next(\$head); \$head = \$new; \$i = \$i + 1; } say \"Created \" . \$i . \" nodes\"; say \"Done\";"
+        = test_brocken( source =>
+            "${NODE_CLASS}my \$head = Node->new(); \$head->set_val(0); my \$i = 0; while (\$i < 3) { my \$new = Node->new(); \$new->set_val(\$i + 1); \$new->set_next(\$head); \$head = \$new; \$i = \$i + 1; } say \"Created \" . \$i . \" nodes\"; say \"Done\";"
         );
     $err ? ( skip_all $err ) : ();
     like $out, qr/Created 3 nodes/, '3-node list: created 3';
 };
 subtest 'RC: method with field assignment' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $val; method set_val(Int $v) { $val = $v; } }
         my $head = Node->new(); say "Before set_val"; $head->set_val(42); say "After set_val"; say "Done";
     }
@@ -114,8 +87,8 @@ subtest 'RC: hash-deref field set (expects parse error)' => sub {
     ok $@, 'hash-deref: parser correctly rejects this syntax';
 };
 subtest 'RC: method with say instrumentation' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $val; method set_val(Int $v) { say "in set_val"; $val = $v; say "after assign"; } }
         my $head = Node->new(); say "Before set_val"; $head->set_val(42); say "After set_val"; say "Done";
     }
@@ -125,13 +98,13 @@ subtest 'RC: method with say instrumentation' => sub {
     like $out, qr/after assign/, 'instrumented: after assign';
 };
 subtest 'GC: simple scalars' => sub {
-    my ( $out, $err ) = compile_and_run(q{ my $a = 1; my $b = 2; say "Done: $a, $b"; });
+    my ( $out, $err ) = test_brocken( source => q{ my $a = 1; my $b = 2; say "Done: $a, $b"; } );
     $err ? ( skip_all $err ) : ();
     is $out, 'Done: 1, 2', 'simple scalars output';
 };
 subtest 'GC: typed vars with array refs' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         say "Starting"; my Int $i = 0; my Any $a = [1]; my Any $b = [2];
         say "Created two objects"; say "Done";
     }

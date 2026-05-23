@@ -186,13 +186,12 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
 
                 # Space for thread ID on stack: [rsp+8]
                 $as->sub_imm( 'rsp', 8 );
-                $as->mov_reg( 'rdi', 'rsp' ); # Arg 1: pthread_t *thread
-                $as->mov_imm( 'rsi', 0 );     # Arg 2: const pthread_attr_t *attr = NULL
-                $as->lea_rva( 'rdx', 'M_thread_entry', $driver->text_rva ); # Arg 3: start_routine
-                $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } ); # Arg 4: arg (target sub ptr)
+                $as->mov_reg( 'rdi', 'rsp' );                                  # Arg 1: pthread_t *thread
+                $as->mov_imm( 'rsi', 0 );                                      # Arg 2: const pthread_attr_t *attr = NULL
+                $as->lea_rva( 'rdx', 'M_thread_entry', $driver->text_rva );    # Arg 3: start_routine
+                $as->mov_reg( 'rcx', $reg_map->{ $inst->{args}[0] } );         # Arg 4: arg (target sub ptr)
                 $as->call_rva( $driver->import_rva('pthread_create'), $driver->text_rva );
-
-                $as->load_reg_mem( 'r10', 'rsp', 0 ); # Load created thread ID
+                $as->load_reg_mem( 'r10', 'rsp', 0 );                          # Load created thread ID
                 $as->add_imm( 'rsp', 8 );
                 $as->pop_reg('rsp');
                 $as->mov_reg( $d, 'r10' );

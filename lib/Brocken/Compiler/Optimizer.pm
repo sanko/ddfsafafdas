@@ -6,17 +6,9 @@ use Brocken::AST;
 
 class Brocken::Compiler::Optimizer {
     field $opts : param : reader = {};
-
     ADJUST {
         # Setup defaults
-        $opts = {
-            escape    => 1,
-            tail_call => 1,
-            leaf      => 1,
-            dce       => 1,
-            loop_fuse => 1,
-            %$opts
-        };
+        $opts = { escape => 1, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$opts };
     }
 
     method escape_analysis($insts) {
@@ -100,10 +92,8 @@ class Brocken::Compiler::Optimizer {
     method optimize($builder) {
         my @instructions = $builder->instructions();
         return unless @instructions;
-
-        $self->_tail_call_optimization( \@instructions ) if $opts->{tail_call};
+        $self->_tail_call_optimization( \@instructions )  if $opts->{tail_call};
         $self->_identify_leaf_functions( \@instructions ) if $opts->{leaf};
-
         my $changed = 1;
         while ($changed) {
             $changed = 0;

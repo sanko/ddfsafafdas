@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use v5.40;
-use lib '../../lib';
+use lib 'lib';
 use Test::More;
 use Brocken;
 use Brocken::Compiler;
@@ -17,9 +17,9 @@ subtest 'Struct type parsing' => sub {
 };
 subtest 'Struct pass-through in DLL' => sub {
     my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
-    my $out_ext   = $^O eq 'MSWin32' ? '.dll' : '.so';
+    my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
     my $out_name  = "test_struct${out_ext}";
-    my $source = <<'BROCKEN';
+    my $source    = <<'BROCKEN';
 sub pass_struct(Struct $s) {
     return $s;
 }
@@ -49,7 +49,7 @@ BROCKEN
     $format->set_labels($all_labels);
     my @exports = sort(qw(pass_struct get_null));
     $format->set_exported_funcs( \@exports );
-    my $text    = $as->code;
+    my $text = $as->code;
     $format->write_bin( $out_name, $text, $data, 'x64', $target_os, 'shared' );
     ok( -f $out_name, 'Struct shared library generated' );
     pass('Struct type parameters parsed and shared library generated');

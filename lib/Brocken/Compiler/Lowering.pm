@@ -405,7 +405,19 @@ package Brocken::Compiler::Lowering {
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_smi_new, 0 ] ), $l_end, $l_new_not_smi );
             $builder->emit_label($l_new_not_smi);
             {
-                my $hdr      = $builder->emit( 'load_mem_disp', 'i64', [ $val, -8 ] );
+                my $hdr = $builder->emit( 'load_mem_disp', 'i64', [ $val, -8 ] );
+
+                # 13-bit RC is at bits 48..60. Mask: 0x1FFF
+                my $rc = $builder->emit( 'and', 'i64', [ $builder->emit( 'shr', 'i64', [ $hdr, 48 ] ), 0x1FFF ] );
+
+                # ADDED DEBUG PRINT:
+                # Need to use a print intrinsic if available, or just ignore for now and trust my logic.
+                # Actually, wait, let me just check the mask/shift logic.
+                # Mask: 0x1FFF (13 bits), Shift: 48. This is correct for 64-bit header.
+                my $l_max = $builder->new_label();
+                my $l_inc = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $rc, 0x1FFF ] ), $l_max, $l_inc );
+                $builder->emit_label($l_inc);
                 my $shared   = $builder->emit( 'and', 'i64', [ $builder->emit( 'shr', 'i64', [ $hdr, 62 ] ), 1 ] );
                 my $l_local  = $builder->new_label();
                 my $l_done   = $builder->new_label();
@@ -416,6 +428,9 @@ package Brocken::Compiler::Lowering {
                 $builder->emit_jump($l_done);
                 $builder->emit_label($l_local);
                 $builder->emit( 'local_inc_ref', 'void', [$val] );
+                $builder->emit_jump($l_done);
+                $builder->emit_label($l_max);
+                $builder->emit_jump($l_done);
                 $builder->emit_label($l_done);
             }
             $builder->emit_label($l_end);
@@ -632,21 +647,22 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('M_box_float');
             $builder->emit( 'enter_func', 'void', [] );
-            my $v   = $builder->emit( 'get_arg', 'double', [0] );
-            my $psz = $builder->emit( 'constant', 'i64', [ 24 | hex("E000000000000000") ] ); # size=24, Special=1, Leaf=1
-            my $obj = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $psz ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $obj, 0, 1 ] ); # TypeID = 1 (Float)
+            my $v   = $builder->emit( 'get_arg',   'double', [0] );
+            my $psz = $builder->emit( 'constant',  'i64',    [ 24 | hex("E000000000000000") ] );    # size=24, Special=1, Leaf=1
+            my $obj = $builder->emit( 'call_func', 'ptr',    [ 'M_gc_alloc', $psz ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $obj, 0, 1 ] );                             # TypeID = 1 (Float)
             $builder->emit( 'store_mem_disp', 'void', [ $obj, 8, $v ] );
-            $builder->emit( 'leave_func', 'ptr', [$obj] );
+            $builder->emit( 'leave_func',     'ptr',  [$obj] );
         }
 
         method inject_runtime_unbox_float() {
             $driver->reset_locals();
             $builder->emit_label('M_unbox_float');
             $builder->emit( 'enter_func', 'void', [] );
-            my $v      = $builder->emit( 'get_arg', 'i64', [0] );
-            my $l_box  = $builder->new_label();
-            my $l_raw  = $builder->new_label();
+            my $v     = $builder->emit( 'get_arg', 'i64', [0] );
+            my $l_box = $builder->new_label();
+            my $l_raw = $builder->new_label();
+
             # If bit 0 is 1, it's an SMI (not a float). But let's assume it's raw double if bit 0 is 1?
             # Actually, raw doubles can have bit 0 set.
             # Best check: if it looks like a Brocken object pointer.
@@ -656,9 +672,10 @@ package Brocken::Compiler::Lowering {
             my $l_not_null = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $v, 0 ] ), $l_not_null, $l_raw );
             $builder->emit_label($l_not_null);
+
             # It's a pointer. Check if it's a Special Leaf.
-            my $hdr = $builder->emit( 'load_mem_disp', 'i64', [ $v, -8 ] );
-            my $is_spec = $builder->emit( 'and', 'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ 1 << 61 ] ) ] );
+            my $hdr       = $builder->emit( 'load_mem_disp', 'i64', [ $v,   -8 ] );
+            my $is_spec   = $builder->emit( 'and',           'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ 1 << 61 ] ) ] );
             my $l_is_spec = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_spec, 0 ] ), $l_is_spec, $l_raw );
             $builder->emit_label($l_is_spec);
@@ -671,19 +688,19 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('M_box_pointer');
             $builder->emit( 'enter_func', 'void', [] );
-            my $v   = $builder->emit( 'get_arg', 'ptr', [0] );
-            my $psz = $builder->emit( 'constant', 'i64', [ 24 | hex("E000000000000000") ] ); # size=24, Special=1, Leaf=1
+            my $v   = $builder->emit( 'get_arg',   'ptr', [0] );
+            my $psz = $builder->emit( 'constant',  'i64', [ 24 | hex("E000000000000000") ] );    # size=24, Special=1, Leaf=1
             my $obj = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $psz ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $obj, 0, 2 ] ); # TypeID = 2 (Pointer)
+            $builder->emit( 'store_mem_disp', 'void', [ $obj, 0, 2 ] );                          # TypeID = 2 (Pointer)
             $builder->emit( 'store_mem_disp', 'void', [ $obj, 8, $v ] );
-            $builder->emit( 'leave_func', 'ptr', [$obj] );
+            $builder->emit( 'leave_func',     'ptr',  [$obj] );
         }
 
         method inject_runtime_unbox_pointer() {
             $driver->reset_locals();
             $builder->emit_label('M_unbox_pointer');
             $builder->emit( 'enter_func', 'void', [] );
-            my $v = $builder->emit( 'get_arg', 'i64', [0] );
+            my $v     = $builder->emit( 'get_arg', 'i64', [0] );
             my $l_box = $builder->new_label();
             my $l_raw = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'and', 'i64', [ $v, 1 ] ), $l_raw, $l_box );
@@ -691,8 +708,8 @@ package Brocken::Compiler::Lowering {
             my $l_not_null = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $v, 0 ] ), $l_not_null, $l_raw );
             $builder->emit_label($l_not_null);
-            my $hdr = $builder->emit( 'load_mem_disp', 'i64', [ $v, -8 ] );
-            my $is_spec = $builder->emit( 'and', 'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ 1 << 61 ] ) ] );
+            my $hdr       = $builder->emit( 'load_mem_disp', 'i64', [ $v,   -8 ] );
+            my $is_spec   = $builder->emit( 'and',           'i64', [ $hdr, $builder->emit( 'constant', 'i64', [ 1 << 61 ] ) ] );
             my $l_is_spec = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_spec, 0 ] ), $l_is_spec, $l_raw );
             $builder->emit_label($l_is_spec);
@@ -732,7 +749,6 @@ package Brocken::Compiler::Lowering {
             $driver->reset_locals();
             $builder->emit_label('M_runtime_init_thread');
             $builder->emit( 'enter_func', 'void', [] );
-
             my $iso = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
             my $ms  = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_base'),  $ms ] );
@@ -743,7 +759,8 @@ package Brocken::Compiler::Lowering {
             my $raw_nursery = $builder->emit( 'intrinsic_alloc', 'ptr', [65536] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_base'), $raw_nursery ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_ptr'),  $raw_nursery ] );
-            $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_limit'), $builder->emit( 'add', 'ptr', [ $raw_nursery, 65536 ] ) ] );
+            $builder->emit( 'store_iso_disp', 'void',
+                [ $driver->iso_offset('nursery_limit'), $builder->emit( 'add', 'ptr', [ $raw_nursery, 65536 ] ) ] );
 
             # --- Tenured Heap Initialization (Two 2MB Semi-Spaces) ---
             my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4194304] );
@@ -768,8 +785,8 @@ package Brocken::Compiler::Lowering {
             my $sh = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
             $builder->emit( 'store_mem_disp', 'void', [ $fcb, $driver->fcb_offset('shadow_base'), $sh ] );
             $builder->emit( 'store_mem_disp', 'void', [ $fcb, $driver->fcb_offset('shadow_ptr'),  $sh ] );
-            $builder->emit( 'store_mem_disp', 'void', [ $fcb, $driver->fcb_offset('wait_handle'), $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] ) ] );
-
+            $builder->emit( 'store_mem_disp', 'void',
+                [ $fcb, $driver->fcb_offset('wait_handle'), $builder->emit( 'intrinsic_create_wait_handle', 'ptr', [] ) ] );
             $builder->emit( 'leave_func', 'void', [] );
         }
 
@@ -2502,6 +2519,7 @@ package Brocken::Compiler::Lowering {
 
             # Boxed Float: format to string
             $builder->emit_label($l_f_box);
+
             # For now, just return "[Float]" or a dummy.
             # Real implementation would call snprintf.
             # But wait, I'll try to just return the value as string if I can.
@@ -5442,12 +5460,14 @@ package Brocken::Compiler::Lowering {
                         my $arg_idx = 0;
                         for my $t (@arg_types) {
                             my $raw = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
+
                             # Pass arguments through as-is, they are already native unboxed values.
                             push @boxed_args, $raw;
                         }
 
                         # Call target Brocken sub
                         my $ret_val = $builder->emit( 'call_reg', 'i64', [ $target_sub, @boxed_args ] );
+
                         # Debug:
                         $builder->emit( 'call_func', 'void', [ 'M_print_int', $ret_val ] );
 

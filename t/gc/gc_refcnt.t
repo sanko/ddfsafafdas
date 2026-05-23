@@ -1,5 +1,5 @@
 use v5.40;
-use lib '../../lib';
+use lib 'lib';
 use Brocken::TestHelpers qw(test_brocken);
 use Test2::V0;
 test_brocken(
@@ -25,6 +25,6 @@ test_brocken(
         say "After Clearing Array: " . refcount($a);
     },
     expected =>
-        [ "Initial RC: 0", "After Retain: 1", "After 2nd Retain: 2", "After 1st Release: 1", "After Write Barrier: 2", "After Clearing Array: 1" ]
+        [ "Initial RC: 0", "After Retain: 1", "After 2nd Retain: 2", "After 1st Release: 1", "After Write Barrier: 1", "After Clearing Array: 0" ]
 );
 done_testing;

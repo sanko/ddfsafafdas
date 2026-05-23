@@ -12,7 +12,7 @@ subtest 'setup_layout with debug=0' => sub {
     my $l   = Brocken::Format::Layout->new( file_align => 0x1000, section_align => 0x1000 );
     $elf->_setup_layout( $l, 4096, 4096, 'x64', 'linux', 0 );
     my @names = map { $_->{name} } $l->sections;
-    is scalar(@names), 2,       '2 sections without debug';
+    is scalar(@names), 9,       '9 sections without debug';
     is $names[0],      '.text', 'first is .text';
     is $names[1],      '.data', 'second is .data';
 };

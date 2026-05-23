@@ -28,7 +28,7 @@ package Brocken::Format::PE {
             GetCommandLineA             => 144,
             LoadLibraryA                => 152,
             GetProcAddress              => 160,
-            CreateThread                => 168 # Register CreateThread Win32 FFI
+            CreateThread                => 168    # Register CreateThread Win32 FFI
         );
 
         method import_rva($n) {

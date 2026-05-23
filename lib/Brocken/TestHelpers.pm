@@ -5,27 +5,25 @@ no warnings 'portable', 'experimental::class';
 use Exporter 'import';
 our @EXPORT_OK = qw(make_fake_funcs make_source_locs with_temp_file test_brocken);
 
-sub test_brocken {
-    my %args     = @_;
-    my $name     = $args{name};
+sub test_brocken (%args) {
     my $source   = $args{source};
+    my $name     = $args{name};
     my $expected = $args{expected};
     my $timeout  = $args{timeout} // 30;
-    my $opts     = $args{opts} // {};
-    require Brocken;
+    my $opts     = $args{opts}    // {};
+    require Brocken::Compiler;
     require Test2::V0;
     require File::Temp;
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $tmp_fh;
-    my $p = Brocken::Compiler->new( debug => 4, %$opts );
-    eval { $p->compile_source( $source, $exe ); };
+    my $filename = delete $opts->{filename};
+    my $p        = Brocken::Compiler->new( debug => 4, %$opts );
+    eval { $p->compile_source( $source, $exe, $filename ); };
 
     if ( my $err = $@ ) {
-        Test2::V0::fail("$name - compilation failed: $err");
-        return;
+        Test2::V0::fail("$name - compilation failed: $err") if $name;
+        return ( undef, "compilation: $err" );
     }
-
-    # Bug Fix: Only prepend "./" if the path is relative and does not already contain a slash
     my $run = $exe;
     if ( $^O ne 'MSWin32' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
         $run = './' . $exe;
@@ -33,53 +31,31 @@ sub test_brocken {
     my $output = eval {
         local $SIG{ALRM} = sub { die "TIMEOUT\n" };
         alarm($timeout);
-
-        #~ Test2::V0::diag( 'Running '. $run);
-        #~ system( q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run );
-        #~ $run = q[gdb -batch -ex "run" -ex "bt" -ex "x/i $pc" -ex "info registers" -ex "disas" ] . $run;
         open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
         local $/;
         my $out = <$fh>;
         close $fh;
         alarm(0);
-
-        # Filter out common GDB noise
-        #~ $out =~ s/^\[New Thread.*?\r?\n//mg;
-        #~ $out =~ s/^\[Thread.*?exited with code.*?\]\r?\n//mg;
-        #~ $out =~ s/^\[Inferior.*?exited normally\]\r?\n//mg;
-        #~ $out =~ s/^No stack\.\r?\n//mg;
-        #~ $out =~ s/^No registers\.\r?\n//mg;
-        #~ $out =~ s/^The program has no registers now\.\r?\n//mg;
-        #~ $out =~ s/^No frame selected\.\r?\n//mg;
-        #~ $out =~ s/^Value can't be converted to integer\.\r?\n//mg;
-        #~ $out =~ s/^No symbol ".*?" in current context\.\r?\n//mg;
-
         $out;
     };
     my $err = $@;
     alarm(0);
     if ($err) {
-        Test2::V0::fail("$name - execution failed: $err");
-        return;
+        Test2::V0::fail("$name - execution failed: $err") if $name;
+        return ( undef, "execution: $err" );
     }
     chomp $output if defined $output;
     if ( ref $expected eq 'ARRAY' ) {
         my @out_lines = split /\n/, $output;
-        Test2::V0::is( \@out_lines,$expected, $name);
-        #my $ok        = ( @out_lines == @$expected );
-        #if ($ok) {
-            #for my $i ( 0 .. $#$expected ) {
-            #    $ok = 0 unless defined $out_lines[$i] && $out_lines[$i] eq $expected->[$i];
-            #}
-        #}
-        #~ Test2::V0::ok( $ok, $name ) or Test2::V0::diag( join( "\n", 'Expected: ', @$expected, 'Got:', @out_lines ) );
+        Test2::V0::is( \@out_lines, $expected, $name );
     }
     elsif ( ref $expected eq 'Regexp' ) {
         Test2::V0::like( $output, $expected, $name );
     }
-    else {
-        Test2::V0::pass($name);
+    elsif ( defined $expected ) {
+        Test2::V0::is( $output, $expected, $name );
     }
+    return ( $output, undef );
 }
 
 sub make_fake_funcs {

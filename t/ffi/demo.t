@@ -1,14 +1,14 @@
 use v5.40;
 use lib 'lib';
-use Brocken::TestHelpers qw(test_brocken);
+use Brocken::TestHelpers qw[test_brocken];
 use Test2::V0;
-use File::Basename;
-use File::Spec;
-my $t_dir = File::Spec->rel2abs('t/ffi');
-# On Linux, dlopen requires a directory slash (like ./) to load from the current directory
-my $lib  = $^O eq 'MSWin32' ? 'demolib.dll' : './libdemo.so';
-my $libc = $^O eq 'MSWin32' ? 'msvcrt.dll'  : 'libc.so.6';
-system( 'gcc', '-shared', '-o', $lib, '-fPIC', File::Spec->catfile( $t_dir, 'demolib.c' ) ) == 0 or die "gcc failed: $?";
+use Path::Tiny;
+#
+my $c    = path($0)->sibling('demolib.c')->absolute;
+my $so   = path($0)->sibling('demolib.c')->absolute;
+my $lib  = path($0)->sibling( $^O eq 'MSWin32' ? 'demolib.dll' : 'libdemo.so' )->absolute;
+my $libc = $^O eq 'MSWin32' ? 'msvcrt.dll' : 'libc.so.6';
+system( 'gcc', '-shared', '-o', $lib, '-fPIC', $c ) == 0 or die "gcc failed: $?";
 test_brocken(
     name   => 'C FFI',
     source => qq{
@@ -31,9 +31,9 @@ test_brocken(
     expected => [
         '--- Part 1: Standard libc FFI ---',
         '--- Part 2: Custom Shared Library FFI ---',
+        'Hello from standard libc puts!',
         '42',
         'Hello, Brocken Compiler from C!',
-        'Hello from standard libc puts!'
     ]
 );
 done_testing;

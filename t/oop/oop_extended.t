@@ -4,38 +4,10 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-use File::Temp qw(tempfile);
-
-sub compile_and_run {
-    my ( $source, %opts ) = @_;
-    my $timeout = $opts{timeout} // 15;
-    my $debug   = $opts{debug}   // 0;
-    require Brocken::Compiler;
-    my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
-    close $fh;
-    my $p = Brocken::Compiler->new( debug => $debug );
-    eval { $p->compile_source( $source, $exe ); };
-    return ( undef, "compilation: $@" ) if $@;
-    my $run    = ( $^O eq 'MSWin32' ? '' : './' ) . $exe;
-    my $output = eval {
-        local $SIG{ALRM} = sub { die "TIMEOUT\n" }
-            if $^O ne 'MSWin32';
-        alarm($timeout) if $^O ne 'MSWin32';
-        open my $fh2, '-|', $run or die "Cannot run $run: $!";
-        local $/;
-        my $out = <$fh2>;
-        close $fh2;
-        alarm(0) if $^O ne 'MSWin32';
-        $out;
-    };
-    alarm(0)                          if $^O ne 'MSWin32';
-    return ( undef, "execution: $@" ) if $@;
-    chomp $output                     if defined $output;
-    return ( $output, undef );
-}
+use Brocken::TestHelpers qw(test_brocken);
 subtest 'Simple class with method' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Foo { method bar() { say "bar"; } }
         my $f = Foo->new(); $f->bar();
     }
@@ -44,8 +16,8 @@ subtest 'Simple class with method' => sub {
     is $out, 'bar', 'class method produces bar';
 };
 subtest 'Class with field and setter' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $val; method set_val(Int $v) { $val = $v; } }
         my $n = Node->new(); $n->set_val(42); say "Set field";
     }
@@ -54,8 +26,8 @@ subtest 'Class with field and setter' => sub {
     like $out, qr/Set field/, 'field setter works';
 };
 subtest 'Class with getter (explicit return)' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $val; method set_val(Int $v) { $val = $v; } method get_val() { return $val; } }
         my $n = Node->new(); $n->set_val(99); say "Val: " . $n->get_val();
     }
@@ -64,8 +36,8 @@ subtest 'Class with getter (explicit return)' => sub {
     like $out, qr/Val: 99/, 'explicit return getter';
 };
 subtest 'Method return value assigned to variable' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { field $val; method set_val(Int $v) { $val = $v; } method get_val() { return $val; } }
         my $n = Node->new(); $n->set_val(42); my $v = $n->get_val(); say "Done: $v";
     }
@@ -74,8 +46,8 @@ subtest 'Method return value assigned to variable' => sub {
     like $out, qr/Done: 42/, 'method return assigned';
 };
 subtest 'Class with multiple fields' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Point { field $x; field $y; }
         my $p = Point->new(); say "ok";
     }
@@ -84,8 +56,8 @@ subtest 'Class with multiple fields' => sub {
     is $out, 'ok', 'class with multiple fields';
 };
 subtest 'Method call in void context' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { method foo() { say "foo"; } }
         my $n = Node->new(); $n->foo();
     }
@@ -94,8 +66,8 @@ subtest 'Method call in void context' => sub {
     is $out, 'foo', 'void method call';
 };
 subtest 'Class method with say instrumentation' => sub {
-    my ( $out, $err ) = compile_and_run(
-        q{
+    my ( $out, $err ) = test_brocken(
+        source => q{
         class Node { method hello() { say "hello"; } }
         my $n = Node->new(); my $x = $n->hello(); say "returned";
     }
