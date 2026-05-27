@@ -17,7 +17,10 @@ sub test_brocken (%args) {
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $tmp_fh;
     my $filename = delete $opts->{filename};
-    my $p        = Brocken::Compiler->new( debug => 4, %$opts );
+    my $parser   = delete $opts->{parser} // delete $args{parser} // 'pratt';
+    my $arch     = delete $opts->{arch} // delete $args{arch} // 'x64';
+    my $os       = delete $opts->{os} // delete $args{os} // ( $^O eq 'MSWin32' ? 'win64' : 'linux' );
+    my $p        = Brocken::Compiler->new( debug => 4, %$opts, parser => $parser, arch => $arch, os => $os );
     eval { $p->compile_source( $source, $exe, $filename ); };
 
     if ( my $err = $@ ) {

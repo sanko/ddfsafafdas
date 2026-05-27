@@ -3,7 +3,7 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use Brocken::TestHelpers qw(test_brocken);
 subtest 'Hello world' => sub {
     my ( $out, $err ) = test_brocken( source => 'say 42;' );
@@ -60,7 +60,7 @@ subtest 'For loop over range' => sub {
     ok length($out) > 0, 'output is non-empty';
 };
 subtest 'Subroutine call with return' => sub {
-    my ( $out, $err ) = test_brocken( source => 'sub double(Int $n) { return $n * 2; }; say double(21);' );
+    my ( $out, $err ) = test_brocken( source => 'sub double(Int $n) { return $n * 2; } say double(21);' );
     $err ? ( skip_all $err ) : ();
     is $out, '42', 'subroutine call returns 42';
 };

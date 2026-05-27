@@ -1,9 +1,9 @@
 use v5.40;
 use utf8;
 use feature 'class';
-no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib';
+no warnings 'portable', 'experimental::class', 'qw';
+use lib 'lib', '../../lib';
 use Brocken::Lexer;
 
 sub lex_tokens {

@@ -19,6 +19,8 @@ class Brocken::Compiler::Optimizer {
         # Pass 1: Map all constants and find GC allocations
         for my $i ( 0 .. $#$insts ) {
             my $inst = $insts->[$i];
+            use Data::Dump;
+            ddx $inst;
             if ( $inst->{op} eq 'constant' ) {
                 $const_vals{ $inst->{dest} } = $inst->{args}[0];
             }

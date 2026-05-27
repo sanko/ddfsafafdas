@@ -1,0 +1,109 @@
+---
+name: C Thread Disassembly
+
+on:
+  workflow_dispatch: ~
+
+jobs:
+  disassemble-macos-x64:
+    name: "macOS Intel (x86_64)"
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Build C thread test
+        run: |
+          cat > thread_test.c << 'EOF'
+          #include <pthread.h>
+          #include <stdio.h>
+
+          void* thread_func(void* arg) {
+              printf("ok\n");
+              return NULL;
+          }
+
+          int main() {
+              pthread_t thread;
+              pthread_create(&thread, NULL, thread_func, NULL);
+              pthread_join(thread, NULL);
+              return 0;
+          }
+          EOF
+          clang -g -O0 -o thread_test thread_test.c
+      - name: Run test
+        run: ./thread_test
+      - name: Disassemble
+        run: |
+          echo "=== otool -tV (text disassembly) ===" > disassembly-x64.txt
+          otool -tV thread_test >> disassembly-x64.txt
+          echo "" >> disassembly-x64.txt
+          echo "=== otool -L (linked libs) ===" >> disassembly-x64.txt
+          otool -L thread_test >> disassembly-x64.txt
+          echo "" >> disassembly-x64.txt
+          echo "=== nm -m (symbols) ===" >> disassembly-x64.txt
+          nm -m thread_test >> disassembly-x64.txt
+          echo "" >> disassembly-x64.txt
+          echo "=== otool -lv (load commands, relevant parts) ===" >> disassembly-x64.txt
+          otool -lv thread_test | head -200 >> disassembly-x64.txt
+          echo "" >> disassembly-x64.txt
+          echo "=== hexdump of __text, __stubs, __cstring ===" >> disassembly-x64.txt
+          otool -s __TEXT __text thread_test >> disassembly-x64.txt
+          otool -s __TEXT __stubs thread_test >> disassembly-x64.txt
+          otool -s __TEXT __cstring thread_test >> disassembly-x64.txt
+          otool -s __DATA __la_symbol_ptr thread_test >> disassembly-x64.txt
+      - name: Upload disassembly
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: disassembly-macos-x64
+          path: disassembly-x64.txt
+          retention-days: 30
+
+  disassemble-macos-arm64:
+    name: "macOS Apple Silicon (arm64)"
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Build C thread test
+        run: |
+          cat > thread_test.c << 'EOF'
+          #include <pthread.h>
+          #include <stdio.h>
+
+          void* thread_func(void* arg) {
+              printf("ok\n");
+              return NULL;
+          }
+
+          int main() {
+              pthread_t thread;
+              pthread_create(&thread, NULL, thread_func, NULL);
+              pthread_join(thread, NULL);
+              return 0;
+          }
+          EOF
+          clang -g -O0 -o thread_test thread_test.c
+      - name: Run test
+        run: ./thread_test
+      - name: Disassemble
+        run: |
+          echo "=== otool -tV (text disassembly) ===" > disassembly-arm64.txt
+          otool -tV thread_test >> disassembly-arm64.txt
+          echo "" >> disassembly-arm64.txt
+          echo "=== otool -L (linked libs) ===" >> disassembly-arm64.txt
+          otool -L thread_test >> disassembly-arm64.txt
+          echo "" >> disassembly-arm64.txt
+          echo "=== nm -m (symbols) ===" >> disassembly-arm64.txt
+          nm -m thread_test >> disassembly-arm64.txt
+          echo "" >> disassembly-arm64.txt
+          echo "=== otool -lv (load commands, relevant parts) ===" >> disassembly-arm64.txt
+          otool -lv thread_test | head -200 >> disassembly-arm64.txt
+          echo "" >> disassembly-arm64.txt
+          echo "=== hexdump of __text, __stubs, __cstring ===" >> disassembly-arm64.txt
+          otool -s __TEXT __text thread_test >> disassembly-arm64.txt
+          otool -s __TEXT __cstring thread_test >> disassembly-arm64.txt
+          otool -s __DATA __la_symbol_ptr thread_test >> disassembly-arm64.txt
+      - name: Upload disassembly
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: disassembly-macos-arm64
+          path: disassembly-arm64.txt
+          retention-days: 30

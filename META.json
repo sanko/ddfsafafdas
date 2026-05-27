@@ -1,0 +1,294 @@
+{
+   "abstract" : "Compiler?",
+   "author" : [
+      "Sanko Robinson <sanko@cpan.org>"
+   ],
+   "description" : "Compiler?",
+   "dynamic_config" : 1,
+   "generated_by" : "App::mii v1.0.0",
+   "keywords" : [],
+   "license" : [
+      "artistic_2"
+   ],
+   "meta-spec" : {
+      "url" : "https://metacpan.org/pod/CPAN::Meta::Spec",
+      "version" : 2
+   },
+   "name" : "Brocken",
+   "no_index" : {
+      "directory" : [],
+      "file" : [],
+      "namespace" : [],
+      "package" : []
+   },
+   "prereqs" : {
+      "configure" : {
+         "requires" : {
+            "Module::Build::Tiny" : "0.034",
+            "Path::Tiny" : "0",
+            "perl" : "v5.40.0"
+         }
+      }
+   },
+   "provides" : {
+      "Brocken" : {
+         "file" : "lib/Brocken.pm"
+      },
+      "Brocken::AST" : {
+         "file" : "lib/Brocken/AST.pm"
+      },
+      "Brocken::AST::Async" : {
+         "file" : "lib/Brocken/AST/Async.pm"
+      },
+      "Brocken::AST::Async::FiberBlock" : {
+         "file" : "lib/Brocken/AST/Async.pm"
+      },
+      "Brocken::AST::Async::Yield" : {
+         "file" : "lib/Brocken/AST/Async.pm"
+      },
+      "Brocken::AST::Exception" : {
+         "file" : "lib/Brocken/AST/Exception.pm"
+      },
+      "Brocken::AST::Exception::Die" : {
+         "file" : "lib/Brocken/AST/Exception.pm"
+      },
+      "Brocken::AST::Exception::TryCatch" : {
+         "file" : "lib/Brocken/AST/Exception.pm"
+      },
+      "Brocken::AST::Expr" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::AnonCall" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::ArrayLiteral" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::BinOp" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::Call" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::Const" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::Delete" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::Exists" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::HashLiteral" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::IndexExpr" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::MethodCall" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::Ternary" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::TupleLiteral" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::UnaryOp" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::Expr::Var" : {
+         "file" : "lib/Brocken/AST/Expr.pm"
+      },
+      "Brocken::AST::NativeDecl" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::Node" : {
+         "file" : "lib/Brocken/AST/Node.pm"
+      },
+      "Brocken::AST::OOP" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::OOP::AnonSub" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::OOP::ClassDecl" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::OOP::FieldDecl" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::OOP::Method" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::OOP::MethodCall" : {
+         "file" : "lib/Brocken/AST/OOP.pm"
+      },
+      "Brocken::AST::Stmt" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Assignment" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Block" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Defer" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Eval" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Exit" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::For" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::If" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Last" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Map" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Next" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::OurDecl" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Redo" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Require" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Return" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::StateDecl" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Use" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::VarDecl" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::While" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::AST::Stmt::Yada" : {
+         "file" : "lib/Brocken/AST/Stmt.pm"
+      },
+      "Brocken::Codegen" : {
+         "file" : "lib/Brocken/Codegen.pm"
+      },
+      "Brocken::Compiler" : {
+         "file" : "lib/Brocken/Compiler.pm"
+      },
+      "Brocken::Compiler::DataSegment" : {
+         "file" : "lib/Brocken/Compiler/DataSegment.pm"
+      },
+      "Brocken::Compiler::Lowering" : {
+         "file" : "lib/Brocken/Compiler/Lowering.pm"
+      },
+      "Brocken::Compiler::Optimizer" : {
+         "file" : "lib/Brocken/Compiler/Optimizer.pm"
+      },
+      "Brocken::Emit::ARM64" : {
+         "file" : "lib/Brocken/Emit.pm"
+      },
+      "Brocken::Format" : {
+         "file" : "lib/Brocken/Format.pm"
+      },
+      "Brocken::Format::DWARF" : {
+         "file" : "lib/Brocken/Format/DWARF.pm"
+      },
+      "Brocken::Format::ELF" : {
+         "file" : "lib/Brocken/Format/ELF.pm"
+      },
+      "Brocken::Format::JIT" : {
+         "file" : "lib/Brocken/Format/JIT.pm"
+      },
+      "Brocken::Format::Layout" : {
+         "file" : "lib/Brocken/Format/Layout.pm"
+      },
+      "Brocken::Format::MachO" : {
+         "file" : "lib/Brocken/Format/MachO.pm"
+      },
+      "Brocken::Format::MyFormat" : {
+         "file" : "lib/Brocken/Format.pm"
+      },
+      "Brocken::Format::PE" : {
+         "file" : "lib/Brocken/Format/PE.pm"
+      },
+      "Brocken::IR::Builder" : {
+         "file" : "lib/Brocken/IR.pm"
+      },
+      "Brocken::Lexer" : {
+         "file" : "lib/Brocken/Lexer.pm"
+      },
+      "Brocken::Parser" : {
+         "file" : "lib/Brocken/Parser.pm"
+      },
+      "Brocken::Platform" : {
+         "file" : "lib/Brocken/Platform.pm"
+      },
+      "Brocken::Platform::Darwin" : {
+         "file" : "lib/Brocken/Platform/Darwin.pm"
+      },
+      "Brocken::Platform::Linux" : {
+         "file" : "lib/Brocken/Platform/Linux.pm"
+      },
+      "Brocken::Platform::Windows" : {
+         "file" : "lib/Brocken/Platform/Windows.pm"
+      },
+      "Brocken::Scope" : {
+         "file" : "lib/Brocken.pm"
+      },
+      "Brocken::Symbol" : {
+         "file" : "lib/Brocken.pm"
+      },
+      "Brocken::Target" : {
+         "file" : "lib/Brocken/Target.pm"
+      },
+      "Brocken::Target::ARM64" : {
+         "file" : "lib/Brocken/Target/ARM64.pm"
+      },
+      "Brocken::Target::ARM64::Emit" : {
+         "file" : "lib/Brocken/Target/ARM64.pm"
+      },
+      "Brocken::Target::X64" : {
+         "file" : "lib/Brocken/Target/X64.pm"
+      },
+      "Brocken::Target::X64::Emit" : {
+         "file" : "lib/Brocken/Target/X64.pm"
+      },
+      "Brocken::TestHelpers" : {
+         "file" : "lib/Brocken/TestHelpers.pm"
+      },
+      "Brocken::Type" : {
+         "file" : "lib/Brocken/Type.pm"
+      }
+   },
+   "release_status" : "stable",
+   "resources" : {
+      "license" : [
+         "http://www.perlfoundation.org/artistic_license_2_0"
+      ],
+      "repository" : {}
+   },
+   "version" : "v0.0.1",
+   "x_custom_builder" : 1,
+   "x_ignore" : [
+      ".tidyallrc",
+      ".gitignore",
+      ".clang-format",
+      ".github/**"
+   ],
+   "x_no_upload" : 1
+}

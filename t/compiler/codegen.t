@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use Brocken::Codegen;
 use Brocken::IR;
 subtest 'Codegen instantiation' => sub {
