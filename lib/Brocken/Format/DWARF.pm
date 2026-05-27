@@ -7,7 +7,7 @@ package Brocken::Format::DWARF {
     class Brocken::Format::DWARF {
         field $source_locs    : param : reader;
         field $text_base      : param : reader;
-        field $source_file    : param : reader = 'source.brocken';
+        field $source_file    : param : reader //= 'source.brocken';
         field $func_ranges    : param : reader = [];
         field $context_size   : param : reader = 64;
         field $class_info     : param : reader = {};

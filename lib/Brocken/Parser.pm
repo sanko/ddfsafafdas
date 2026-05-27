@@ -179,6 +179,8 @@ class Brocken::Parser {
 
     method parse_statement() {
         my $val = $self->current->{value};
+        use Data::Dump;
+        ddx $val;
         if ( $val eq ';' ) {
             $self->advance();
             return undef;
@@ -982,9 +984,6 @@ class Brocken::Parser {
 
     method _parse_type_spec() {
         my $curr = $self->current;
-
-        # FIX: Allow both KEYWORD and IDENT tokens to represent type specifiers
-        # so that user-defined class names can be used as static type annotations!
         if ( ( $curr->{type} eq 'KEYWORD' || $curr->{type} eq 'IDENT' ) && $curr->{value} =~ /^[A-Za-z_][A-Za-z0-9_]*$/ ) {
             my $t = $curr->{value};
             $self->advance();

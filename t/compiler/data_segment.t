@@ -1,9 +1,9 @@
 use v5.40;
 use utf8;
-use feature 'class';
+use feature 'class';use Test2::V0;
+
 no warnings 'portable', 'experimental::class';
-use Test2::V0;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use Brocken::Compiler::DataSegment;
 subtest 'add_string returns offset' => sub {
     my $ds  = Brocken::Compiler::DataSegment->new;
