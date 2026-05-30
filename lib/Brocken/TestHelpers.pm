@@ -3,6 +3,7 @@ use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Exporter 'import';
+use Config;
 our @EXPORT_OK = qw(make_fake_funcs make_source_locs with_temp_file test_brocken);
 
 sub test_brocken (%args) {
@@ -14,12 +15,19 @@ sub test_brocken (%args) {
     require Brocken::Compiler::Pipeline;
     require Test2::V0;
     require File::Temp;
-    my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.exe' );
+
+    my $detected_os   = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
+    my $detected_arch = ( $Config{archname} =~ /aarch64|arm64/i ) ? 'arm64' : 'x64';
+
+    my $os   = delete $opts->{os}   // delete $args{os}   // $detected_os;
+    my $arch = delete $opts->{arch} // delete $args{arch} // $detected_arch;
+
+    my $suffix = $os eq 'win64' ? '.exe' : '';
+    my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => $suffix );
     close $tmp_fh;
+
     my $filename = delete $opts->{filename};
     my $parser   = delete $opts->{parser} // delete $args{parser} // 'pratt';
-    my $arch     = delete $opts->{arch}   // delete $args{arch}   // 'x64';
-    my $os       = delete $opts->{os}     // delete $args{os}     // ( $^O eq 'MSWin32' ? 'win64' : 'linux' );
     my $p        = Brocken::Compiler::Pipeline->new( debug => 4, %$opts, parser => $parser, arch => $arch, os => $os );
     eval { $p->compile_source( $source, $exe, $filename ); };
 
@@ -27,8 +35,13 @@ sub test_brocken (%args) {
         Test2::V0::fail("$name - compilation failed: $err") if $name;
         return ( undef, "compilation: $err" );
     }
+
+    if ( $os ne 'win64' ) {
+        chmod 0755, $exe or die "Cannot chmod +x $exe: $!";
+    }
+
     my $run = $exe;
-    if ( $^O ne 'MSWin32' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
+    if ( $os ne 'win64' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
         $run = './' . $exe;
     }
     my $output = eval {
