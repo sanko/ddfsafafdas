@@ -3,36 +3,8 @@ package Brocken::Compiler {
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
-
-    class Brocken::Symbol {
-        field $name           : param : reader;
-        field $type           : param : reader;
-        field $is_state       : param : reader = 0;
-        field $state_idx      : param : reader = undef;
-        field $stack_offset   : param : reader = undef;
-        field $shadow_offset  : param : reader = undef;
-        field $isolate_offset : param : reader = undef;
-    }
-
-    class Brocken::Scope {
-        field $parent : param : reader = undef;
-        field %symbols;
-
-        method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef, $shadow_offset = undef, $isolate_offset = undef ) {
-            die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
-            return $symbols{$name} = Brocken::Symbol->new(
-                name           => $name,
-                type           => $type,
-                is_state       => $is_state,
-                state_idx      => $state_idx,
-                stack_offset   => $stack_offset,
-                shadow_offset  => $shadow_offset,
-                isolate_offset => $isolate_offset
-            );
-        }
-        method has_local_symbol($name) { return exists $symbols{$name}; }
-        method resolve($name)          { return $symbols{$name} // ( $parent ? $parent->resolve($name) : undef ); }
-    }
+    use Brocken::Symbol;
+    use Brocken::Scope;
 
     class Brocken::Compiler {
         field $arch  : param : reader = undef;
@@ -63,6 +35,9 @@ package Brocken::Compiler {
         field $coverage_table_offset  : reader = undef;
         field $coverage_table_size    : reader = undef;
         field $coverage_probe_lines   : reader = undef;
+
+        # Parser selection: 'pratt' (current) or 'cfg' (new CFG-based parser)
+        field $parser : param : reader = 'pratt';
 
         # Enable all optimizations by default, allowing selective overrides
         field $optimizations : param : reader = {};
@@ -222,34 +197,46 @@ package Brocken::Compiler {
         {
             my $_x = 0;
 
-            method compile_source( $source, $output_file, $filename = 'eval_' . ++$_x ) {
+            method compile_source( $source, $output_file, $filename = undef ) {
+                $filename //= 'eval_' . ++$_x;
                 require Brocken::Lexer;
-                require Brocken::Parser;
-                require Brocken::Compiler::Lowering;
                 require Brocken::Codegen;
                 require Brocken::Compiler::DataSegment;
                 $source_file = $filename;
 
-                # In lib/Brocken/Compiler.pm (inside compile_source)
-                my $tokens   = Brocken::Lexer->new( source => $source, file => $filename )->lex();
-                my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-                my $ds       = Brocken::Compiler::DataSegment->new();
-                my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
-                $lowering->lower_program($ast);
-                my @instructions = $lowering->builder->instructions();
+                my $tokens = Brocken::Lexer->new( source => $source, file => $filename )->lex();
+                my $ds     = Brocken::Compiler::DataSegment->new();
+
+                my $lowerer;
+                if ( $self->parser eq 'cfg' ) {
+                    require Brocken::Compiler::CFGParser;
+                    require Brocken::Compiler::CFGLowering;
+                    my $cfg_parser = Brocken::Compiler::CFGParser->new( tokens => $tokens, data_segment => $ds, filename => $filename );
+                    my $cfg        = $cfg_parser->parse();
+                    $lowerer       = Brocken::Compiler::CFGLowering->new( cfg => $cfg, data_segment => $ds, driver => $self, builder => $cfg_parser->builder, undef_ptr_offset => $cfg_parser->undef_ptr_offset );
+                    $lowerer->lower();
+                }
+                else {
+                    require Brocken::Parser;
+                    require Brocken::Compiler::Lowering;
+                    my $ast     = Brocken::Parser->new( tokens => $tokens )->parse();
+                    $lowerer    = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
+                    $lowerer->lower_program($ast);
+                }
 
                 # --- RUN OPTIMIZER ---
                 require Brocken::Compiler::Optimizer;
-                my $opt = Brocken::Compiler::Optimizer->new( opts => $self->optimizations );
+                my $opt       = Brocken::Compiler::Optimizer->new( opts => $self->optimizations );
+                my @instructions = $lowerer->builder->instructions();
 
                 # Run static Escape Analysis before register allocation and code generation!
                 if ( $self->optimizations->{escape} ) {
                     $opt->escape_analysis( \@instructions );
                 }
-                $opt->optimize( $lowering->builder );
+                $opt->optimize( $lowerer->builder );
 
                 # Get potentially modified instructions (after escape analysis might have changed ops to stack_alloc)
-                @instructions = $lowering->builder->instructions();
+                @instructions = $lowerer->builder->instructions();
                 my $probe_count = 0;
                 if ( $self->coverage ) {
                     require Brocken::Compiler::Optimizer;
@@ -278,7 +265,7 @@ package Brocken::Compiler {
                 $self->format->set_func_ranges( [ $self->func_ranges ] );
                 $self->format->set_labels( $self->as->labels );
                 $self->format->set_labels( $self->as->labels );
-                $self->format->set_exported_funcs( $lowering->exported_funcs );
+                $self->format->set_exported_funcs( $lowerer->exported_funcs );
 
                 if ( $self->debug ) {
                     $self->format->set_func_ranges( [ $self->func_ranges ] );
@@ -290,7 +277,7 @@ package Brocken::Compiler {
                         context_size   => $self->context_size,
                         arch           => $self->arch,
                         preserved_regs => $self->preserved_regs,
-                        class_info     => { $lowering->class_info },
+                        class_info     => { $lowerer->class_info },
                         source_file    => $filename
                     );
                     my $dwarf_data = $dwarf->build_all();

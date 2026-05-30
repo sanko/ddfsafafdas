@@ -10,6 +10,7 @@ package Brocken::Compiler::DataSegment {
         field %string_offsets;
 
         method add_string($str) {
+            $str //= '';
             return $string_offsets{$str} if exists $string_offsets{$str};
             my $utf8_bytes = encode( 'UTF-8', $str );
             my $byte_len   = length($utf8_bytes);

@@ -19,7 +19,7 @@ class Brocken::Compiler::Optimizer {
         # Pass 1: Map all constants and find GC allocations
         for my $i ( 0 .. $#$insts ) {
             my $inst = $insts->[$i];
-            if ( $inst->{op} eq 'constant' ) {
+             if ( $inst->{op} eq 'constant' ) {
                 $const_vals{ $inst->{dest} } = $inst->{args}[0];
             }
             if ( $inst->{op} eq 'call_func' && $inst->{args}[0] eq 'M_gc_alloc' ) {

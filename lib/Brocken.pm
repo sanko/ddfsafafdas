@@ -4,7 +4,6 @@ package Brocken {
     use feature 'class';
     no warnings 'portable', 'experimental::class';
     use Brocken::AST;
-    use Brocken::Compiler;
     use Brocken::Compiler::Lowering;
     use Brocken::Compiler::Optimizer;
     use Brocken::Compiler::DataSegment;
@@ -12,11 +11,11 @@ package Brocken {
     use Brocken::Lexer;
     use Brocken::Parser;
     use Brocken::IR;
-
-    package Brocken::Util {
-        sub align ( $val, $align ) { ( $val + $align - 1 ) & ~( $align - 1 ) }
-    }
-};
+    use Brocken::Symbol;
+    use Brocken::Scope;
+    use Brocken::Compiler;
+    #
+}
 1;
 __END__
 
@@ -45,11 +44,6 @@ Metadata for a single variable: name, type, is_state, state_idx, stack_offset.
 Lexical scope with parent chain. C<define()> registers a symbol (dies on redeclaration). C<resolve()> looks up a symbol
 in the current scope and walks up the parent chain.
 
-=item Brocken::Util::align
-
-Aligns a value upward to the given alignment boundary.
-
-=back
 
 =cut
 1;

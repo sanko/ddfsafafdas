@@ -179,9 +179,7 @@ class Brocken::Parser {
 
     method parse_statement() {
         my $val = $self->current->{value};
-        use Data::Dump;
-        ddx $val;
-        if ( $val eq ';' ) {
+         if ( $val eq ';' ) {
             $self->advance();
             return undef;
         }
@@ -195,7 +193,7 @@ class Brocken::Parser {
 
     method parse_expression( $precedence = 0 ) {
         my $tok           = $self->current;
-        my $prefix_method = $PREFIX_HANDLERS{ $tok->{value} } // $PREFIX_HANDLERS{ $tok->{type} };
+        my $prefix_method = $PREFIX_HANDLERS{ $tok->{value} // '' } // $PREFIX_HANDLERS{ $tok->{type} // '' };
         die "Parse Error L:$tok->{line} C:$tok->{col}: Unexpected token in expression: " . $tok->{value} . "\n" unless $prefix_method;
         my $left = $self->$prefix_method($tok);
         while ( $precedence < ( $PRECEDENCE{ $self->current->{value} } // 0 ) ) {
@@ -430,7 +428,7 @@ class Brocken::Parser {
         my $tok  = $self->advance();
         my $name = $tok->{value};
         my @args;
-        if ( $self->current->{value} ne ';' && $self->current->{value} ne '}' && $self->current->{type} ne 'EOF' ) {
+        if ( defined $self->current->{value} && $self->current->{value} ne ';' && $self->current->{value} ne '}' && $self->current->{type} ne 'EOF' ) {
             while (1) {
                 push @args, $self->parse_expression(0);
                 if ( $self->current->{value} eq ',' ) {

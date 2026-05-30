@@ -1,0 +1,59 @@
+name: "Debug Threading Issues"
+on:
+  workflow_dispatch: ~
+
+jobs:
+  debug:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: openbsd
+            arch: x86-64
+            version: '7.6'
+            host: ubuntu-latest
+            perl: '5.40'
+            pkg: 'pkg_add perl'
+          - os: openbsd
+            arch: arm64
+            version: '7.6'
+            host: ubuntu-latest
+            perl: '5.40'
+            pkg: 'pkg_add perl'
+          - os: omnios
+            arch: x86-64
+            version: 'r151058'
+            host: ubuntu-latest
+            perl: '5.40'
+            pkg: 'pkg install perl'
+          - os: haiku
+            arch: x86-64
+            version: 'r1beta5'
+            host: ubuntu-latest
+            perl: '5.40'
+            pkg: 'pkgman install perl'
+    uses: ./.github/workflows/cross.yml
+    with:
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      version: ${{ matrix.version }}
+      host: ${{ matrix.host }}
+      perl: ${{ matrix.perl }}
+      pkg: ${{ matrix.pkg }}
+      setup: |
+        # Ensure tracing tools are installed if needed
+        if [ "$(uname -s)" = "OpenBSD" ]; then sudo pkg_add truss; fi
+        if [ "$(uname -s)" = "SunOS" ]; then # OmniOS usually has truss
+             :
+        fi
+        if [ "$(uname -s)" = "Haiku" ]; then # Haiku may need a specific trace tool
+             :
+        fi
+      test_cmd: |
+        os=$(uname -s)
+        if [ "$os" = "OpenBSD" ] || [ "$os" = "SunOS" ]; then
+          truss -o debug.log perl -Ilib t/compiler/22_thread.t
+        else
+          # Assume Haiku uses strace or similar
+          strace -o debug.log perl -Ilib t/compiler/22_thread.t
+        fi
