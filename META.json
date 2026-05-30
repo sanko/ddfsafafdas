@@ -28,6 +28,11 @@
             "Path::Tiny" : "0",
             "perl" : "v5.40.0"
          }
+      },
+      "test" : {
+         "requires" : {
+            "Affix" : "0"
+         }
       }
    },
    "provides" : {
@@ -248,10 +253,10 @@
          "file" : "lib/Brocken/Platform/Windows.pm"
       },
       "Brocken::Scope" : {
-         "file" : "lib/Brocken.pm"
+         "file" : "lib/Brocken/Scope.pm"
       },
       "Brocken::Symbol" : {
-         "file" : "lib/Brocken.pm"
+         "file" : "lib/Brocken/Symbol.pm"
       },
       "Brocken::Target" : {
          "file" : "lib/Brocken/Target.pm"

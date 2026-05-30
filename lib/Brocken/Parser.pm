@@ -179,7 +179,7 @@ class Brocken::Parser {
 
     method parse_statement() {
         my $val = $self->current->{value};
-         if ( $val eq ';' ) {
+        if ( $val eq ';' ) {
             $self->advance();
             return undef;
         }
@@ -428,7 +428,8 @@ class Brocken::Parser {
         my $tok  = $self->advance();
         my $name = $tok->{value};
         my @args;
-        if ( defined $self->current->{value} && $self->current->{value} ne ';' && $self->current->{value} ne '}' && $self->current->{type} ne 'EOF' ) {
+        if ( defined $self->current->{value} && $self->current->{value} ne ';' && $self->current->{value} ne '}' && $self->current->{type} ne 'EOF' )
+        {
             while (1) {
                 push @args, $self->parse_expression(0);
                 if ( $self->current->{value} eq ',' ) {

@@ -1,7 +1,7 @@
 use v5.40;
 use utf8;
-use feature 'class';use Test2::V0;
-
+use feature 'class';
+use Test2::V0;
 no warnings 'portable', 'experimental::class';
 use lib 'lib', '../../lib';
 use Brocken::Compiler::DataSegment;

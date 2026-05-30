@@ -13,24 +13,18 @@ system( 'gcc', '-shared', '-o', $lib, '-fPIC', $c ) == 0 or die "gcc failed: $?"
 # On Windows, libc's puts buffers output separately from Brocken's say (which uses WriteFile directly).
 # The C constructor in demolib.c cannot flush msvcrt.dll's separate CRT buffer, so puts output
 # only appears at program exit, after all Brocken say output.
-my @ffi_expected = ( $^O eq 'MSWin32' )
-    ? (   # Windows: CRT buffered output arrives at exit, after Brocken's direct output
-        '--- Part 1: Standard libc FFI ---',
-        '--- Part 2: Custom Shared Library FFI ---',
-        '42',
-        'Hello, Brocken Compiler from C!',
-        'Hello from standard libc puts!',
-    )
-    : (   # Unix: shared CRT, constructor sets _IONBF, output arrives in program order
-        '--- Part 1: Standard libc FFI ---',
-        '--- Part 2: Custom Shared Library FFI ---',
-        'Hello from standard libc puts!',
-        '42',
-        'Hello, Brocken Compiler from C!',
+my @ffi_expected = ( $^O eq 'MSWin32' ) ?
+    (    # Windows: CRT buffered output arrives at exit, after Brocken's direct output
+    '--- Part 1: Standard libc FFI ---', '--- Part 2: Custom Shared Library FFI ---', '42', 'Hello, Brocken Compiler from C!',
+    'Hello from standard libc puts!',
+    ) :
+    (    # Unix: shared CRT, constructor sets _IONBF, output arrives in program order
+    '--- Part 1: Standard libc FFI ---', '--- Part 2: Custom Shared Library FFI ---', 'Hello from standard libc puts!', '42',
+    'Hello, Brocken Compiler from C!',
     );
 test_brocken(
-    name     => 'C FFI',
-    source   => qq{
+    name   => 'C FFI',
+    source => qq{
         # 1. Wrap standard libc puts from the correct platform library
         native "$libc", "puts", "(String)->Int";
 

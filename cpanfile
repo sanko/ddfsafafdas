@@ -3,3 +3,6 @@ on configure => sub {
     requires 'Path::Tiny';
     requires 'perl', 'v5.40.0';
 };
+on test => sub {
+    requires 'Affix';
+};

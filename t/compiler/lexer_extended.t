@@ -2,7 +2,6 @@ use v5.40;
 use utf8;
 use feature 'class';
 use Test2::V0;
-
 no warnings 'portable', 'experimental::class', 'qw';
 use lib 'lib', '../../lib';
 use Brocken::Lexer;
