@@ -78,12 +78,12 @@ subtest 'RC: method with field assignment' => sub {
     like $out, qr/After set_val/,  'method assign: after';
 };
 subtest 'RC: hash-deref field set (expects parse error)' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
     my $source = q{class Node { field $val; } my $head = Node->new(); $head->{val} = 42;};
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
     ok scalar(@$tokens) > 0, 'hash-deref: tokens produced';
-    my $ast = eval { Brocken::Parser->new( tokens => $tokens )->parse(); };
+    my $ast = eval { Brocken::Core::Parser->new( tokens => $tokens )->parse(); };
     ok $@, 'hash-deref: parser correctly rejects this syntax';
 };
 subtest 'RC: method with say instrumentation' => sub {
@@ -113,3 +113,4 @@ subtest 'GC: typed vars with array refs' => sub {
     like $out, qr/Created two objects/, 'typed array refs';
 };
 done_testing;
+

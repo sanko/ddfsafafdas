@@ -1,11 +1,12 @@
-package Brocken::Format::PE {
+package Brocken::Target::Format::PE {
     use v5.40;
     use feature 'class';
     no warnings 'portable';
     no warnings 'experimental::class';
     use File::Basename qw(basename);
 
-    class Brocken::Format::PE : isa(Brocken::Format) {
+    class Brocken::Target::Format::PE : isa(Brocken::Format) {
+        no warnings 'portable';
         our %IMPORTS = (
             ExitProcess                 => 0,
             GetStdHandle                => 8,
@@ -84,7 +85,7 @@ package Brocken::Format::PE {
             my ( $pdata_data, $xdata_data ) = ( '', '' );
             my $pdata_rva  = 0;
             my $pdata_size = 0;
-            if ( $os eq 'win64' && $self->func_ranges && @{ $self->func_ranges } ) {
+            if ( $os eq 'win64' && $arch eq 'x64' && $self->func_ranges && @{ $self->func_ranges } ) {
                 warn "PE: Building .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n" if $ENV{BROCKEN_JIT_DEBUG};
                 warn "PE: building SEH...\n"                                                          if $ENV{BROCKEN_JIT_DEBUG};
                 $xdata_data               = $self->_build_xdata;

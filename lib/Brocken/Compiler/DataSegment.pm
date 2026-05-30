@@ -79,3 +79,4 @@ pointing to metadata).
 Returns the complete byte buffer for writing into the binary's .data section.
 
 =cut
+

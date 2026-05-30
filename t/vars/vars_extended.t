@@ -6,12 +6,12 @@ use Test2::V0;
 use lib 'lib';
 use Brocken::TestHelpers qw(test_brocken);
 subtest 'Hash-deref field set (expects parse error)' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
     my $source = q{class Node { field $val; } my $n = Node->new(); $n->{val} = 42;};
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
     ok scalar(@$tokens) > 0, 'hash-deref: tokens produced';
-    my $ast = eval { Brocken::Parser->new( tokens => $tokens )->parse(); };
+    my $ast = eval { Brocken::Core::Parser->new( tokens => $tokens )->parse(); };
     ok $@, 'hash-deref: parser correctly rejects this syntax';
 };
 subtest 'Our global variables with subs' => sub {
@@ -38,3 +38,4 @@ subtest 'Variable with string interpolation' => sub {
     is $out, 'Done: 1', 'string interpolation with variable';
 };
 done_testing;
+

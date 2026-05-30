@@ -18,25 +18,25 @@ subtest 'JIT compile_source' => sub {
     ok !$@ || $@ =~ /JIT|arch/, 'JIT compile_source did not crash';
 };
 subtest 'JIT with lexer + parser pipeline' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
     my $source = 'say 42;';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast    = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok scalar(@$tokens) > 0, 'JIT pipeline: tokens produced';
     ok scalar(@$ast) > 0,    'JIT pipeline: AST produced';
 };
 subtest 'JIT full pipeline with skip_runtime' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
-    require Brocken::Compiler;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
+    require Brocken::Compiler::Pipeline;
     require Brocken::Compiler::DataSegment;
     require Brocken::Compiler::Lowering;
     require Brocken::Compiler::Optimizer;
     my $source   = 'say 42;';
-    my $tokens   = Brocken::Lexer->new( source => $source )->lex();
-    my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-    my $driver   = Brocken::Compiler->new( arch => 'x64' );
+    my $tokens   = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast      = Brocken::Core::Parser->new( tokens => $tokens )->parse();
+    my $driver   = Brocken::Compiler::Pipeline->new( arch => 'x64' );
     my $ds       = Brocken::Compiler::DataSegment->new();
     my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
     $lowering->set_skip_runtime(1);
@@ -51,3 +51,5 @@ subtest 'JIT full pipeline with skip_runtime' => sub {
     ok scalar(@$instr_ref2) > 0,    'after optimize: non-empty';
 };
 done_testing;
+
+

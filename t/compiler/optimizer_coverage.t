@@ -7,14 +7,14 @@ use lib 'lib';
 
 sub build_ir {
     my ($source) = @_;
-    require Brocken::Lexer;
-    require Brocken::Parser;
-    require Brocken::Compiler;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
+    require Brocken::Compiler::Pipeline;
     require Brocken::Compiler::DataSegment;
     require Brocken::Compiler::Lowering;
-    my $tokens   = Brocken::Lexer->new( source => $source )->lex();
-    my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-    my $driver   = Brocken::Compiler->new( arch => 'x64' );
+    my $tokens   = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast      = Brocken::Core::Parser->new( tokens => $tokens )->parse();
+    my $driver   = Brocken::Compiler::Pipeline->new( arch => 'x64' );
     my $ds       = Brocken::Compiler::DataSegment->new();
     my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
     $lowering->lower_program($ast);
@@ -85,3 +85,5 @@ subtest 'Coverage: post-optimization coverage rate' => sub {
     ok 1, 'coverage rate computed';
 };
 done_testing;
+
+

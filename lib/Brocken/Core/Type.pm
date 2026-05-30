@@ -1,4 +1,4 @@
-package Brocken::Type {
+package Brocken::Core::Type {
     use v5.40;
     use feature 'class';
     no warnings 'experimental::class';
@@ -145,14 +145,14 @@ __END__
 
 =head1 NAME
 
-Brocken::Type - Type system mirroring Affix
+Brocken::Core::Type - Type system mirroring Affix
 
 =head1 SYNOPSIS
 
-    use Brocken::Type;
+    use Brocken::Core::Type;
 
-    my $int_type = Brocken::Type->new('Int');
-    my $ptr_type = Brocken::Type::Pointer($int_type);
+    my $int_type = Brocken::Core::Type->new('Int');
+    my $ptr_type = Brocken::Core::Type::Pointer($int_type);
 
 =head1 DESCRIPTION
 

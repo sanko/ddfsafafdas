@@ -26,10 +26,10 @@ class Brocken::Format {
     method image_base() { return 0; }
 
     method pre_layout( $text_size, $data_size, $arch, $os, $debug = 0 ) {
-        require Brocken::Format::Layout;
+        require Brocken::Target::Format::Layout;
         my $fa = $os eq 'macos' ? 0x4000 : ( $os eq 'win64' ? 0x200 : 0x1000 );
         my $sa = $os eq 'macos' ? 0x4000 : 0x1000;
-        $_layout = Brocken::Format::Layout->new( file_align => $fa, section_align => $sa );
+        $_layout = Brocken::Target::Format::Layout->new( file_align => $fa, section_align => $sa );
         $self->_setup_layout( $_layout, $text_size, $data_size, $arch, $os, $debug );
         $_layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
     }

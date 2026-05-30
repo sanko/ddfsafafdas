@@ -3,7 +3,7 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 
-class Brocken::Lexer {
+class Brocken::Core::Lexer {
     field $source : param;
     field $file : param = 'source.brocken';
     field $pos  = 0;
@@ -139,11 +139,11 @@ __END__
 
 =head1 NAME
 
-Brocken::Lexer - Tokenizer for Brocken source code
+Brocken::Core::Lexer - Tokenizer for Brocken source code
 
 =head1 SYNOPSIS
 
-    my $lexer = Brocken::Lexer->new( source => 'say 123;' );
+    my $lexer = Brocken::Core::Lexer->new( source => 'say 123;' );
     my $tokens = $lexer->lex();
 
 =head1 DESCRIPTION
@@ -157,7 +157,7 @@ C<,>), and EOF.
 
 =head2 lex
 
-  my $tokens = Brocken::Lexer->new( source => $source )->lex();
+  my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
 
 Returns an arrayref of token hashrefs.
 

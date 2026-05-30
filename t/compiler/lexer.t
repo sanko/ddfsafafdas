@@ -4,10 +4,10 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-use Brocken::Lexer;
+use Brocken::Core::Lexer;
 subtest 'Basic Tokenization' => sub {
     my $source = 'my Int $x = 42; say "hello world";';
-    my $lexer  = Brocken::Lexer->new( source => $source );
+    my $lexer  = Brocken::Core::Lexer->new( source => $source );
     my $tokens = $lexer->lex();
     is( scalar @$tokens,     10,        'Correct number of tokens' );
     is( $tokens->[0]{type},  'KEYWORD', 'my' );
@@ -23,7 +23,7 @@ subtest 'Basic Tokenization' => sub {
 };
 subtest 'UTF-8 and Emoji' => sub {
     my $source = 'my $🔥 = "😀";';
-    my $lexer  = Brocken::Lexer->new( source => $source );
+    my $lexer  = Brocken::Core::Lexer->new( source => $source );
     my $tokens = $lexer->lex();
 
     # 0: my, 1: $🔥, 2: =, 3: "😀", 4: ;, 5: EOF
@@ -32,7 +32,7 @@ subtest 'UTF-8 and Emoji' => sub {
 };
 subtest 'Complex Operators' => sub {
     my $source = '$x == 10 && $y != 20 || !$z;';
-    my $lexer  = Brocken::Lexer->new( source => $source );
+    my $lexer  = Brocken::Core::Lexer->new( source => $source );
     my $tokens = $lexer->lex();
     my @ops    = grep { $_->{type} eq 'OP' } @$tokens;
     is( [ map { $_->{value} } @ops ], [qw( == && != || ! )], 'Correct operator sequence' );
@@ -40,7 +40,7 @@ subtest 'Complex Operators' => sub {
 subtest 'Comments' => sub {
     my $source = 'my $x = 10; # this is a comment
 say $x;';
-    my $lexer  = Brocken::Lexer->new( source => $source );
+    my $lexer  = Brocken::Core::Lexer->new( source => $source );
     my $tokens = $lexer->lex();
 
     # 0: my, 1: $x, 2: =, 3: 10, 4: ;, 5: say, 6: $x, 7: ;, 8: EOF
@@ -48,3 +48,4 @@ say $x;';
     is( $tokens->[5]{value}, 'say', 'Tokens after comment' );
 };
 done_testing;
+

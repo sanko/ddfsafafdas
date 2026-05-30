@@ -3,9 +3,9 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-use Brocken::IR;
+use Brocken::Core::IR::Builder;
 subtest 'Basic vreg tracking' => sub {
-    my $b  = Brocken::IR::Builder->new;
+    my $b  = Brocken::Core::IR::Builder->new;
     my $v1 = $b->emit( 'constant', 'Int', [1] );
     my $v2 = $b->emit( 'constant', 'Int', [2] );
     $b->emit( 'add', 'Int', [ $v1, $v2 ] );
@@ -15,7 +15,7 @@ subtest 'Basic vreg tracking' => sub {
     ok defined($v2), 'vreg %2 defined';
 };
 subtest 'Nested vreg references' => sub {
-    my $b     = Brocken::IR::Builder->new;
+    my $b     = Brocken::Core::IR::Builder->new;
     my $a     = $b->emit( 'constant',      'Int', [10] );
     my $b1    = $b->emit( 'load_mem_disp', 'Int', [ $a, 0 ] );
     my $c1    = $b->emit( 'constant',      'Int', [5] );
@@ -28,7 +28,7 @@ subtest 'Nested vreg references' => sub {
     is $insts->[3]{args}[1], $c1, 'mul uses constant';
 };
 subtest 'Memory operations use vregs' => sub {
-    my $b    = Brocken::IR::Builder->new;
+    my $b    = Brocken::Core::IR::Builder->new;
     my $base = $b->emit( 'load_data_addr', 'Int', ['string'] );
     my $val  = $b->emit( 'constant',       'Int', [42] );
     $b->emit( 'store_mem_disp', 'void', [ $base, 0, $val ] );
@@ -39,7 +39,7 @@ subtest 'Memory operations use vregs' => sub {
     is $insts->[2]{op}, 'store_mem_disp', 'store_mem_disp';
 };
 subtest 'Control flow creates labels' => sub {
-    my $b  = Brocken::IR::Builder->new;
+    my $b  = Brocken::Core::IR::Builder->new;
     my $l1 = $b->new_label;
     my $l2 = $b->new_label;
     $b->emit_label($l1);
@@ -55,3 +55,4 @@ subtest 'Control flow creates labels' => sub {
     is $insts->[2]{target}, $l2,     'jmp target';
 };
 done_testing;
+

@@ -464,7 +464,7 @@ if ( @files && -f $files[0] ) {
 my $p = Brocken::Compiler->new( debug => $dbg, type => $type, ( $os ? ( os => $os ) : () ) );
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
 say "Debug: " . $p->debug;
-my $tokens   = Brocken::Lexer->new( source => $source_code )->lex();
+my $tokens   = Brocken::Core::Lexer->new( source => $source_code )->lex();
 my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
 my $ds       = Brocken::Compiler::DataSegment->new();
 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $p );

@@ -1,17 +1,17 @@
-package Brocken::Scope {
+package Brocken::Core::Scope {
     use v5.40;
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
-    use Brocken::Symbol;
+    use Brocken::Core::Symbol;
 
-    class Brocken::Scope {
+    class Brocken::Core::Scope {
         field $parent : param : reader = undef;
         field %symbols;
 
         method define( $name, $type, $is_state = 0, $state_idx = undef, $stack_offset = undef, $shadow_offset = undef, $isolate_offset = undef ) {
             die "Semantic Error: Redeclaration of $name\n" if exists $symbols{$name};
-            return $symbols{$name} = Brocken::Symbol->new(
+            return $symbols{$name} = Brocken::Core::Symbol->new(
                 name           => $name,
                 type           => $type,
                 is_state       => $is_state,

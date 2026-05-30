@@ -34,15 +34,17 @@ subtest 'Class with method chaining (trace mode)' => sub {
     like $out, qr/All done/,            'trace: completes';
 };
 subtest 'Require lowers without crashing' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
-    require Brocken::Compiler;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
+    require Brocken::Compiler::Pipeline;
     require Brocken::Compiler::Lowering;
     require Brocken::Compiler::DataSegment;
     my $source = 'require Math::Utils; my $mu = Math::Utils->new(); say $mu->add(40, 2);';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
     ok scalar(@$tokens) > 0, 'require: tokens produced';
-    my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $ast = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok scalar(@$ast) > 0, 'require: AST produced';
 };
 done_testing;
+
+

@@ -77,18 +77,18 @@ subtest 'Class method with say instrumentation' => sub {
     like $out, qr/returned/, 'after method call';
 };
 subtest 'Lex-parse-lower pipeline: while loop with typed vars' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
-    require Brocken::Compiler;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
+    require Brocken::Compiler::Pipeline;
     require Brocken::Compiler::DataSegment;
     require Brocken::Compiler::Lowering;
     require Brocken::Compiler::Optimizer;
     my $source = 'my Int $i = 0; while ($i < 10) { my Any $a = [1]; $i = $i + 1; } say "Done"; exit 0;';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast    = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok scalar(@$ast) > 0, 'pipeline: AST produced';
     my $ds       = Brocken::Compiler::DataSegment->new();
-    my $driver   = Brocken::Compiler->new();
+    my $driver   = Brocken::Compiler::Pipeline->new();
     my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
     $lowering->lower_program($ast);
     ok scalar( $lowering->builder->instructions ) > 0, 'pipeline: instructions produced';
@@ -97,3 +97,5 @@ subtest 'Lex-parse-lower pipeline: while loop with typed vars' => sub {
     ok scalar( $lowering->builder->instructions ) > 0, 'pipeline: instructions after optimize';
 };
 done_testing;
+
+

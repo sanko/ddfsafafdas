@@ -12,7 +12,7 @@ sub compile_and_capture_coverage {
     my $source = $args{source};
     my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $fh;
-    my $compiler = Brocken::Compiler->new( coverage => 1 );
+    my $compiler = Brocken::Compiler::Pipeline->new( coverage => 1 );
     eval { $compiler->compile_source( $source, $exe, 'test.brk' ); };
     if ( my $err = $@ ) {
         return ( undef, undef, undef, $err );
@@ -119,7 +119,7 @@ sub coverage_to_lcov {
 {
     my ( $fh, $exe ) = tempfile( UNLINK => 1, SUFFIX => '.exe' );
     close $fh;
-    my $compiler = Brocken::Compiler->new();
+    my $compiler = Brocken::Compiler::Pipeline->new();
     $compiler->compile_source( 'say 42', $exe, 'test.brk' );
     my $stdout = `"$exe" 2>nul`;
     ok !defined $compiler->coverage_table_offset, 'No coverage table without flag';
@@ -164,3 +164,4 @@ sub coverage_to_lcov {
     cmp_ok $da_map{2}, '>', 0, 'Line 2 hit count > 0';
 }
 done_testing;
+

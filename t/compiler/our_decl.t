@@ -90,3 +90,4 @@ BROCKEN
     is $out, '6', 'multiple our vars sum = 6';
 }
 done_testing;
+

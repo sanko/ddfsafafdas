@@ -4,7 +4,7 @@ use v5.40;
 use lib 'lib';
 use Test::More;
 use Brocken;
-use Brocken::Compiler;
+use Brocken::Compiler::Pipeline;
 use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
@@ -12,8 +12,8 @@ use Brocken::Codegen;
 use Affix;
 subtest 'Pointer type parsing' => sub {
     my $source = 'sub test_ptr(Pointer $p) { return $p; }';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast    = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok( $ast, 'Pointer type parses correctly' );
 };
 subtest 'Pointer pass-through in DLL' => sub {
@@ -26,12 +26,12 @@ sub get_null() {
     return 0;
 }
 BROCKEN
-    my $tokens    = Brocken::Lexer->new( source => $source )->lex();
-    my $ast       = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens    = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast       = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
     my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
     my $out_name  = "test_pointer${out_ext}";
-    my $driver    = Brocken::Compiler->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
+    my $driver    = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
     my $ds        = Brocken::Compiler::DataSegment->new();
     my $lowering  = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
@@ -46,7 +46,7 @@ BROCKEN
     $codegen->compile( \@insts, $driver );
     my $as = $driver->as;
     $as->resolve( $driver->text_rva, $driver->data_rva );
-    my %all_labels = $as->labels;
+    my %all_labels = %{ $as->labels };
     $format->set_labels( \%all_labels );
     my @exports = sort(qw(pass_ptr get_null));
     $format->set_exported_funcs( \@exports );
@@ -57,3 +57,5 @@ BROCKEN
     unlink $out_name if -f $out_name;
 };
 done_testing();
+
+

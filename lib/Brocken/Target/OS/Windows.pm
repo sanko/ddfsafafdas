@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Platform::Windows : isa(Brocken::Platform) {
+class Brocken::Target::OS::Windows : isa(Brocken::Platform) {
     method format_name()  {'PE'}
     method shadow_space() {32}
 
@@ -391,11 +391,11 @@ __END__
 
 =head1 NAME
 
-Brocken::Platform::Windows - Windows platform support
+Brocken::Target::OS::Windows - Windows platform support
 
 =head1 SYNOPSIS
 
-    my $platform = Brocken::Platform::Windows->new( os => 'win64' );
+    my $platform = Brocken::Target::OS::Windows->new( os => 'win64' );
     my $name = $platform->format_name; # 'PE'
     my $ss = $platform->shadow_space;  # 32
 

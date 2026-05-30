@@ -1,10 +1,10 @@
-package Brocken::Format::JIT {
+package Brocken::Target::Format::JIT {
     use v5.40;
     use feature 'class';
     no warnings 'experimental::class';
     use Brocken::Format;
 
-    class Brocken::Format::JIT : isa(Brocken::Format) {
+    class Brocken::Target::Format::JIT : isa(Brocken::Format) {
         our %IMPORTS = (
             ExitProcess                 => 0,
             GetStdHandle                => 8,

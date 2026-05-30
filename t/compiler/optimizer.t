@@ -5,11 +5,11 @@ no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
 use Brocken::Compiler::Optimizer;
-use Brocken::IR;
+use Brocken::Core::IR::Builder;
 use Brocken::AST;
 
 sub build_ir {
-    my $b = Brocken::IR::Builder->new;
+    my $b = Brocken::Core::IR::Builder->new;
     $b->emit( 'enter_func', 'void', [] );
     return $b;
 }
@@ -68,7 +68,7 @@ subtest 'Non-leaf function has enter_func' => sub {
     ok $ef, 'enter_func preserved for non-leaf function';
 };
 subtest 'Dead instruction elimination' => sub {
-    my $b  = Brocken::IR::Builder->new;
+    my $b  = Brocken::Core::IR::Builder->new;
     my $v1 = $b->emit( 'constant', 'Int', [10] );
     $b->emit( 'constant',   'Int',  [20] );
     $b->emit( 'leave_func', 'void', [$v1] );
@@ -81,7 +81,7 @@ subtest 'Dead instruction elimination' => sub {
     is scalar(@unused), 1, 'only one constant left (unused eliminated)';
 };
 subtest 'Map fusion' => sub {
-    my $b  = Brocken::IR::Builder->new;
+    my $b  = Brocken::Core::IR::Builder->new;
     my $v1 = $b->new_reg;
     $b->emit_label('L_entry');
     $b->push_instruction(
@@ -129,3 +129,5 @@ subtest 'AST substitution' => sub {
     is $result->right->value, 1,  'right unchanged';
 };
 done_testing;
+
+

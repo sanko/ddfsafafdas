@@ -3,7 +3,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-require Brocken::Format::DWARF;
+require Brocken::Target::Format::DWARF;
 use Brocken::TestHelpers qw(make_fake_funcs make_source_locs);
 my $TEXT_BASE = 0x401000;
 my $EH_BASE   = 0x405000;
@@ -11,7 +11,7 @@ my $CTX_WIN64 = 64;
 my $CTX_LINUX = 48;
 subtest 'build_debug_line' => sub {
     my $sls  = make_source_locs;
-    my $dw   = Brocken::Format::DWARF->new( source_locs => $sls, text_base => $TEXT_BASE );
+    my $dw   = Brocken::Target::Format::DWARF->new( source_locs => $sls, text_base => $TEXT_BASE );
     my $data = $dw->build_debug_line;
     ok length($data) > 20, 'debug_line has content';
     my ($unit_len) = unpack( 'L<', $data );
@@ -20,7 +20,7 @@ subtest 'build_debug_line' => sub {
     is $version, 2, 'DWARF version 2';
 };
 subtest 'build_debug_abbrev' => sub {
-    my $dw   = Brocken::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE );
+    my $dw   = Brocken::Target::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE );
     my $data = $dw->build_debug_abbrev;
     ok length($data) > 10,                     'abbrev table has content';
     ok $data =~ m{\x00},                       'ends with null terminator';
@@ -28,7 +28,7 @@ subtest 'build_debug_abbrev' => sub {
 };
 subtest 'build_debug_info' => sub {
     my $funcs = make_fake_funcs;
-    my $dw    = Brocken::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs, context_size => $CTX_WIN64 );
+    my $dw    = Brocken::Target::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs, context_size => $CTX_WIN64 );
     my $data  = $dw->build_debug_info;
     ok length($data) > 30, 'debug_info has content';
     my ($cu_len) = unpack( 'L<', $data );
@@ -38,7 +38,7 @@ subtest 'build_debug_info' => sub {
 };
 subtest 'build_debug_frame' => sub {
     my $funcs = make_fake_funcs;
-    my $dw    = Brocken::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs, context_size => $CTX_WIN64 );
+    my $dw    = Brocken::Target::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs, context_size => $CTX_WIN64 );
     my $data  = $dw->build_debug_frame;
     ok length($data) > 40, 'debug_frame has content';
     my ($cie_len) = unpack( 'L<',    $data );
@@ -58,7 +58,7 @@ subtest 'build_debug_frame' => sub {
 };
 subtest 'build_eh_frame' => sub {
     my $funcs = make_fake_funcs;
-    my $dw    = Brocken::Format::DWARF->new(
+    my $dw    = Brocken::Target::Format::DWARF->new(
         source_locs    => [],
         text_base      => $TEXT_BASE,
         func_ranges    => $funcs,
@@ -92,7 +92,7 @@ subtest 'build_eh_frame' => sub {
 };
 subtest 'build_debug_aranges' => sub {
     my $funcs = make_fake_funcs;
-    my $dw    = Brocken::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs );
+    my $dw    = Brocken::Target::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE, func_ranges => $funcs );
     my $data  = $dw->build_debug_aranges;
     ok length($data) > 20, 'aranges has content';
     my ($unit_len) = unpack( 'L<', $data );
@@ -101,7 +101,7 @@ subtest 'build_debug_aranges' => sub {
 subtest 'build_all' => sub {
     my $funcs = make_fake_funcs;
     my $sls   = make_source_locs;
-    my $dw    = Brocken::Format::DWARF->new(
+    my $dw    = Brocken::Target::Format::DWARF->new(
         source_locs   => $sls,
         text_base     => $TEXT_BASE,
         func_ranges   => $funcs,
@@ -122,7 +122,7 @@ subtest 'build_all' => sub {
     }
 };
 subtest 'LEB128 encoding' => sub {
-    my $dw = Brocken::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE );
+    my $dw = Brocken::Target::Format::DWARF->new( source_locs => [], text_base => $TEXT_BASE );
     is unpack( 'H*', $dw->_uleb(0) ),   '00',   'ULEB(0)';
     is unpack( 'H*', $dw->_uleb(1) ),   '01',   'ULEB(1)';
     is unpack( 'H*', $dw->_uleb(127) ), '7f',   'ULEB(127)';
@@ -132,3 +132,4 @@ subtest 'LEB128 encoding' => sub {
     is unpack( 'H*', $dw->_sleb(-8) ),  '78',   'SLEB(-8)';
 };
 done_testing;
+

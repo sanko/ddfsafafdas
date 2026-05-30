@@ -4,13 +4,13 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-use Brocken::Lexer;
-use Brocken::Parser;
+use Brocken::Core::Lexer;
+use Brocken::Core::Parser;
 
 sub parse {
     my ($source) = @_;
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    return Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    return Brocken::Core::Parser->new( tokens => $tokens )->parse();
 }
 subtest 'Arithmetic Precedence' => sub {
     my $ast = parse('1 + 2 * 3;');
@@ -81,3 +81,4 @@ subtest 'Method Call' => sub {
     is( scalar @{ $node->args }, 2,      '2 args' );
 };
 done_testing;
+

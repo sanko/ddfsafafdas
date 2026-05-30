@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Format::ELF : isa(Brocken::Format) {
+class Brocken::Target::Format::ELF : isa(Brocken::Format) {
 
     method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 ) {
         $l->add_section( '.text', $t, 5 );    # RX

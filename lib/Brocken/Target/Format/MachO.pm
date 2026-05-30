@@ -2,7 +2,8 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Format::MachO : isa(Brocken::Format) {
+class Brocken::Target::Format::MachO : isa(Brocken::Format) {
+    no warnings 'portable';
 
     method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 ) {
         $l->add_section( '.text', $t,  5 );
@@ -27,7 +28,7 @@ class Brocken::Format::MachO : isa(Brocken::Format) {
     }
     method image_base () { return 0x100000000; }
 
-    method write_bin( $f, $text, $data, $arch, $os ) {
+    method write_bin( $f, $text, $data, $arch, $os, $type ) {
         my $l              = $self->layout;
         my $base           = $self->image_base;
         my $page_size      = 0x4000;

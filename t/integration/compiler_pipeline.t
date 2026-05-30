@@ -7,20 +7,20 @@ use lib 'lib';
 use Brocken::TestHelpers qw(test_brocken);
 use File::Temp           qw(tempfile);
 subtest 'Full pipeline: lex -> parse -> lower -> optimize -> codegen -> format' => sub {
-    require Brocken::Lexer;
-    require Brocken::Parser;
-    require Brocken::Compiler;
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
+    require Brocken::Compiler::Pipeline;
     require Brocken::Compiler::Lowering;
     require Brocken::Compiler::DataSegment;
     require Brocken::Compiler::Optimizer;
     require Brocken::Codegen;
     my $source = 'my Int $x = 42; say $x;';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
     ok scalar(@$tokens) > 0, 'lexer produces tokens';
-    my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $ast = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok scalar(@$ast) > 0, 'parser produces AST nodes';
     my $ds       = Brocken::Compiler::DataSegment->new;
-    my $driver   = Brocken::Compiler->new;
+    my $driver   = Brocken::Compiler::Pipeline->new;
     my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
     $lowering->lower_program($ast);
     my @before = $lowering->builder->instructions;
@@ -42,9 +42,9 @@ subtest 'Compile and run with debug=0' => sub {
     is $out, 'hello', 'debug=0 program outputs hello';
 };
 subtest 'Shared library compilation' => sub {
-    require Brocken::Compiler;
+    require Brocken::Compiler::Pipeline;
     my $source = 'sub add(Int $a, Int $b) { return $a + $b; }';
-    my $p      = Brocken::Compiler->new( type => 'shared' );
+    my $p      = Brocken::Compiler::Pipeline->new( type => 'shared' );
     my ( $fh, $dll ) = tempfile( UNLINK => 1, SUFFIX => '.dll' );
     close $fh;
     eval { $p->compile_source( $source, $dll ); };
@@ -54,8 +54,8 @@ subtest 'Shared library compilation' => sub {
     ok -e $dll, 'shared library exists';
 };
 subtest 'IR opcodes enumeration' => sub {
-    require Brocken::IR;
-    my $b   = Brocken::IR::Builder->new;
+    require Brocken::Core::IR::Builder;
+    my $b   = Brocken::Core::IR::Builder->new;
     my @ops = qw(
         constant load_data_addr load_func_addr
         load_mem_disp store_mem_disp load_mem_byte store_mem_byte
@@ -82,3 +82,5 @@ subtest 'IR opcodes enumeration' => sub {
     is $insts->[0]{op}, 'constant',   'first op is constant';
 };
 done_testing;
+
+

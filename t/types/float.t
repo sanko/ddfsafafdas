@@ -5,15 +5,15 @@ use lib 'lib';
 use Test::More;
 use Affix;
 use Brocken;
-use Brocken::Compiler;
+use Brocken::Compiler::Pipeline;
 use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
 use Brocken::Codegen;
 subtest 'Float type parsing' => sub {
     my $source = 'sub test_float(Float $x) { return $x; }';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast    = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok( $ast, 'Float type parses correctly' );
 };
 subtest 'Float DLL generation with XMM ABI' => sub {
@@ -28,9 +28,9 @@ BROCKEN
     my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
     my $out_name  = "test_float${out_ext}";
     my $out_file  = ( $^O eq 'MSWin32' ? '' : './' ) . $out_name;
-    my $tokens    = Brocken::Lexer->new( source => $source )->lex();
-    my $ast       = Brocken::Parser->new( tokens => $tokens )->parse();
-    my $driver    = Brocken::Compiler->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
+    my $tokens    = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast       = Brocken::Core::Parser->new( tokens => $tokens )->parse();
+    my $driver    = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
     my $ds        = Brocken::Compiler::DataSegment->new();
     my $lowering  = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
@@ -61,3 +61,5 @@ BROCKEN
     unlink $out_name if -f $out_name;
 };
 done_testing();
+
+

@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Platform::Linux : isa(Brocken::Platform) {
+class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
     method format_name() {'ELF'}
 
     method emit_intrinsic( $target, $as, $inst, $reg_map, $driver ) {
@@ -23,7 +23,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64
                 $as->mov_imm( 'x8', 222 );      # mmap
                 $as->mov_imm( 'x0', 0 );        # addr
@@ -35,6 +35,19 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'x5', 0 );        # off
                 $as->syscall();
                 $as->mov_reg( $d, 'x0' );
+            }
+            else {
+                # RISC-V
+                $as->mov_imm( 'a7', 222 );      # mmap
+                $as->mov_imm( 'a0', 0 );        # addr
+                if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'a1', $reg_map->{ $inst->{args}[0] } ); }
+                else                            { $as->mov_imm( 'a1', $v->( $inst->{args}[0] ) ); }
+                $as->mov_imm( 'a2', 3 );        # prot
+                $as->mov_imm( 'a3', 0x22 );     # flags
+                $as->mov_imm( 'a4', -1 );       # fd
+                $as->mov_imm( 'a5', 0 );        # off
+                $as->syscall();
+                $as->mov_reg( $d, 'a0' );
             }
         }
         elsif ( $op eq 'intrinsic_align_entry_stack' ) {
@@ -49,13 +62,21 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
                 $as->mov_reg( $d, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->add_imm( 'x0', 16 );       # Skip 16-byte Brocken String Header
                 $as->mov_imm( 'x1', 2 );        # RTLD_NOW = 2
                 $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
                 $as->mov_reg( $d, 'x0' );
+            }
+            else {
+                # RISC-V
+                $as->mov_reg( 'a0', $reg_map->{ $inst->{args}[0] } );
+                $as->add_imm( 'a0', 16 );       # Skip 16-byte Brocken String Header
+                $as->mov_imm( 'a1', 2 );        # RTLD_NOW = 2
+                $as->call_rva( $driver->import_rva('dlopen'), $driver->text_rva );
+                $as->mov_reg( $d, 'a0' );
             }
         }
         elsif ( $op eq 'intrinsic_get_proc_address' ) {
@@ -67,13 +88,21 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
                 $as->mov_reg( $d, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
                 $as->add_imm( 'x1', 16 );                                 # Skip 16-byte Brocken String Header
                 $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
                 $as->mov_reg( $d, 'x0' );
+            }
+            else {
+                # RISC-V
+                $as->mov_reg( 'a0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'a1', $reg_map->{ $inst->{args}[1] } );
+                $as->add_imm( 'a1', 16 );                                 # Skip 16-byte Brocken String Header
+                $as->call_rva( $driver->import_rva('dlsym'), $driver->text_rva );
+                $as->mov_reg( $d, 'a0' );
             }
         }
         elsif ( $op eq 'intrinsic_get_pid' ) {
@@ -83,11 +112,17 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64: sys_getpid is 172
                 $as->mov_imm( 'x8', 172 );
                 $as->syscall(1);
                 $as->mov_reg( $d, 'x0' );
+            }
+            else {
+                # RISC-V: sys_getpid is 172
+                $as->mov_imm( 'a7', 172 );
+                $as->syscall();
+                $as->mov_reg( $d, 'a0' );
             }
         }
         elsif ( $op eq 'intrinsic_get_system_filetime' ) {
@@ -108,7 +143,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->add_reg( 'rax', 'r11' );
                 $as->mov_reg( $d, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64: sys_clock_gettime is 113
                 $as->sub_imm( 'sp', 16 );
                 $as->mov_imm( 'x8', 113 );
@@ -122,6 +157,21 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'x17', 116444736000000000 );
                 $as->add_reg( 'x0', 'x0', 'x17' );
                 $as->mov_reg( $d, 'x0' );
+            }
+            else {
+                # RISC-V: sys_clock_gettime is 113
+                $as->sub_imm( 'sp', 16 );
+                $as->mov_imm( 'a7', 113 );
+                $as->mov_imm( 'a0', 0 );     # CLOCK_REALTIME
+                $as->mov_reg( 'a1', 'sp' );
+                $as->syscall();
+                $as->load_reg_mem( 'a0', 'sp', 0 );    # a0 = tv_sec
+                $as->add_imm( 'sp', 16 );
+                $as->mov_imm( 't0', 10000000 );
+                $as->mul_reg( 'a0', 'a0', 't0' );
+                $as->mov_imm( 't1', 116444736000000000 );
+                $as->add_reg( 'a0', 'a0', 't1' );
+                $as->mov_reg( $d, 'a0' );
             }
         }
         elsif ( $op eq 'intrinsic_get_module_filename' ) {
@@ -143,7 +193,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->add_imm( 'rsp', 16 );
                 $as->mov_reg( $d, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64: readlinkat is 78
                 # readlinkat(AT_FDCWD, pathname, buf, bufsiz)
                 $as->sub_imm( 'sp', 16 );
@@ -159,6 +209,22 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall(1);
                 $as->add_imm( 'sp', 16 );
                 $as->mov_reg( $d, 'x0' );
+            }
+            else {
+                # RISC-V: readlinkat is 78
+                $as->sub_imm( 'sp', 16 );
+                $as->mov_imm( 't0', $val2 );
+                $as->store_mem_disp_reg( 'sp', 8, 't0' );
+                $as->mov_imm( 't0', $val1 );
+                $as->store_mem_disp_reg( 'sp', 0, 't0' );
+                $as->mov_imm( 'a7',  78 );     # sys_readlinkat
+                $as->mov_imm( 'a0', -100 );    # AT_FDCWD
+                $as->mov_reg( 'a1', 'sp' );    # pathname
+                $as->mov_reg( 'a2', $buf );    # buf
+                $as->mov_imm( 'a3', 512 );     # bufsiz
+                $as->syscall();
+                $as->add_imm( 'sp', 16 );
+                $as->mov_reg( $d, 'a0' );
             }
         }
         elsif ( $op eq 'intrinsic_get_cmd_line' ) {
@@ -207,12 +273,20 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rax', 1 );
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 1 );
                 $as->mov_imm( 'x8', 64 );    # write
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'a1', $p );
+                $as->load_reg_mem( 'a2', 'a1', 0 );
+                $as->add_imm( 'a1', 16 );
+                $as->mov_imm( 'a0', 1 );
+                $as->mov_imm( 'a7', 64 );    # write
                 $as->syscall();
             }
         }
@@ -226,12 +300,20 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rax', 1 );
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 2 );
                 $as->mov_imm( 'x8', 64 );
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'a1', $p );
+                $as->load_reg_mem( 'a2', 'a1', 0 );
+                $as->add_imm( 'a1', 16 );
+                $as->mov_imm( 'a0', 2 );
+                $as->mov_imm( 'a7', 64 );
                 $as->syscall();
             }
         }
@@ -247,7 +329,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rdx', 1 );
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x16';
                 $as->mov_imm( 'x16', $char ) if $inst->{args}[0] !~ /^%/;
                 $as->sturb_mem_disp_reg( 'sp', 48, $src );
@@ -257,6 +339,17 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( 'x1', 'sp' );
                 $as->add_imm( 'x1', 48 );
                 $as->mov_imm( 'x2', 1 );
+                $as->syscall();
+            }
+            else {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 't0';
+                $as->mov_imm( 't0', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->store_mem_disp_byte( 'sp', 48, $src );
+                $as->mov_imm( 'a7', 64 );
+                $as->mov_imm( 'a0', 2 );
+                $as->mov_reg( 'a1', 'sp' );
+                $as->add_imm( 'a1', 48 );
+                $as->mov_imm( 'a2', 1 );
                 $as->syscall();
             }
         }
@@ -272,7 +365,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rdx', 1 );
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x16';
                 $as->mov_imm( 'x16', $char ) if $inst->{args}[0] !~ /^%/;
                 $as->sturb_mem_disp_reg( 'sp', 48, $src );
@@ -282,6 +375,17 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( 'x1', 'sp' );
                 $as->add_imm( 'x1', 48 );
                 $as->mov_imm( 'x2', 1 );
+                $as->syscall();
+            }
+            else {
+                my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 't0';
+                $as->mov_imm( 't0', $char ) if $inst->{args}[0] !~ /^%/;
+                $as->store_mem_disp_byte( 'sp', 48, $src );
+                $as->mov_imm( 'a7', 64 );
+                $as->mov_imm( 'a0', 1 );
+                $as->mov_reg( 'a1', 'sp' );
+                $as->add_imm( 'a1', 48 );
+                $as->mov_imm( 'a2', 1 );
                 $as->syscall();
             }
         }
@@ -309,7 +413,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
                 $as->mov_reg( $reg_map->{ $inst->{dest} }, 'rax' );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64 sys_openat
                 $as->mov_reg( 'x1', $path );
                 $as->add_imm( 'x1', 16 );
@@ -329,6 +433,26 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->syscall();
                 $as->mov_reg( $reg_map->{ $inst->{dest} }, 'x0' );
             }
+            else {
+                # RISC-V sys_openat
+                $as->mov_reg( 'a1', $path );
+                $as->add_imm( 'a1', 16 );
+                $as->load_reg_mem_byte( 'a0', $mode, 16 );
+                $as->cmp_reg_imm( 'a0', ord('r') );
+                $as->jcc( $driver->cc('ne'), $l_write );
+                $as->mov_imm( 'a0', -100 );    # AT_FDCWD
+                $as->mov_imm( 'a2',  0 );      # O_RDONLY
+                $as->mov_imm( 'a3',  0 );
+                $as->jmp($l_call);
+                $as->mark_label($l_write);
+                $as->mov_imm( 'a0', -100 );     # AT_FDCWD
+                $as->mov_imm( 'a2', 0x241 );    # O_WRONLY | O_CREAT | O_TRUNC
+                $as->mov_imm( 'a3', 0644 );
+                $as->mark_label($l_call);
+                $as->mov_imm( 'a7', 56 );       # sys_openat
+                $as->syscall();
+                $as->mov_reg( $reg_map->{ $inst->{dest} }, 'a0' );
+            }
         }
         elsif ( $op eq 'intrinsic_get_size' ) {
             if ( $arch eq 'x64' ) {
@@ -340,11 +464,20 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 48 );    # st_size is at offset 48
                 $as->add_imm( 'rsp', 144 );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->sub_imm( 'sp', 144 );
                 $as->mov_reg( 'x1', 'sp' );
                 $as->mov_imm( 'x8', 80 );                                       # sys_fstat
+                $as->syscall();
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'sp', 48 );
+                $as->add_imm( 'sp', 144 );
+            }
+            else {
+                $as->mov_reg( 'a0', $reg_map->{ $inst->{args}[0] } );
+                $as->sub_imm( 'sp', 144 );
+                $as->mov_reg( 'a1', 'sp' );
+                $as->mov_imm( 'a7', 80 );                                       # sys_fstat
                 $as->syscall();
                 $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'sp', 48 );
                 $as->add_imm( 'sp', 144 );
@@ -358,11 +491,18 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rax', 0 );                                       # sys_read
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
                 $as->mov_reg( 'x2', $reg_map->{ $inst->{args}[2] } );
                 $as->mov_imm( 'x8', 63 );                                       # sys_read
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'a0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'a1', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'a2', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'a7', 63 );                                       # sys_read
                 $as->syscall();
             }
         }
@@ -374,11 +514,18 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rax', 1 );                                       # sys_write
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
                 $as->mov_reg( 'x2', $reg_map->{ $inst->{args}[2] } );
                 $as->mov_imm( 'x8', 64 );                                       # sys_write
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'a0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_reg( 'a1', $reg_map->{ $inst->{args}[1] } );
+                $as->mov_reg( 'a2', $reg_map->{ $inst->{args}[2] } );
+                $as->mov_imm( 'a7', 64 );                                       # sys_write
                 $as->syscall();
             }
         }
@@ -388,32 +535,64 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_imm( 'rax', 3 );                                       # sys_close
                 $as->syscall();
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->mov_imm( 'x8', 57 );                                       # sys_close
+                $as->syscall();
+            }
+            else {
+                $as->mov_reg( 'a0', $reg_map->{ $inst->{args}[0] } );
+                $as->mov_imm( 'a7', 57 );                                       # sys_close
                 $as->syscall();
             }
         }
         elsif ( $op eq 'intrinsic_sleep' ) {
             my $val = $v->( $inst->{args}[0] );
 
-            # 1. Untag value into RAX
-            $as->mov_reg( 'rax', $val );
-            $as->shr_imm( 'rax', 1 );
+            if ( $arch eq 'x64' ) {
+                # 1. Untag value into RAX
+                $as->mov_reg( 'rax', $val );
+                $as->shr_imm( 'rax', 1 );
 
-            # 2. Build struct timespec { long tv_sec, long tv_nsec } on stack
-            $as->mov_imm( 'r11', 0 );    # 0 nanoseconds
-            $as->push_reg('r11');        # tv_nsec
-            $as->push_reg('rax');        # tv_sec
+                # 2. Build struct timespec { long tv_sec, long tv_nsec } on stack
+                $as->mov_imm( 'r11', 0 );    # 0 nanoseconds
+                $as->push_reg('r11');        # tv_nsec
+                $as->push_reg('rax');        # tv_sec
 
-            # 3. nanosleep(struct timespec *req, struct timespec *rem)
-            $as->mov_reg( 'rdi', 'rsp' );    # Pointer to our struct
-            $as->mov_imm( 'rsi', 0 );        # rem = NULL
-            $as->mov_imm( 'rax', 35 );       # sys_nanosleep
-            $as->syscall();
+                # 3. nanosleep(struct timespec *req, struct timespec *rem)
+                $as->mov_reg( 'rdi', 'rsp' );    # Pointer to our struct
+                $as->mov_imm( 'rsi', 0 );        # rem = NULL
+                $as->mov_imm( 'rax', 35 );       # sys_nanosleep
+                $as->syscall();
 
-            # 4. Clean up stack
-            $as->add_imm( 'rsp', 16 );
+                # 4. Clean up stack
+                $as->add_imm( 'rsp', 16 );
+            }
+            elsif ( $arch eq 'arm64' ) {
+                $as->mov_reg( 'x0', $val );
+                $as->lsr_reg_imm( 'x0', 'x0', 1 );
+                $as->mov_imm( 'x1', 0 );
+                $as->push_reg('x1');
+                $as->push_reg('x0');
+                $as->mov_reg( 'x0', 'sp' );
+                $as->mov_imm( 'x1', 0 );
+                $as->mov_imm( 'x8', 101 );    # sys_nanosleep
+                $as->syscall();
+                $as->add_imm( 'sp', 16 );
+            }
+            else {
+                # RISC-V
+                $as->mov_reg( 'a0', $val );
+                $as->lsr_reg_imm( 'a0', 'a0', 1 );
+                $as->mov_imm( 'a1', 0 );
+                $as->push_reg('a1');
+                $as->push_reg('a0');
+                $as->mov_reg( 'a0', 'sp' );
+                $as->mov_imm( 'a1', 0 );
+                $as->mov_imm( 'a7', 101 );    # sys_nanosleep
+                $as->syscall();
+                $as->add_imm( 'sp', 16 );
+            }
         }
         elsif ( $op eq 'intrinsic_exit' ) {
             if ( $driver->coverage && $driver->coverage_table_size > 0 ) {
@@ -470,7 +649,7 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->store_mem_disp_reg( 'r14', $driver->iso_offset('current_fcb'), 'r10' );
                 $as->load_reg_mem( 'rsp', 'r10', $driver->fcb_offset('sp') );
             }
-            else {
+            elsif ( $arch eq 'arm64' ) {
                 # ARM64: x0=dest_fcb, x1=value
                 $as->mov_reg( 'x16', 'x0' );                                              # x16 = dest_fcb
                 $as->ldur_reg_mem( 'x17', 'x28', $driver->iso_offset('current_fcb') );    # x17 = current_fcb
@@ -482,9 +661,23 @@ class Brocken::Platform::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( 'sp', 'x15' );
                 $as->mov_reg( 'x0', 'x1' );                                               # value to return
             }
+            else {
+                # RISC-V: a0=dest_fcb, a1=value
+                # s11 (x27) is Isolate
+                $as->mov_reg( 't0', 'a0' );                                               # t0 = dest_fcb
+                $as->load_reg_mem( 't1', 's11', $driver->iso_offset('current_fcb') );     # t1 = current_fcb
+                $as->mov_reg( 't2', 'sp' );
+                $as->store_mem_disp_reg( 't1', $driver->fcb_offset('sp'),          't2' );
+                $as->store_mem_disp_reg( 't0', $driver->fcb_offset('caller'),      't1' );
+                $as->store_mem_disp_reg( 's11', $driver->iso_offset('current_fcb'), 't0' );
+                $as->load_reg_mem( 't2', 't0', $driver->fcb_offset('sp') );
+                $as->mov_reg( 'sp', 't2' );
+                $as->mov_reg( 'a0', 'a1' );                                               # value to return
+            }
             for my $r ( reverse @$regs ) { $as->pop_reg($r); }
-            if   ( $arch eq 'x64' ) { $as->append_code( pack( 'C',  0xC3 ) ); }
-            else                    { $as->append_code( pack( 'L<', 0xD65F03C0 ) ); }     # ret
+            if   ( $arch eq 'x64' )     { $as->append_code( pack( 'C',  0xC3 ) ); }
+            elsif ( $arch eq 'arm64' )   { $as->append_code( pack( 'L<', 0xD65F03C0 ) ); }     # ret
+            else                         { $as->append_code( pack( 'L<', 0x00008067 ) ); }     # ret
         }
     }
 }
@@ -495,11 +688,11 @@ __END__
 
 =head1 NAME
 
-Brocken::Platform::Linux - Linux platform support
+Brocken::Target::OS::Linux - Linux platform support
 
 =head1 SYNOPSIS
 
-    my $platform = Brocken::Platform::Linux->new( os => 'linux' );
+    my $platform = Brocken::Target::OS::Linux->new( os => 'linux' );
     my $name = $platform->format_name; # 'ELF'
 
 =head1 DESCRIPTION

@@ -1,9 +1,11 @@
+package Brocken::Core::IR::Builder;
+
 use v5.40;
 use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 
-class Brocken::IR::Builder {
+class Brocken::Core::IR::Builder {
     field $_instructions : reader = [];
     field $reg_count              = 0;
     field $label_count            = 0;
@@ -47,11 +49,11 @@ __END__
 
 =head1 NAME
 
-Brocken::IR::Builder - Linear intermediate representation builder
+Brocken::Core::IR::Builder - Linear intermediate representation builder
 
 =head1 SYNOPSIS
 
-    my $builder = Brocken::IR::Builder->new();
+    my $builder = Brocken::Core::IR::Builder->new();
     my $v1 = $builder->emit('constant', 'i64', [10]);
     my $v2 = $builder->emit('constant', 'i64', [20]);
     my $res = $builder->emit('add', 'i64', [$v1, $v2]);

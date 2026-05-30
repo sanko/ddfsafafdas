@@ -3,9 +3,9 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-require Brocken::Compiler;
+require Brocken::Compiler::Pipeline;
 subtest 'source location tracking' => sub {
-    my $p = Brocken::Compiler->new( debug => 1 );
+    my $p = Brocken::Compiler::Pipeline->new( debug => 1 );
     is scalar( $p->source_locs ), 0, 'no source locations initially';
     $p->push_source_loc( 0x100, 5,  1 );
     $p->push_source_loc( 0x200, 10, 4 );
@@ -19,7 +19,7 @@ subtest 'source location tracking' => sub {
     is $sls[2]{offset}, 0x300, 'third offset';
 };
 subtest 'function range tracking' => sub {
-    my $p = Brocken::Compiler->new( debug => 1 );
+    my $p = Brocken::Compiler::Pipeline->new( debug => 1 );
     is scalar( $p->func_ranges ), 0, 'no func ranges initially';
     $p->push_func_range( { name => 'main',   start => 0 } );
     $p->push_func_range( { name => 'helper', start => 256 } );
@@ -36,14 +36,14 @@ subtest 'function range tracking' => sub {
     is $ranges[2]{end},  640,      'other end set';
 };
 subtest 'clear func ranges' => sub {
-    my $p = Brocken::Compiler->new( debug => 1 );
+    my $p = Brocken::Compiler::Pipeline->new( debug => 1 );
     $p->push_func_range( { name => 'a', start => 0 } );
     is scalar( $p->func_ranges ), 1, 'one range before clear';
     $p->clear_func_ranges;
     is scalar( $p->func_ranges ), 0, 'zero ranges after clear';
 };
 subtest 'debug func params and locals' => sub {
-    my $p = Brocken::Compiler->new( debug => 1 );
+    my $p = Brocken::Compiler::Pipeline->new( debug => 1 );
     $p->set_debug_func_params( 'test', [ { name => '$x', type => 'Int', slot => 16 } ] );
     $p->set_debug_func_locals( 'test', [ { name => '$y', type => 'Int', slot => 24 } ] );
     my $params = $p->get_debug_func_params('test');
@@ -56,3 +56,4 @@ subtest 'debug func params and locals' => sub {
     is scalar(@$empty_params), 0, 'unknown func returns empty params';
 };
 done_testing;
+

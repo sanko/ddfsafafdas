@@ -1,9 +1,9 @@
-package Brocken::Format::Layout {
+package Brocken::Target::Format::Layout {
     use v5.40;
     use feature 'class';
     no warnings 'experimental::class';
 
-    class Brocken::Format::Layout {
+    class Brocken::Target::Format::Layout {
         field $file_align    : param : reader;
         field $section_align : param : reader;
         field @sections;

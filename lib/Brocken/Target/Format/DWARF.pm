@@ -1,10 +1,10 @@
-package Brocken::Format::DWARF {
+package Brocken::Target::Format::DWARF {
     use v5.40;
     use utf8;
     use feature 'class';
     no warnings 'experimental::class';
 
-    class Brocken::Format::DWARF {
+    class Brocken::Target::Format::DWARF {
         field $source_locs    : param : reader;
         field $text_base      : param : reader;
         field $source_file    : param : reader //= 'source.brocken';

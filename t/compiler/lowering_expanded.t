@@ -6,15 +6,15 @@ use Test2::V0;
 use lib 'lib';
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::DataSegment;
-use Brocken::Compiler;
+use Brocken::Compiler::Pipeline;
 my $setup = sub {
     my ($source) = @_;
-    require Brocken::Lexer;
-    require Brocken::Parser;
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+    require Brocken::Core::Lexer;
+    require Brocken::Core::Parser;
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast    = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     my $ds     = Brocken::Compiler::DataSegment->new;
-    my $driver = Brocken::Compiler->new;
+    my $driver = Brocken::Compiler::Pipeline->new;
     my $l      = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
     $l->lower_program($ast);
     return $l;
@@ -144,3 +144,5 @@ subtest 'Binary operators' => sub {
     ok scalar(@add) >= 1, 'produces add instruction';
 };
 done_testing;
+
+

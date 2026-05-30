@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Platform::Darwin : isa(Brocken::Platform) {
+class Brocken::Target::OS::macOS : isa(Brocken::Platform) {
     method format_name() {'MachO'}
 
     method emit_intrinsic( $target, $as, $inst, $reg_map, $driver ) {
@@ -488,11 +488,11 @@ __END__
 
 =head1 NAME
 
-Brocken::Platform::Darwin - macOS (Darwin) platform support
+Brocken::Target::OS::macOS - macOS (Darwin) platform support
 
 =head1 SYNOPSIS
 
-    my $platform = Brocken::Platform::Darwin->new( os => 'macos' );
+    my $platform = Brocken::Target::OS::macOS->new( os => 'macos' );
     my $name = $platform->format_name; # 'MachO'
 
 =head1 DESCRIPTION

@@ -3,15 +3,15 @@ package Brocken::Compiler::Lowering {
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
-    use Brocken::IR;
+    use Brocken::Core::IR::Builder;
     use Brocken::AST;
-    use Brocken::Type;
+    use Brocken::Core::Type;
 
     class Brocken::Compiler::Lowering {
-        field $builder      : reader : param = Brocken::IR::Builder->new();
+        field $builder      : reader : param = Brocken::Core::IR::Builder->new();
         field $driver       : param;
         field $data_segment : param;
-        field $current_scope     = Brocken::Scope->new();
+        field $current_scope     = Brocken::Core::Scope->new();
         field $state_count       = 0;
         field $routine_depth     = 0;
         field $current_func_name = undef;
@@ -269,7 +269,7 @@ package Brocken::Compiler::Lowering {
             my $class_name  = $reg_entry->{class_name};
 
             # 1. Create a nested lexical scope for the inlined execution
-            $current_scope = Brocken::Scope->new( parent => $current_scope );
+            $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
 
             # Protect shadow stack
             my $sp_backup = $builder->emit( 'shadow_get', 'ptr', [] );
@@ -4245,7 +4245,7 @@ package Brocken::Compiler::Lowering {
 
         method lower_Block($node) {
             my $sp = $builder->emit( 'shadow_get', 'ptr', [] );
-            $current_scope = Brocken::Scope->new( parent => $current_scope );
+            $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
             my $eh = scalar @defer_stack;
             my ( $r, $t );
             for my $s ( @{ $node->statements } ) { ( $r, $t ) = $self->lower($s) }
@@ -4290,7 +4290,7 @@ package Brocken::Compiler::Lowering {
         method lower_For($node) {
 
             # Protect loop variables within a dedicated lexical scope
-            $current_scope = Brocken::Scope->new( parent => $current_scope );
+            $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
             my $l_cond = $builder->new_label();
             my $l_next = $builder->new_label();
             my $l_redo = $builder->new_label();
@@ -4760,7 +4760,7 @@ package Brocken::Compiler::Lowering {
             $builder->emit_label($l_catch);
             my $exc = $builder->emit( 'intrinsic_get_exception', 'Any', [] );
             $builder->emit( 'intrinsic_clear_exception', 'void', [] );
-            $current_scope = Brocken::Scope->new( parent => $current_scope );
+            $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
             my $sl = $driver->alloc_local_slot();
             $current_scope->define( $node->catch_var->{value}, 'Any', 0, undef, $sl );
             $builder->emit( 'local_store', 'void', [ $sl, $exc ] );
@@ -4842,7 +4842,7 @@ package Brocken::Compiler::Lowering {
             my @saved_func_locals = @func_locals;
             $builder->emit_label($l1);
             $builder->emit( 'enter_func', 'void', [] );
-            $current_scope = Brocken::Scope->new( parent => $current_scope );
+            $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
             $routine_depth++;
             $current_func_name = $l1;
             @func_locals       = ();
@@ -5037,7 +5037,7 @@ package Brocken::Compiler::Lowering {
                     @defer_stack = ();
                     $builder->emit_label($lb);
                     $builder->emit( 'enter_func', 'void', [] );
-                    $current_scope = Brocken::Scope->new( parent => $current_scope );
+                    $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
                     $routine_depth++;
                     $current_func_name = $lb;
                     @func_locals       = ();
@@ -5106,7 +5106,7 @@ package Brocken::Compiler::Lowering {
             open my $fh, '<', $path or die $!;
             my $source = do { local $/; <$fh> };
             close $fh;
-            my $ast = Brocken::Parser->new( tokens => Brocken::Lexer->new( source => $source )->lex() )->parse();
+            my $ast = Brocken::Core::Parser->new( tokens => Brocken::Core::Lexer->new( source => $source )->lex() )->parse();
 
             # Register dynamic module subroutines as well!
             $self->register_classes($ast);
@@ -5126,7 +5126,7 @@ package Brocken::Compiler::Lowering {
             my $fn = 'M_' . $node->name;
             $builder->emit_label($fn);
             $builder->emit( 'enter_func', 'void', [] );
-            $current_scope = Brocken::Scope->new( parent => $current_scope );
+            $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
             $routine_depth++;
             my $ai = 0;
 
@@ -5207,7 +5207,7 @@ package Brocken::Compiler::Lowering {
                 my $fn_name = "M_" . $node->name . "::" . $m->name;
                 $builder->emit_label($fn_name);
                 $builder->emit( 'enter_func', 'void', [] );
-                $current_scope = Brocken::Scope->new( parent => $current_scope );
+                $current_scope = Brocken::Core::Scope->new( parent => $current_scope );
                 $routine_depth++;
                 my $ss = $driver->alloc_local_slot();
                 $current_scope->define( '$self', 'ptr', 0, undef, $ss );
@@ -5569,3 +5569,4 @@ package Brocken::Compiler::Lowering {
     }
 }
 1;
+

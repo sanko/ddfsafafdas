@@ -1,10 +1,10 @@
-package Brocken::Symbol {
+package Brocken::Core::Symbol {
     use v5.40;
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
 
-    class Brocken::Symbol {
+    class Brocken::Core::Symbol {
         field $name           : param : reader;
         field $type           : param : reader;
         field $is_state       : param : reader = 0;

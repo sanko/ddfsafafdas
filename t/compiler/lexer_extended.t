@@ -4,11 +4,11 @@ use feature 'class';
 use Test2::V0;
 no warnings 'portable', 'experimental::class', 'qw';
 use lib 'lib', '../../lib';
-use Brocken::Lexer;
+use Brocken::Core::Lexer;
 
 sub lex_tokens {
     my ($source) = @_;
-    return Brocken::Lexer->new( source => $source )->lex();
+    return Brocken::Core::Lexer->new( source => $source )->lex();
 }
 subtest 'For loop keywords' => sub {
     my $tokens = lex_tokens('for');
@@ -124,3 +124,4 @@ subtest 'Interpolated string detection' => sub {
     is $tokens->[0]{type}, 'INTERP_STRING', 'interpolated string detected';
 };
 done_testing;
+

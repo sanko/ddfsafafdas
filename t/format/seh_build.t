@@ -3,13 +3,13 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-require Brocken::Format::PE;
-require Brocken::Format::Layout;
+require Brocken::Target::Format::PE;
+require Brocken::Target::Format::Layout;
 use Brocken::TestHelpers qw(make_fake_funcs);
 my $TEXT_RVA  = 0x1000;
 my $XDATA_RVA = 0x5000;
 subtest 'build_xdata' => sub {
-    my $pe = Brocken::Format::PE->new;
+    my $pe = Brocken::Target::Format::PE->new;
     $pe->set_preserved_regs( [qw(rbp rbx rdi rsi r12 r13 r14 r15)] );
     my $xdata = $pe->_build_xdata;
     ok length($xdata) > 0, 'xdata has content';
@@ -48,7 +48,7 @@ subtest 'build_xdata' => sub {
 };
 subtest 'build_pdata' => sub {
     my $funcs = make_fake_funcs;
-    my $pe    = Brocken::Format::PE->new;
+    my $pe    = Brocken::Target::Format::PE->new;
     $pe->set_func_ranges($funcs);
     my $pdata = $pe->_build_pdata( $TEXT_RVA, $XDATA_RVA );
     ok length($pdata) > 0, 'pdata has content';
@@ -63,10 +63,10 @@ subtest 'build_pdata' => sub {
 };
 subtest 'full pipeline with layout' => sub {
     my $funcs = make_fake_funcs;
-    my $pe    = Brocken::Format::PE->new;
+    my $pe    = Brocken::Target::Format::PE->new;
     $pe->set_func_ranges($funcs);
     $pe->set_preserved_regs( [qw(rbp rbx rdi rsi r12 r13 r14 r15)] );
-    my $l = Brocken::Format::Layout->new( file_align => 0x200, section_align => 0x1000 );
+    my $l = Brocken::Target::Format::Layout->new( file_align => 0x200, section_align => 0x1000 );
     $l->add_section( '.text',  4096, 0x60000020 );
     $l->add_section( '.data',  4096, 0xC0000040 );
     $l->add_section( '.pdata', 4096, 0x42000040 );
@@ -81,3 +81,4 @@ subtest 'full pipeline with layout' => sub {
     is $l->get('.pdata')->{size}, scalar(@$funcs) * 12, '.pdata section size = 12 * N';
 };
 done_testing;
+

@@ -4,15 +4,15 @@ use v5.40;
 use lib 'lib';
 use Test::More;
 use Brocken;
-use Brocken::Compiler;
+use Brocken::Compiler::Pipeline;
 use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
 use Brocken::Codegen;
 subtest 'Struct type parsing' => sub {
     my $source = 'sub test_struct(Struct $s) { return $s; }';
-    my $tokens = Brocken::Lexer->new( source => $source )->lex();
-    my $ast    = Brocken::Parser->new( tokens => $tokens )->parse();
+    my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast    = Brocken::Core::Parser->new( tokens => $tokens )->parse();
     ok( $ast, 'Struct type parses correctly' );
 };
 subtest 'Struct pass-through in DLL' => sub {
@@ -28,9 +28,9 @@ sub get_null() {
     return 0;
 }
 BROCKEN
-    my $tokens   = Brocken::Lexer->new( source => $source )->lex();
-    my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
-    my $driver   = Brocken::Compiler->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
+    my $tokens   = Brocken::Core::Lexer->new( source => $source )->lex();
+    my $ast      = Brocken::Core::Parser->new( tokens => $tokens )->parse();
+    my $driver   = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
     my $ds       = Brocken::Compiler::DataSegment->new();
     my $lowering = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
@@ -56,3 +56,5 @@ BROCKEN
     unlink $out_name if -f $out_name;
 };
 done_testing();
+
+

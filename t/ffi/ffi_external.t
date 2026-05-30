@@ -45,3 +45,4 @@ subtest 'Win32::API VirtualAlloc with vec write' => sub {
     pass 'vec write completed';
 };
 done_testing;
+

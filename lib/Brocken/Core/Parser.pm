@@ -3,9 +3,9 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Brocken::AST;
-use Brocken::Type;
+use Brocken::Core::Type;
 
-class Brocken::Parser {
+class Brocken::Core::Parser {
     field $tokens : param;
     field $pos = 0;
 
@@ -1028,11 +1028,11 @@ __END__
 
 =head1 NAME
 
-Brocken::Parser - Pratt parser for Brocken
+Brocken::Core::Parser - Pratt parser for Brocken
 
 =head1 SYNOPSIS
 
-    my $parser = Brocken::Parser->new( tokens => $tokens );
+    my $parser = Brocken::Core::Parser->new( tokens => $tokens );
     my $ast = $parser->parse();
 
 =head1 DESCRIPTION
@@ -1062,7 +1062,7 @@ Returns an arrayref of AST nodes from C<parse()>.
 
 =head2 parse
 
-  my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+  my $ast = Brocken::Core::Parser->new( tokens => $tokens )->parse();
 
 Returns an arrayref of AST::Node objects.
 

@@ -4,14 +4,14 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-require Brocken::Format::JIT;
+require Brocken::Target::Format::JIT;
 subtest 'JIT instantiation' => sub {
-    my $f = Brocken::Format::JIT->new;
-    ok $f->isa('Brocken::Format::JIT'), 'isa JIT';
+    my $f = Brocken::Target::Format::JIT->new;
+    ok $f->isa('Brocken::Target::Format::JIT'), 'isa JIT';
     ok $f->isa('Brocken::Format'),      'isa Format base';
 };
 subtest 'JIT import_rva after pre_layout' => sub {
-    my $f = Brocken::Format::JIT->new;
+    my $f = Brocken::Target::Format::JIT->new;
     $f->pre_layout( 4096, 512, 'x64', 'win64', 0 );
     my $rva = $f->import_rva('ExitProcess');
     ok defined $rva,                       'ExitProcess RVA defined';
@@ -21,7 +21,7 @@ subtest 'JIT import_rva after pre_layout' => sub {
     ok dies { $f->import_rva('Unknown') }, 'unknown import dies';
 };
 subtest 'JIT pre_layout sections' => sub {
-    my $f = Brocken::Format::JIT->new;
+    my $f = Brocken::Target::Format::JIT->new;
     $f->pre_layout( 4096, 512, 'x64', 'win64', 0 );
     my @names = map { $_->{name} } $f->layout->sections;
     is scalar(@names), 3,        'JIT has 3 sections';
@@ -30,7 +30,8 @@ subtest 'JIT pre_layout sections' => sub {
     is $names[2],      '.idata', 'third is .idata';
 };
 subtest 'JIT write_bin returns empty string' => sub {
-    my $f = Brocken::Format::JIT->new;
+    my $f = Brocken::Target::Format::JIT->new;
     is $f->write_bin( 'test', "\x90", '', 'x64', 'win64', 'exe' ), '', 'JIT write_bin returns empty';
 };
 done_testing;
+

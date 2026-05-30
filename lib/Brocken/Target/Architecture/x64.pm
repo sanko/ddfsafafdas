@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class', 'portable';
 
-class Brocken::Target::X64 : isa(Brocken::Target) {
+class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
 
     method registers() {
 
@@ -115,7 +115,7 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
     }
 
     method new_assembler() {
-        return Brocken::Target::X64::Emit->new();
+        return Brocken::Target::Architecture::x64::Emit->new();
     }
 
     method emit_op( $as, $inst, $reg_map, $driver ) {
@@ -284,11 +284,11 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'local_store' ) {
             my $src = $inst->{args}[1];
-            if ( $src !~ /^%/ ) {
+            if ( defined($src) && $src !~ /^%/ ) {
                 $as->mov_imm( 'r11', $v->($src) );
                 $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], 'r11' );
             }
-            else {
+            elsif ( defined($src) ) {
                 $as->store_mem_disp_reg( 'rbp', -$inst->{args}[0], $reg_map->{$src} );
             }
         }
@@ -508,7 +508,7 @@ class Brocken::Target::X64 : isa(Brocken::Target) {
     }
 }
 
-class Brocken::Target::X64::Emit {
+class Brocken::Target::Architecture::x64::Emit {
     field $code : reader = '';
     field %labels;
     field @fixups;
@@ -586,7 +586,7 @@ class Brocken::Target::X64::Emit {
         $code .= $self->_rex( 1, $si, 0, $di ) . pack( 'CC', 0x89, 0xC0 | ( ( $si & 7 ) << 3 ) | ( $di & 7 ) );
     }
 
-    method mov_imm( $r, $imm ) {
+    method mov_imm( $r, $imm = 0 ) {
         my $ri = $self->reg($r);
         $code .= $self->_rex( 1, 0, 0, $ri ) . pack( 'Cq<', 0xB8 + ( $ri & 7 ), $imm );
     }
@@ -796,11 +796,11 @@ __END__
 
 =head1 NAME
 
-Brocken::Target::X64 - x64 CPU target implementation
+Brocken::Target::Architecture::x64 - x64 CPU target implementation
 
 =head1 SYNOPSIS
 
-    my $target = Brocken::Target::X64->new( os => 'linux', arch => 'x64' );
+    my $target = Brocken::Target::Architecture::x64->new( os => 'linux', arch => 'x64' );
     my @regs = @{ $target->registers };
     $target->emit_op($as, $inst, \%reg_map, $compiler);
 
@@ -826,10 +826,13 @@ Delegates intrinsic compilation to the current platform module.
 
 =head2 new_assembler
 
-Returns a new L<Brocken::Target::X64::Emit> instance.
+Returns a new L<Brocken::Target::Architecture::x64::Emit> instance.
 
 =head2 emit_op($as, $inst, $reg_map, $driver)
 
 The core code generation loop. Translates a single IR instruction into one or more x64 machine instructions.
+
+=cut
+x64 machine instructions.
 
 =cut

@@ -8,12 +8,12 @@ package Brocken {
     use Brocken::Compiler::Optimizer;
     use Brocken::Compiler::DataSegment;
     use Brocken::Codegen;
-    use Brocken::Lexer;
-    use Brocken::Parser;
-    use Brocken::IR;
-    use Brocken::Symbol;
-    use Brocken::Scope;
-    use Brocken::Compiler;
+    use Brocken::Core::Lexer;
+    use Brocken::Core::Parser;
+    use Brocken::Core::IR::Builder;
+    use Brocken::Core::Symbol;
+    use Brocken::Core::Scope;
+    use Brocken::Compiler::Pipeline;
     #
 }
 1;
@@ -35,11 +35,11 @@ Loads all compiler components and defines base types used throughout:
 
 =over
 
-=item Brocken::Symbol
+=item Brocken::Core::Symbol
 
 Metadata for a single variable: name, type, is_state, state_idx, stack_offset.
 
-=item Brocken::Scope
+=item Brocken::Core::Scope
 
 Lexical scope with parent chain. C<define()> registers a symbol (dies on redeclaration). C<resolve()> looks up a symbol
 in the current scope and walks up the parent chain.
@@ -47,3 +47,4 @@ in the current scope and walks up the parent chain.
 
 =cut
 1;
+
