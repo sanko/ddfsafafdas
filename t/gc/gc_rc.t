@@ -113,4 +113,3 @@ subtest 'GC: typed vars with array refs' => sub {
     like $out, qr/Created two objects/, 'typed array refs';
 };
 done_testing;
-

@@ -64,5 +64,3 @@ subtest 'GC header format' => sub {
     ok $header & hex("4000000000000000"), 'string bit (bit 62) set';
 };
 done_testing;
-
-

@@ -24,6 +24,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64
                 $as->mov_imm( 'x8', 222 );      # mmap
                 $as->mov_imm( 'x0', 0 );        # addr
@@ -63,6 +64,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->add_imm( 'x0', 16 );       # Skip 16-byte Brocken String Header
@@ -89,6 +91,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64
                 $as->mov_reg( 'x0', $reg_map->{ $inst->{args}[0] } );
                 $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[1] } );
@@ -113,6 +116,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64: sys_getpid is 172
                 $as->mov_imm( 'x8', 172 );
                 $as->syscall(1);
@@ -144,6 +148,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64: sys_clock_gettime is 113
                 $as->sub_imm( 'sp', 16 );
                 $as->mov_imm( 'x8', 113 );
@@ -162,7 +167,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 # RISC-V: sys_clock_gettime is 113
                 $as->sub_imm( 'sp', 16 );
                 $as->mov_imm( 'a7', 113 );
-                $as->mov_imm( 'a0', 0 );     # CLOCK_REALTIME
+                $as->mov_imm( 'a0', 0 );               # CLOCK_REALTIME
                 $as->mov_reg( 'a1', 'sp' );
                 $as->syscall();
                 $as->load_reg_mem( 'a0', 'sp', 0 );    # a0 = tv_sec
@@ -194,6 +199,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64: readlinkat is 78
                 # readlinkat(AT_FDCWD, pathname, buf, bufsiz)
                 $as->sub_imm( 'sp', 16 );
@@ -414,6 +420,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->mov_reg( $reg_map->{ $inst->{dest} }, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64 sys_openat
                 $as->mov_reg( 'x1', $path );
                 $as->add_imm( 'x1', 16 );
@@ -440,8 +447,8 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->load_reg_mem_byte( 'a0', $mode, 16 );
                 $as->cmp_reg_imm( 'a0', ord('r') );
                 $as->jcc( $driver->cc('ne'), $l_write );
-                $as->mov_imm( 'a0', -100 );    # AT_FDCWD
-                $as->mov_imm( 'a2',  0 );      # O_RDONLY
+                $as->mov_imm( 'a0', -100 );     # AT_FDCWD
+                $as->mov_imm( 'a2',  0 );       # O_RDONLY
                 $as->mov_imm( 'a3',  0 );
                 $as->jmp($l_call);
                 $as->mark_label($l_write);
@@ -548,8 +555,8 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
         }
         elsif ( $op eq 'intrinsic_sleep' ) {
             my $val = $v->( $inst->{args}[0] );
-
             if ( $arch eq 'x64' ) {
+
                 # 1. Untag value into RAX
                 $as->mov_reg( 'rax', $val );
                 $as->shr_imm( 'rax', 1 );
@@ -650,6 +657,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
                 $as->load_reg_mem( 'rsp', 'r10', $driver->fcb_offset('sp') );
             }
             elsif ( $arch eq 'arm64' ) {
+
                 # ARM64: x0=dest_fcb, x1=value
                 $as->mov_reg( 'x16', 'x0' );                                              # x16 = dest_fcb
                 $as->ldur_reg_mem( 'x17', 'x28', $driver->iso_offset('current_fcb') );    # x17 = current_fcb
@@ -664,20 +672,20 @@ class Brocken::Target::OS::Linux : isa(Brocken::Platform) {
             else {
                 # RISC-V: a0=dest_fcb, a1=value
                 # s11 (x27) is Isolate
-                $as->mov_reg( 't0', 'a0' );                                               # t0 = dest_fcb
-                $as->load_reg_mem( 't1', 's11', $driver->iso_offset('current_fcb') );     # t1 = current_fcb
+                $as->mov_reg( 't0', 'a0' );                                              # t0 = dest_fcb
+                $as->load_reg_mem( 't1', 's11', $driver->iso_offset('current_fcb') );    # t1 = current_fcb
                 $as->mov_reg( 't2', 'sp' );
-                $as->store_mem_disp_reg( 't1', $driver->fcb_offset('sp'),          't2' );
-                $as->store_mem_disp_reg( 't0', $driver->fcb_offset('caller'),      't1' );
+                $as->store_mem_disp_reg( 't1',  $driver->fcb_offset('sp'),          't2' );
+                $as->store_mem_disp_reg( 't0',  $driver->fcb_offset('caller'),      't1' );
                 $as->store_mem_disp_reg( 's11', $driver->iso_offset('current_fcb'), 't0' );
                 $as->load_reg_mem( 't2', 't0', $driver->fcb_offset('sp') );
                 $as->mov_reg( 'sp', 't2' );
-                $as->mov_reg( 'a0', 'a1' );                                               # value to return
+                $as->mov_reg( 'a0', 'a1' );                                              # value to return
             }
             for my $r ( reverse @$regs ) { $as->pop_reg($r); }
-            if   ( $arch eq 'x64' )     { $as->append_code( pack( 'C',  0xC3 ) ); }
-            elsif ( $arch eq 'arm64' )   { $as->append_code( pack( 'L<', 0xD65F03C0 ) ); }     # ret
-            else                         { $as->append_code( pack( 'L<', 0x00008067 ) ); }     # ret
+            if    ( $arch eq 'x64' )   { $as->append_code( pack( 'C',  0xC3 ) ); }
+            elsif ( $arch eq 'arm64' ) { $as->append_code( pack( 'L<', 0xD65F03C0 ) ); }    # ret
+            else                       { $as->append_code( pack( 'L<', 0x00008067 ) ); }    # ret
         }
     }
 }

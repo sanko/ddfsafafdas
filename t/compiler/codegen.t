@@ -45,4 +45,3 @@ subtest 'Codegen handles mark_try_start/mark_try_end' => sub {
     ok 1, 'try region instructions accepted';
 };
 done_testing;
-

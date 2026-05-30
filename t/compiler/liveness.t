@@ -55,4 +55,3 @@ subtest 'Control flow creates labels' => sub {
     is $insts->[2]{target}, $l2,     'jmp target';
 };
 done_testing;
-

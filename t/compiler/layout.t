@@ -49,4 +49,3 @@ subtest 'get dies on missing section' => sub {
     ok dies { $l->get('.nope') }, 'dies for unknown section';
 };
 done_testing;
-

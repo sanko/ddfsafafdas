@@ -78,4 +78,3 @@ subtest 'While loop with objects and methods' => sub {
     like $out, qr/Done/, 'while with method calls completes';
 };
 done_testing;
-

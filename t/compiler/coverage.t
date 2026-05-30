@@ -164,4 +164,3 @@ sub coverage_to_lcov {
     cmp_ok $da_map{2}, '>', 0, 'Line 2 hit count > 0';
 }
 done_testing;
-

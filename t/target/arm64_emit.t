@@ -157,4 +157,3 @@ subtest 'syscall' => sub {
     is unpack( 'H*', $as->code ), '010000d4', 'syscall encoding (LE)';
 };
 done_testing;
-

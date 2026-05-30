@@ -3,6 +3,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 
 class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
+
     method registers() {
         return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27)];
     }
@@ -27,12 +28,10 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         my $op    = $inst->{op};
         my $v     = sub { $self->val( $reg_map, shift ) };
         my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
-
         if ( $op eq 'intrinsic_get_text_base' ) {
             $as->lea_rva( $d_reg, 0, $driver->text_rva );
             return;
         }
-
         return $driver->platform->emit_intrinsic( $self, $as, $inst, $reg_map, $driver );
     }
 
@@ -44,7 +43,6 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         my $op    = $inst->{op};
         my $v     = sub { $self->val( $reg_map, shift ) };
         my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
-
         if    ( $op eq 'jmp' ) { $as->jmp( $inst->{target} ); }
         elsif ( $op eq 'cond_br' ) {
             my $reg = $v->( $inst->{reg} );
@@ -77,30 +75,80 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
 
 class Brocken::Target::Architecture::ARM64::Emit {
     state $REG_MAP = {
-        x0  => 0,  x1  => 1,  x2  => 2,  x3  => 3,  x4  => 4,  x5  => 5,  x6  => 6,  x7  => 7,
-        x8  => 8,  x9  => 9,  x10 => 10, x11 => 11, x12 => 12, x13 => 13, x14 => 14, x15 => 15,
-        x16 => 16, x17 => 17, x18 => 18, x19 => 19, x20 => 20, x21 => 21, x22 => 22, x23 => 23,
-        x24 => 24, x25 => 25, x26 => 26, x27 => 27, x28 => 28, x29 => 29, x30 => 30, sp  => 31,
-        xzr => 31, rsp => 31,
-        d0  => 0,  d1  => 1,  d2  => 2,  d3  => 3,  d4  => 4,  d5  => 5,  d6  => 6,  d7  => 7,
-        d8  => 8,  d9  => 9,  d10 => 10, d11 => 11, d12 => 12, d13 => 13, d14 => 14, d15 => 15,
-        rax => 0,  rcx => 1,  rdx => 2,  rbx => 3,  rsi => 6,  rdi => 7,  r8  => 8,  r9  => 9,
-        r10 => 10, r11 => 11, r14 => 28
+        x0  => 0,
+        x1  => 1,
+        x2  => 2,
+        x3  => 3,
+        x4  => 4,
+        x5  => 5,
+        x6  => 6,
+        x7  => 7,
+        x8  => 8,
+        x9  => 9,
+        x10 => 10,
+        x11 => 11,
+        x12 => 12,
+        x13 => 13,
+        x14 => 14,
+        x15 => 15,
+        x16 => 16,
+        x17 => 17,
+        x18 => 18,
+        x19 => 19,
+        x20 => 20,
+        x21 => 21,
+        x22 => 22,
+        x23 => 23,
+        x24 => 24,
+        x25 => 25,
+        x26 => 26,
+        x27 => 27,
+        x28 => 28,
+        x29 => 29,
+        x30 => 30,
+        sp  => 31,
+        xzr => 31,
+        rsp => 31,
+        d0  => 0,
+        d1  => 1,
+        d2  => 2,
+        d3  => 3,
+        d4  => 4,
+        d5  => 5,
+        d6  => 6,
+        d7  => 7,
+        d8  => 8,
+        d9  => 9,
+        d10 => 10,
+        d11 => 11,
+        d12 => 12,
+        d13 => 13,
+        d14 => 14,
+        d15 => 15,
+        rax => 0,
+        rcx => 1,
+        rdx => 2,
+        rbx => 3,
+        rsi => 6,
+        rdi => 7,
+        r8  => 8,
+        r9  => 9,
+        r10 => 10,
+        r11 => 11,
+        r14 => 28
     };
-
     field $code : reader = '';
     field %labels;
     field @fixups;
-
     method labels() { return \%labels; }
+
     method reg($r) {
         my $name = lc( $r // '' );
         die "Unknown ARM64 register: $r" unless exists $REG_MAP->{$name};
         return $REG_MAP->{$name};
     }
-
-    method label($key) { $labels{$key} // () }
-    method ret ()      { $code .= pack( 'L<', 0xD65F03C0 ) }
+    method label($key)        { $labels{$key} // () }
+    method ret ()             { $code .= pack( 'L<', 0xD65F03C0 ) }
     method append_code ($bin) { $code .= $bin }
 
     method mov_imm ( $reg, $imm ) {
@@ -122,7 +170,6 @@ class Brocken::Target::Architecture::ARM64::Emit {
         my $s = $self->reg($src);
         $code .= pack( 'L<', 0xAA0003E0 | ( $s << 16 ) | $d );
     }
-
     method push_reg($reg) { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF81F0FE0 | $r ); }
     method pop_reg($reg)  { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF84107E0 | $r ); }
 
@@ -201,14 +248,12 @@ class Brocken::Target::Architecture::ARM64::Emit {
         if ( !defined $amt ) { $amt = $s; $s = $d }
         $self->lsr_imm( $d, $s, $amt );
     }
-
     method lsr_reg_imm ( $d, $s, $amt ) { $self->lsr_imm( $d, $s, $amt ) }
 
     method cmp_reg_imm ( $reg, $imm ) {
         my $r = $self->reg($reg);
         $code .= pack( 'L<', 0xF1000000 | ( ( $imm & 0xFFF ) << 10 ) | ( $r << 5 ) | 31 );
     }
-
     method cmp_reg_imm_32 ( $r, $imm ) { $self->cmp_reg_imm( $r, $imm ) }
 
     method cmp_reg_reg ( $l, $r ) {
@@ -322,7 +367,7 @@ class Brocken::Target::Architecture::ARM64::Emit {
     }
 
     method syscall( $os = '', $num = 0 ) {
-        if ( $os eq 'macos' ) { $code .= pack( 'L<', 0xD4001001 ) }
+        if    ( $os eq 'macos' )              { $code .= pack( 'L<', 0xD4001001 ) }
         elsif ( $os eq 'netbsd' && $num > 0 ) { $code .= pack( 'L<', 0xD4000001 | ( ( $num & 0xFFFF ) << 5 ) ) }
         else {
             $code .= pack( 'L<', 0xD4000001 );
@@ -339,7 +384,6 @@ class Brocken::Target::Architecture::ARM64::Emit {
         push @fixups, { offset => length($code), target => $label, type => 'uncond' };
         $code .= pack( 'L<', 0x14000000 );
     }
-
     method mark_label ($name) { $labels{$name} = length $code }
 
     method fadd_reg ( $d, $s1, $s2 ) {
@@ -391,7 +435,8 @@ class Brocken::Target::Architecture::ARM64::Emit {
         for (@fixups) {
             my $target_off;
             if ( $_->{type} ne 'adrp_data' ) {
-                $target_off = $labels{ $_->{target} } // ( ( $_->{type} eq 'adr' && $_->{target} =~ /^\d+$/ ) ? undef : die "Undefined label: $_->{target}" );
+                $target_off = $labels{ $_->{target} }
+                    // ( ( $_->{type} eq 'adr' && $_->{target} =~ /^\d+$/ ) ? undef : die "Undefined label: $_->{target}" );
             }
             if ( $_->{type} eq 'cond' ) {
                 my $off   = ( $target_off - $_->{offset} ) / 4;
@@ -432,5 +477,4 @@ class Brocken::Target::Architecture::ARM64::Emit {
         }
     }
 }
-
 1;

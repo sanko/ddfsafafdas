@@ -56,4 +56,3 @@ subtest 'debug func params and locals' => sub {
     is scalar(@$empty_params), 0, 'unknown func returns empty params';
 };
 done_testing;
-

@@ -15,4 +15,3 @@ BROCKEN
     expected => [ "Sleep start", "Sleep end" ]
 );
 done_testing;
-

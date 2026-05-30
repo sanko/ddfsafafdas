@@ -66,4 +66,3 @@ is( $lines[0], "--- Brocken Shared Library FFI Test ---", "Output Line 1: Header
 is( $lines[1], "Sum: 124",                                "Output Line 2: Sum calculated in shared library" );
 is( $lines[2], "Product: 42",                             "Output Line 3: Product calculated in shared library" );
 done_testing;
-

@@ -81,4 +81,3 @@ subtest 'full pipeline with layout' => sub {
     is $l->get('.pdata')->{size}, scalar(@$funcs) * 12, '.pdata section size = 12 * N';
 };
 done_testing;
-

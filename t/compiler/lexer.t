@@ -48,4 +48,3 @@ say $x;';
     is( $tokens->[5]{value}, 'say', 'Tokens after comment' );
 };
 done_testing;
-

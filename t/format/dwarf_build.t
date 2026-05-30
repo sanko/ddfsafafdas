@@ -132,4 +132,3 @@ subtest 'LEB128 encoding' => sub {
     is unpack( 'H*', $dw->_sleb(-8) ),  '78',   'SLEB(-8)';
 };
 done_testing;
-

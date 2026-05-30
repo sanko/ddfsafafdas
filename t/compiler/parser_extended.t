@@ -218,4 +218,3 @@ subtest 'Map expression' => sub {
     ok $node->isa('Brocken::AST::Stmt::Map'), 'map isa Map';
 };
 done_testing;
-

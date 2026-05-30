@@ -177,4 +177,3 @@ subtest '__FILE__ custom name' => sub {
     is $out, 'my_file.brk', '__FILE__ returns custom filename';
 };
 done_testing;
-

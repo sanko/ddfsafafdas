@@ -144,4 +144,3 @@ subtest 'Async nodes' => sub {
     ok scalar( @{ $fb->params } ) == 0,             'FiberBlock default params';
 };
 done_testing;
-

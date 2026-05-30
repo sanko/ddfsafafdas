@@ -1,5 +1,4 @@
 package Brocken::Core::IR::Builder;
-
 use v5.40;
 use utf8;
 use feature 'class';

@@ -61,5 +61,3 @@ BROCKEN
     unlink $out_name if -f $out_name;
 };
 done_testing();
-
-

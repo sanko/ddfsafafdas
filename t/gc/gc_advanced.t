@@ -76,5 +76,3 @@ subtest 'GC: full manual pipeline' => sub {
     ok scalar( $lowering->builder->instructions ) > 0, 'manual pipeline: instructions after optimize';
 };
 done_testing;
-
-

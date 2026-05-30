@@ -30,4 +30,3 @@ subtest 'rva_for delegation' => sub {
     is $fmt->rva_for('.text'), 0x1000, '.text RVA = 0x1000';
 };
 done_testing;
-

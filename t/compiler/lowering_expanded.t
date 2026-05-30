@@ -144,5 +144,3 @@ subtest 'Binary operators' => sub {
     ok scalar(@add) >= 1, 'produces add instruction';
 };
 done_testing;
-
-

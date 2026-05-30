@@ -50,4 +50,3 @@ subtest 'Nested scope chain' => sub {
     ok !$outer->resolve('$inner_var'), 'outer cannot resolve inner var';
 };
 done_testing;
-

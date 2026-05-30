@@ -8,7 +8,7 @@ require Brocken::Target::OS::macOS;
 subtest 'Darwin platform instantiation' => sub {
     my $p = Brocken::Target::OS::macOS->new( os => 'darwin' );
     ok $p->isa('Brocken::Target::OS::macOS'), 'isa Darwin';
-    ok $p->isa('Brocken::Platform'),         'isa Platform base';
+    ok $p->isa('Brocken::Platform'),          'isa Platform base';
 };
 subtest 'Darwin format_name' => sub {
     my $p = Brocken::Target::OS::macOS->new( os => 'darwin' );
@@ -19,4 +19,3 @@ subtest 'Darwin shadow_space' => sub {
     is $p->shadow_space, 0, 'Darwin shadow_space = 0 (inherited default)';
 };
 done_testing;
-

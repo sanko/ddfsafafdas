@@ -28,4 +28,3 @@ test_brocken(
         [ "Initial RC: 0", "After Retain: 1", "After 2nd Retain: 2", "After 1st Release: 1", "After Write Barrier: 2", "After Clearing Array: 1" ]
 );
 done_testing;
-

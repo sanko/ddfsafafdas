@@ -247,7 +247,7 @@ class Brocken::Target::Format::MachO : isa(Brocken::Format) {
         # Write Mach-O header and command payloads
         open my $fh, '>', $f or die $!;
         binmode $fh;
-        my $flags = 0x200085 | 0x00200000; # MH_PIE | ...
+        my $flags = 0x200085 | 0x00200000;               # MH_PIE | ...
         $flags = 0x100085 if $self->type eq 'shared';    # MH_DYLIB | NOUNDEFS | TWOLEVEL
         print $fh pack( 'L<L<L<L<L<L<L<L<', 0xfeedfacf, $cputype, $cpusubtype, $filetype, $ncmds, $sizeofcmds, $flags, 0 );
         print $fh $_ for @cmds;
@@ -260,6 +260,7 @@ class Brocken::Target::Format::MachO : isa(Brocken::Format) {
         print $fh $data // '';
         my $got_sec = $l->get('.got');
         seek( $fh, $got_sec->{off}, 0 );
+
         # Correctly align got section
         print $fh pack( 'Q< Q< Q<', 0, 0, 0 );
         seek( $fh, $le_sec->{off}, 0 );

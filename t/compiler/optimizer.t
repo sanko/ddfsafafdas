@@ -129,5 +129,3 @@ subtest 'AST substitution' => sub {
     is $result->right->value, 1,  'right unchanged';
 };
 done_testing;
-
-

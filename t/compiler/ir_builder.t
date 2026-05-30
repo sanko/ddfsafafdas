@@ -98,4 +98,3 @@ subtest 'multiple instruction sequence' => sub {
     is $insts->[2]{dest},    $r,           'add dest';
 };
 done_testing;
-

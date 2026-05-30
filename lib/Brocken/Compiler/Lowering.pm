@@ -5569,4 +5569,3 @@ package Brocken::Compiler::Lowering {
     }
 }
 1;
-

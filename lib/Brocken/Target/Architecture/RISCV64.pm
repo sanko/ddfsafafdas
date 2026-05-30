@@ -3,6 +3,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 
 class Brocken::Target::Architecture::RISCV64 : isa(Brocken::Target) {
+
     method registers() {
         return [qw(s1 s2 s3 s4 s5 s6 s7 s8 s9 s10)];
     }
@@ -27,12 +28,10 @@ class Brocken::Target::Architecture::RISCV64 : isa(Brocken::Target) {
         my $op    = $inst->{op};
         my $v     = sub { $self->val( $reg_map, shift ) };
         my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
-
         if ( $op eq 'intrinsic_get_text_base' ) {
             $as->lea_rva( $d_reg, 0, $driver->text_rva );
             return;
         }
-
         return $driver->platform->emit_intrinsic( $self, $as, $inst, $reg_map, $driver );
     }
 
@@ -44,7 +43,6 @@ class Brocken::Target::Architecture::RISCV64 : isa(Brocken::Target) {
         my $op    = $inst->{op};
         my $v     = sub { $self->val( $reg_map, shift ) };
         my $d_reg = $reg_map->{ $inst->{dest} } if $inst->{dest};
-
         if    ( $op eq 'jmp' ) { $as->jmp( $inst->{target} ); }
         elsif ( $op eq 'cond_br' ) {
             my $reg = $v->( $inst->{reg} );
@@ -64,6 +62,7 @@ class Brocken::Target::Architecture::RISCV64 : isa(Brocken::Target) {
             $as->ret();
         }
         elsif ( $op eq 'call_label' ) {
+
             # RISC-V call to label usually uses JAL
             # For simplicity in this dummy/initial version, we use a fixup
             $as->call_label( $inst->{target} );
@@ -79,50 +78,117 @@ class Brocken::Target::Architecture::RISCV64 : isa(Brocken::Target) {
 
 class Brocken::Target::Architecture::RISCV64::Emit {
     state $REG_MAP = {
-        zero => 0,  ra => 1,  sp => 2,  gp => 3,  tp => 4,  t0 => 5,  t1 => 6,  t2 => 7,
-        s0   => 8,  s1 => 9,  a0 => 10, a1 => 11, a2 => 12, a3 => 13, a4 => 14, a5 => 15,
-        a6   => 16, a7 => 17, s2 => 18, s3 => 19, s4 => 20, s5 => 21, s6 => 22, s7 => 23,
-        s8   => 24, s9 => 25, s10 => 26, s11 => 27, t3 => 28, t4 => 29, t5 => 30, t6 => 31,
-        # Standard names
-        x0  => 0,  x1  => 1,  x2  => 2,  x3  => 3,  x4  => 4,  x5  => 5,  x6  => 6,  x7  => 7,
-        x8  => 8,  x9  => 9,  x10 => 10, x11 => 11, x12 => 12, x13 => 13, x14 => 14, x15 => 15,
-        x16 => 16, x17 => 17, x18 => 18, x19 => 19, x20 => 20, x21 => 21, x22 => 22, x23 => 23,
-        x24 => 24, x25 => 25, x26 => 26, x27 => 27, x28 => 28, x29 => 29, x30 => 30, x31 => 31,
-        # Aliases for cross-arch platform code
-        rsp => 2,  rbp => 8,  rax => 10, rdi => 10, rsi => 11, rdx => 12, rcx => 13, r8 => 14, r9 => 15,
-        r10 => 28, r11 => 29, r14 => 25, # tp/r14? No, let's use s9 for r14 if we need a scratch
-    };
+        zero => 0,
+        ra   => 1,
+        sp   => 2,
+        gp   => 3,
+        tp   => 4,
+        t0   => 5,
+        t1   => 6,
+        t2   => 7,
+        s0   => 8,
+        s1   => 9,
+        a0   => 10,
+        a1   => 11,
+        a2   => 12,
+        a3   => 13,
+        a4   => 14,
+        a5   => 15,
+        a6   => 16,
+        a7   => 17,
+        s2   => 18,
+        s3   => 19,
+        s4   => 20,
+        s5   => 21,
+        s6   => 22,
+        s7   => 23,
+        s8   => 24,
+        s9   => 25,
+        s10  => 26,
+        s11  => 27,
+        t3   => 28,
+        t4   => 29,
+        t5   => 30,
+        t6   => 31,
 
+        # Standard names
+        x0  => 0,
+        x1  => 1,
+        x2  => 2,
+        x3  => 3,
+        x4  => 4,
+        x5  => 5,
+        x6  => 6,
+        x7  => 7,
+        x8  => 8,
+        x9  => 9,
+        x10 => 10,
+        x11 => 11,
+        x12 => 12,
+        x13 => 13,
+        x14 => 14,
+        x15 => 15,
+        x16 => 16,
+        x17 => 17,
+        x18 => 18,
+        x19 => 19,
+        x20 => 20,
+        x21 => 21,
+        x22 => 22,
+        x23 => 23,
+        x24 => 24,
+        x25 => 25,
+        x26 => 26,
+        x27 => 27,
+        x28 => 28,
+        x29 => 29,
+        x30 => 30,
+        x31 => 31,
+
+        # Aliases for cross-arch platform code
+        rsp => 2,
+        rbp => 8,
+        rax => 10,
+        rdi => 10,
+        rsi => 11,
+        rdx => 12,
+        rcx => 13,
+        r8  => 14,
+        r9  => 15,
+        r10 => 28,
+        r11 => 29,
+        r14 => 25,    # tp/r14? No, let's use s9 for r14 if we need a scratch
+    };
     field $code : reader = '';
     field %labels;
     field @fixups;
-
     method labels() { return \%labels; }
+
     method reg($r) {
         my $name = lc( $r // '' );
         die "Unknown RISC-V register: $r" unless exists $REG_MAP->{$name};
         return $REG_MAP->{$name};
     }
-
-    method label($key) { $labels{$key} // () }
-    method ret ()      { $code .= pack( 'L<', 0x00008067 ) }
+    method label($key)        { $labels{$key} // () }
+    method ret ()             { $code .= pack( 'L<', 0x00008067 ) }
     method append_code ($bin) { $code .= $bin }
 
     method push_reg($reg) {
         my $r = $self->reg($reg);
         $self->sub_imm( 'sp', 8 );
-        $self->_sd( $r, 0, 2 ); # sd r, 0(sp)
+        $self->_sd( $r, 0, 2 );    # sd r, 0(sp)
     }
 
     method pop_reg($reg) {
         my $r = $self->reg($reg);
-        $self->_ld( $r, 0, 2 ); # ld r, 0(sp)
+        $self->_ld( $r, 0, 2 );    # ld r, 0(sp)
         $self->add_imm( 'sp', 8 );
     }
 
     method ldxr_reg ( $t, $n ) {
         my $rt = $self->reg($t);
         my $rn = $self->reg($n);
+
         # lr.d rt, (rn)
         $code .= pack( 'L<', 0x0600302F | ( $rn << 15 ) | ( $rt << 7 ) );
     }
@@ -131,6 +197,7 @@ class Brocken::Target::Architecture::RISCV64::Emit {
         my $rs = $self->reg($s);
         my $rt = $self->reg($t);
         my $rn = $self->reg($n);
+
         # sc.d rs, rt, (rn)
         $code .= pack( 'L<', 0x060030AF | ( $rn << 15 ) | ( $rt << 20 ) | ( $rs << 7 ) );
     }
@@ -138,6 +205,7 @@ class Brocken::Target::Architecture::RISCV64::Emit {
     method sturb_mem_disp_reg( $base, $disp, $src ) {
         my $rb = $self->reg($base);
         my $rs = $self->reg($src);
+
         # sb rs, disp(rb)
         $code .= pack( 'L<', ( ( $disp & 0xFE0 ) << 20 ) | ( $rs << 20 ) | ( $rb << 15 ) | ( 0 << 12 ) | ( ( $disp & 0x1F ) << 7 ) | 0x23 );
     }
@@ -145,6 +213,7 @@ class Brocken::Target::Architecture::RISCV64::Emit {
     method fmov_x_to_d ( $d, $s ) {
         my $rd = $self->reg($d);
         my $rs = $self->reg($s);
+
         # fmv.d.x rd, rs
         $code .= pack( 'L<', 0xF2200053 | ( $rs << 15 ) | ( $rd << 7 ) );
     }
@@ -152,6 +221,7 @@ class Brocken::Target::Architecture::RISCV64::Emit {
     method fmov_d_to_x ( $d, $s ) {
         my $rd = $self->reg($d);
         my $rs = $self->reg($s);
+
         # fmv.x.d rd, rs
         $code .= pack( 'L<', 0xE2200053 | ( $rs << 15 ) | ( $rd << 7 ) );
     }
@@ -286,7 +356,7 @@ class Brocken::Target::Architecture::RISCV64::Emit {
 
     method cmp_reg_imm ( $reg, $imm ) {
         my $r = $self->reg($reg);
-        my $t = 5; # t0
+        my $t = 5;                  # t0
         $self->mov_imm( 't0', $imm );
         $self->_sub( $t, $r, $t );
     }
@@ -294,21 +364,21 @@ class Brocken::Target::Architecture::RISCV64::Emit {
     method lea_rva ( $reg, $target_rva, $text_rva = 0 ) {
         my $r   = $self->reg($reg);
         my $off = ( $target_rva =~ /^\d+$/ ) ? $target_rva - ( $text_rva + length($code) ) : 0;
-        $code .= pack( 'L<', ( ( ( $off + 0x800 ) >> 12 ) & 0xFFFFF ) << 12 | ( $r << 7 ) | 0x17 ); # AUIPC
+        $code .= pack( 'L<', ( ( ( $off + 0x800 ) >> 12 ) & 0xFFFFF ) << 12 | ( $r << 7 ) | 0x17 );    # AUIPC
         $self->_addi( $r, $r, $off & 0xFFF );
         push @fixups, { offset => length($code) - 8, target => $target_rva, type => 'pcrel' } if $target_rva !~ /^\d+$/;
     }
 
     method call_rva ( $target_rva, $text_rva ) {
-        my $t = 5; # t0
+        my $t = 5;                                                                                     # t0
         $self->lea_rva( 't0', $target_rva, $text_rva );
         $self->_ld( $t, 0, $t );
-        $code .= pack( 'L<', ( $t << 15 ) | ( 1 << 7 ) | 0x67 ); # JALR ra, t0, 0
+        $code .= pack( 'L<', ( $t << 15 ) | ( 1 << 7 ) | 0x67 );                                       # JALR ra, t0, 0
     }
 
     method call_label ($label) {
         push @fixups, { offset => length($code), target => $label, type => 'call' };
-        $code .= pack( 'L<', 0x000000EF ); # JAL ra, 0
+        $code .= pack( 'L<', 0x000000EF );                                                             # JAL ra, 0
     }
 
     method syscall ( $os = '', $num = 0 ) {
@@ -316,13 +386,13 @@ class Brocken::Target::Architecture::RISCV64::Emit {
     }
 
     method jcc ( $cc, $label ) {
-        my $rs1    = 5; # t0
-        my $rs2    = 0; # zero
+        my $rs1    = 5;                                                                                # t0
+        my $rs2    = 0;                                                                                # zero
         my $funct3 = 0;
-        if    ( $cc == 0 || $cc == 4 ) { $funct3 = 0 } # BEQ
-        elsif ( $cc == 1 || $cc == 5 ) { $funct3 = 1 } # BNE
-        elsif ( $cc == 0xB )           { $funct3 = 4 } # BLT
-        elsif ( $cc == 0xA )           { $funct3 = 5 } # BGE
+        if    ( $cc == 0 || $cc == 4 ) { $funct3 = 0 }                                                 # BEQ
+        elsif ( $cc == 1 || $cc == 5 ) { $funct3 = 1 }                                                 # BNE
+        elsif ( $cc == 0xB )           { $funct3 = 4 }                                                 # BLT
+        elsif ( $cc == 0xA )           { $funct3 = 5 }                                                 # BGE
         else                           { $funct3 = 0 }
         push @fixups, { offset => length($code), target => $label, type => 'branch', funct3 => $funct3, rs1 => $rs1, rs2 => $rs2 };
         $code .= pack( 'L<', 0 );
@@ -330,9 +400,8 @@ class Brocken::Target::Architecture::RISCV64::Emit {
 
     method jmp ($label) {
         push @fixups, { offset => length($code), target => $label, type => 'jal' };
-        $code .= pack( 'L<', 0x0000006F ); # JAL zero, 0
+        $code .= pack( 'L<', 0x0000006F );                                                             # JAL zero, 0
     }
-
     method mark_label ($name) { $labels{$name} = length $code }
 
     method resolve ( $text_rva, $data_rva ) {
@@ -340,7 +409,7 @@ class Brocken::Target::Architecture::RISCV64::Emit {
             my $target_off = $labels{ $_->{target} } // die "Undefined label: $_->{target}";
             my $off        = $target_off - $_->{offset};
             if ( $_->{type} eq 'jal' || $_->{type} eq 'call' ) {
-                my $rd = ( $_->{type} eq 'call' ) ? 1 : 0;
+                my $rd    = ( $_->{type} eq 'call' ) ? 1 : 0;
                 my $instr = 0x6F | ( $rd << 7 );
                 $instr |= ( ( $off >> 20 ) & 1 ) << 31;
                 $instr |= ( ( $off >> 1 ) & 0x3FF ) << 21;
@@ -359,5 +428,4 @@ class Brocken::Target::Architecture::RISCV64::Emit {
         }
     }
 }
-
 1;

@@ -81,4 +81,3 @@ subtest 'Method Call' => sub {
     is( scalar @{ $node->args }, 2,      '2 args' );
 };
 done_testing;
-

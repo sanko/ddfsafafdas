@@ -51,5 +51,3 @@ subtest 'JIT full pipeline with skip_runtime' => sub {
     ok scalar(@$instr_ref2) > 0,    'after optimize: non-empty';
 };
 done_testing;
-
-

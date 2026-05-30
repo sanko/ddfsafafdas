@@ -38,4 +38,3 @@ subtest 'Variable with string interpolation' => sub {
     is $out, 'Done: 1', 'string interpolation with variable';
 };
 done_testing;
-

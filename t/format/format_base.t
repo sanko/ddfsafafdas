@@ -30,4 +30,3 @@ subtest 'Format set_exported_funcs' => sub {
     is $f->exported_funcs->[0],           'add', 'first export is add';
 };
 done_testing;
-

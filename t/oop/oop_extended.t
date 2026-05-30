@@ -97,5 +97,3 @@ subtest 'Lex-parse-lower pipeline: while loop with typed vars' => sub {
     ok scalar( $lowering->builder->instructions ) > 0, 'pipeline: instructions after optimize';
 };
 done_testing;
-
-

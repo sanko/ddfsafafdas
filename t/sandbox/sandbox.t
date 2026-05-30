@@ -27,4 +27,3 @@ subtest 'Sandbox capability restriction' => sub {
     ok $sb->error_message, 'error message present';
 };
 done_testing;
-

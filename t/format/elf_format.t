@@ -63,4 +63,3 @@ subtest 'debug_data with eh_frame' => sub {
     is $cie_id, 0, '.eh_frame CIE id = 0';
 };
 done_testing;
-

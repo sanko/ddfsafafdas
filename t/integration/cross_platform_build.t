@@ -5,8 +5,8 @@ no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib', '../../lib';
 use Brocken::Compiler::Pipeline;
-
 my @matrix = (
+
     # x64 support
     map( { [ $_, 'x64' ] } qw(win64 linux freebsd openbsd netbsd dragonfly macos) ),
 
@@ -16,7 +16,6 @@ my @matrix = (
     # riscv64 support
     [ 'linux', 'riscv64' ],
 );
-
 for my $pair (@matrix) {
     my ( $os, $arch ) = @$pair;
     subtest "OS: $os, Arch: $arch" => sub {
@@ -26,10 +25,8 @@ for my $pair (@matrix) {
             $compiler->compile_source( 'say 1;', 'test', 'test.brocken' );
             1;
         };
-        ok( $success, "Compiler init/compile succeeded for $os/$arch" . ( $@ ? ": $@" : '' ) )
-            or diag( "Error: $@" );
+        ok( $success, "Compiler init/compile succeeded for $os/$arch" . ( $@ ? ": $@" : '' ) ) or diag("Error: $@");
         unlink 'test.exe', 'test';    # Cleanup potential output files
     };
 }
-
 done_testing();

@@ -24,4 +24,3 @@ test_brocken(
     expected => qr/Main: Spawning thread\.\.\.\r?\nBackground thread running\.\r?\nWorker result: 55\r?\nMain: Finished\./
 );
 done_testing;
-

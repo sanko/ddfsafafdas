@@ -21,4 +21,3 @@ test_brocken(
     expected => qr/Enumerated windows successfully\. Total: \d+/
 );
 done_testing;
-

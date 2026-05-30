@@ -111,4 +111,3 @@ subtest 'Predicates' => sub {
     ok !$void_t->is_numeric, 'void not numeric';
 };
 done_testing;
-

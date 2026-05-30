@@ -5,7 +5,6 @@ no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
 require Brocken::Target::Architecture::x64;
-
 subtest 'Register mapping' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     is $as->reg('rax'), 0,  'rax = 0';
@@ -20,7 +19,6 @@ subtest 'Register mapping' => sub {
     is $as->reg('r15'), 15, 'r15 = 15';
     ok dies { $as->reg('foo') }, 'invalid register dies';
 };
-
 subtest 'mov_reg' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->mov_reg( 'rax', 'rbx' );
@@ -28,7 +26,6 @@ subtest 'mov_reg' => sub {
     is length($code),         3,        'mov_reg is 3 bytes';
     is unpack( 'H*', $code ), '4889d8', 'mov rax, rbx encoding';
 };
-
 subtest 'mov_imm' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->mov_imm( 'rax', 42 );
@@ -36,7 +33,6 @@ subtest 'mov_imm' => sub {
     ok length($code) >= 7, 'mov_imm is at least 7 bytes';
     like unpack( 'H*', $code ), qr/^48(?:c7c0|b8)/, 'mov_imm starts with REX.W';
 };
-
 subtest 'push_reg and pop_reg' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->push_reg('rbx');
@@ -46,7 +42,6 @@ subtest 'push_reg and pop_reg' => sub {
     my $code = $as->code;
     ok length($code) >= 4, 'push/pop produces code';
 };
-
 subtest 'Arithmetic immediate' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->add_imm( 'rax', 8 );
@@ -57,7 +52,6 @@ subtest 'Arithmetic immediate' => sub {
     ok length($code) > 0, 'arithmetic imm ops produce code';
     like unpack( 'H*', $code ), qr/48/, 'contains REX.W prefix';
 };
-
 subtest 'Arithmetic register' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->add_reg( 'rax', 'rbx' );
@@ -69,7 +63,6 @@ subtest 'Arithmetic register' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'arithmetic reg produces code';
 };
-
 subtest 'Shift operations' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->shl_imm( 'rax', 3 );
@@ -79,7 +72,6 @@ subtest 'Shift operations' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'shift ops produce code';
 };
-
 subtest 'Comparison' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->cmp_reg_reg( 'rax', 'rbx' );
@@ -88,7 +80,6 @@ subtest 'Comparison' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'compare ops produce code';
 };
-
 subtest 'Memory operations' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->store_mem_disp_reg( 'rbx', 0, 'rax' );
@@ -97,7 +88,6 @@ subtest 'Memory operations' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'memory ops produce code';
 };
-
 subtest 'Control flow' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->mark_label('L_start');
@@ -113,7 +103,6 @@ subtest 'Control flow' => sub {
     ok exists $as->labels->{L_start}, 'L_start label exists';
     ok exists $as->labels->{L_mid},   'L_mid label exists';
 };
-
 subtest 'resolve fixups' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->mark_label('L_func');
@@ -126,13 +115,11 @@ subtest 'resolve fixups' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'resolved code produced';
 };
-
 subtest 'unresolved label dies' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->jmp('L_nonexistent');
     ok dies { $as->resolve( 0, 0 ) }, 'unresolved label throws error';
 };
-
 subtest 'SSE2 floating point' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->addsd_reg( 'xmm0', 'xmm1' );
@@ -145,7 +132,6 @@ subtest 'SSE2 floating point' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'SSE2 ops produce code';
 };
-
 subtest 'lea_rva with DATA and TEXT' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->lea_rva( 'rbx', 'DATA:0' );
@@ -153,11 +139,9 @@ subtest 'lea_rva with DATA and TEXT' => sub {
     my $code = $as->code;
     ok length($code) > 0, 'lea_rva produces code';
 };
-
 subtest 'syscall' => sub {
     my $as = Brocken::Target::Architecture::x64::Emit->new;
     $as->syscall();
     is unpack( 'H*', $as->code ), '0f05', 'syscall encoding';
 };
-
 done_testing;

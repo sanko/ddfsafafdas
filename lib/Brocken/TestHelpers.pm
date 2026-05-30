@@ -15,17 +15,13 @@ sub test_brocken (%args) {
     require Brocken::Compiler::Pipeline;
     require Test2::V0;
     require File::Temp;
-
-    my $detected_os   = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
+    my $detected_os   = $^O eq 'MSWin32'                          ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
     my $detected_arch = ( $Config{archname} =~ /aarch64|arm64/i ) ? 'arm64' : 'x64';
-
-    my $os   = delete $opts->{os}   // delete $args{os}   // $detected_os;
-    my $arch = delete $opts->{arch} // delete $args{arch} // $detected_arch;
-
-    my $suffix = $os eq 'win64' ? '.exe' : '';
+    my $os            = delete $opts->{os}   // delete $args{os}   // $detected_os;
+    my $arch          = delete $opts->{arch} // delete $args{arch} // $detected_arch;
+    my $suffix        = $os eq 'win64' ? '.exe' : '';
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => $suffix );
     close $tmp_fh;
-
     my $filename = delete $opts->{filename};
     my $parser   = delete $opts->{parser} // delete $args{parser} // 'pratt';
     my $p        = Brocken::Compiler::Pipeline->new( debug => 4, %$opts, parser => $parser, arch => $arch, os => $os );
@@ -35,11 +31,9 @@ sub test_brocken (%args) {
         Test2::V0::fail("$name - compilation failed: $err") if $name;
         return ( undef, "compilation: $err" );
     }
-
     if ( $os ne 'win64' ) {
         chmod 0755, $exe or die "Cannot chmod +x $exe: $!";
     }
-
     my $run = $exe;
     if ( $os ne 'win64' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
         $run = './' . $exe;

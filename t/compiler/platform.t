@@ -26,4 +26,3 @@ subtest 'Platform::Linux' => sub {
     is $p->shadow_space, 0,       'Linux x64 shadow space is 0';
 };
 done_testing;
-

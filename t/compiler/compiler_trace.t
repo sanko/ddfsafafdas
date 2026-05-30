@@ -46,5 +46,3 @@ subtest 'Require lowers without crashing' => sub {
     ok scalar(@$ast) > 0, 'require: AST produced';
 };
 done_testing;
-
-

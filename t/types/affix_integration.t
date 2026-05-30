@@ -17,4 +17,3 @@ subtest 'from_affix with various string names' => sub {
     ok $t2->isa('Brocken::Core::Type'), 'Float from affix string isa Type';
 };
 done_testing;
-

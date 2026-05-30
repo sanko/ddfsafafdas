@@ -111,5 +111,3 @@ subtest 'Lowering produces call_func for sub calls' => sub {
     ok scalar(@calls) >= 1, 'sub produces call instructions';
 };
 done_testing;
-
-

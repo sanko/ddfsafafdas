@@ -82,5 +82,3 @@ subtest 'IR opcodes enumeration' => sub {
     is $insts->[0]{op}, 'constant',   'first op is constant';
 };
 done_testing;
-
-

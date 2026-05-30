@@ -163,4 +163,3 @@ subtest 'ddx as statement' => sub {
     ok !$err, "no error" or diag "err=$err";
 };
 done_testing;
-

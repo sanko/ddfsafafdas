@@ -85,5 +85,3 @@ subtest 'Coverage: post-optimization coverage rate' => sub {
     ok 1, 'coverage rate computed';
 };
 done_testing;
-
-

@@ -124,4 +124,3 @@ subtest 'Interpolated string detection' => sub {
     is $tokens->[0]{type}, 'INTERP_STRING', 'interpolated string detected';
 };
 done_testing;
-
