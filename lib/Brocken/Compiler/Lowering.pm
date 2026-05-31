@@ -3899,10 +3899,10 @@ package Brocken::Compiler::Lowering {
             }
             $current_func_name = 'L_MAIN_START';
             @func_locals       = ();
-            $self->lower_block( \@main_statements );
+            my ($r, $t) = $self->lower_block( \@main_statements );
             $self->_emit_all_defers();
-            if   ( $self->skip_runtime ) { $builder->emit( 'leave_func',     'i64',  [ $builder->emit( 'constant', 'i64', [1] ) ] ); }
-            else                         { $builder->emit( 'intrinsic_exit', 'void', [ $builder->emit( 'constant', 'i64', [0] ) ] ); }
+            if   ( $self->skip_runtime ) { $builder->emit( 'leave_func',     'i64',  [ defined $r ? $r : $builder->emit( 'constant', 'i64', [1] ) ] ); }
+            else                         { $builder->emit( 'intrinsic_exit', 'void', [ defined $r ? $r : $builder->emit( 'constant', 'i64', [0] ) ] ); }
             while (@fragments) { my $f = shift @fragments; $builder->push_instruction($_) for @$f; }
             $builder->emit( 'intrinsic_emit_runtime', 'void', [] ) unless $self->skip_runtime;
 
@@ -5062,10 +5062,10 @@ package Brocken::Compiler::Lowering {
                         $current_scope->define( $p->{name}, $p->{type}, 0, undef, $sl );
                         $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
                     }
-                    $self->lower_block( $node->body->statements );
+                    my ($r, $t) = $self->lower_block( $node->body->statements );
                     $self->_emit_all_defers();
                     $self->_flush_func_locals();
-                    $builder->emit( 'leave_func', 'void', [0] );
+                    $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
                     $routine_depth--;
                     $current_scope = $current_scope->parent;
                     @defer_stack   = @old_defers;
@@ -5149,9 +5149,9 @@ package Brocken::Compiler::Lowering {
                 $current_scope->define( $p->{name}, $p->{type}, 0, undef, $l );
                 $builder->emit( 'local_store', 'void', [ $l, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
             }
-            $self->lower_block( $node->body->statements );
+            my ($r, $t) = $self->lower_block( $node->body->statements );
             $self->_emit_all_defers();
-            $builder->emit( 'leave_func', 'void', [0] );
+            $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
             $routine_depth--;
             $current_scope = $current_scope->parent;
 

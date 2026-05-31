@@ -390,7 +390,7 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
         print $fh $_ for @shdrs;
 
         # Program Headers
-        my $num_ph = 4;                       # PT_PHDR, PT_LOAD (RX), PT_LOAD (RW), PT_DYNAMIC
+        my $num_ph = 5;                       # PT_PHDR, PT_LOAD (RX), PT_LOAD (RW), PT_DYNAMIC, PT_GNU_STACK
         if ($has_interp)    { $num_ph++; }    # PT_INTERP
         if ($note_data)     { $num_ph++; }    # PT_NOTE
         if ($pintable_data) { $num_ph++; }    # PT_OPENBSD_PINTABLE
@@ -398,6 +398,9 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
 
         # 1. PT_PHDR (type 6)
         push @phdrs, pack( 'L< L< Q< Q< Q< Q< Q< Q<', 6, 4, 64, $base + 64, $base + 64, $num_ph * 56, $num_ph * 56, 8 );
+
+        # 2. PT_GNU_STACK (type 0x6474e551)
+        push @phdrs, pack( 'L< L< Q< Q< Q< Q< Q< Q<', 0x6474e551, 0, 0, 0, 0, 0, 0, 0x10 );
 
         # 2. PT_INTERP (type 3)
         if ($has_interp) {
@@ -460,11 +463,13 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
             $extra_off += length($pintable_data);
         }
 
+        my $entry_point = $self->type eq 'shared' ? 0 : $base + $l->get('.text')->{rva};
+
         # Finalize ELF Header and write program headers/extra data
         my $ehdr = pack(
             'A4 C C C C C x7 S< S< L< Q< Q< Q< L< S< S< S< S< S< S<',
             "\x7fELF", 2, 1, 1, $osabi, 0, $elf_type, ( $arch eq 'arm64' ? 183 : 62 ),
-            1,         $base + $l->get('.text')->{rva},
+            1,         $entry_point,
             64,        $shoff, 0, 64, 56, $num_ph, 64, scalar(@shdrs), $shstrtab_idx
         );
         seek( $fh, 0, 0 );

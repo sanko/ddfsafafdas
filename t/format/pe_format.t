@@ -42,6 +42,7 @@ subtest 'image_base' => sub {
 };
 subtest 'import_rva' => sub {
     my $pe = Brocken::Target::Format::PE->new;
+    $pe->pre_layout( 4096, 4096, 'x64', 'win64' );
     ok lives { $pe->import_rva('ExitProcess') }, 'ExitProcess is known';
     ok lives { $pe->import_rva('WriteFile') },   'WriteFile is known';
     ok dies { $pe->import_rva('Unknown') }, 'unknown import dies';
