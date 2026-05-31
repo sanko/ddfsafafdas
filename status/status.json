@@ -1,0 +1,35 @@
+{
+"Linux:Intel": "failure"
+,
+"Linux:ARM": "failure"
+,
+"Linux:RISC-V": "failure"
+,
+"macOS:Intel": "failure"
+,
+"macOS:Apple Silicon": "failure"
+,
+"Windows:Intel": "failure"
+,
+"Windows:ARM": "failure"
+,
+"DragonFly_BSD:Intel": "failure"
+,
+"FreeBSD:Intel": "failure"
+,
+"FreeBSD:ARM": "failure"
+,
+"Haiku:Intel": "failure"
+,
+"MidnightBSD:Intel": "failure"
+,
+"NetBSD:Intel": "failure"
+,
+"NetBSD:ARM": "failure"
+,
+"OmniOS:Intel": "failure"
+,
+"OpenBSD:Intel": "failure"
+,
+"OpenBSD:ARM": "failure"
+}
