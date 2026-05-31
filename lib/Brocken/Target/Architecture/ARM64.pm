@@ -129,9 +129,8 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
                 $as->store_mem_disp_reg($base, $disp, $src);
             }
             else {
-                $as->add_imm('x16', $base, $disp) if $disp <= 4095;
-                $as->mov_imm('x16', $disp) if $disp > 4095;
-                $as->add_reg('x16', 'x16', $base) if $disp > 4095;
+                if ( $disp >= 0 && $disp <= 4095 ) { $as->lea_reg_disp('x16', $base, $disp); }
+                else { $as->mov_imm('x16', $disp); $as->add_reg('x16', 'x16', $base); }
                 $as->store_mem_disp_reg('x16', 0, $src);
             }
         }
@@ -314,7 +313,7 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
                 if ( $imm > 4095 || $imm < 0 ) { $as->mov_imm('x17', $imm); $as->cmp_reg_reg($l_reg, 'x17'); }
                 else                           { $as->cmp_reg_imm($l_reg, $imm); }
             }
-            my $cc = { eq => 0, ne => 1, lt => 0xB, gt => 0xC }->{ substr($op, 4) };
+            my $cc = { eq => 0, ne => 1, lt => 0xB, gt => 0xC, le => 0xD, ge => 0xA }->{ substr($op, 4) };
             $as->cset($d_reg, $cc);
         }
         # --- Reference Counting ---
