@@ -619,13 +619,13 @@ package Brocken::Compiler::Lowering {
             $self->inject_runtime_init_env();
             $self->inject_runtime_init_argv();
             $self->inject_runtime_print_int();
+            $self->inject_runtime_to_string();
             $self->inject_runtime_print_any();
             $self->inject_runtime_dump();
             $self->inject_runtime_ddx();
             $self->inject_runtime_dd();
             $self->inject_runtime_new_fiber();
             $self->inject_runtime_concat();
-            $self->inject_runtime_to_string();
             $self->inject_runtime_unwind();
             $self->inject_runtime_str_eq();
             $self->inject_runtime_str_cmp();
@@ -1718,7 +1718,8 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'call_func',  'void', [ 'M_print_int', $v ] );
             $builder->emit( 'leave_func', 'void', [0] );
             $builder->emit_label($l_f);
-            $builder->emit( 'intrinsic_print', 'void', [$v] );
+            my $str = $builder->emit( 'call_func', 'ptr', [ 'M_any_to_str', $v ] );
+            $builder->emit( 'intrinsic_print', 'void', [$str] );
             $builder->emit( 'leave_func',      'void', [0] );
         }
 
@@ -4658,6 +4659,11 @@ package Brocken::Compiler::Lowering {
                 if   ( $t eq 'String' ) { $builder->emit( 'intrinsic_print', 'void', [$r] ) }
                 else                    { $builder->emit( 'call_func',       'void', [ "M_print_any", $r ] ) }
                 $builder->emit( 'intrinsic_print', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("\n") ] ) ] );
+                return ( undef, 'void' );
+            }
+            if ( $node->name eq 'dump' ) {
+                my ( $r, $t ) = $self->lower( $node->args->[0] );
+                $builder->emit( 'call_func', 'void', [ 'M_dump', $r ] );
                 return ( undef, 'void' );
             }
             if ( $node->name eq 'ddx' ) {

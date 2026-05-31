@@ -40,13 +40,11 @@ subtest 'image_base' => sub {
     my $pe = Brocken::Target::Format::PE->new;
     is $pe->image_base, 0x140000000, 'PE image base = 0x140000000';
 };
-todo 'import system not yet wired up' => sub {
-    subtest 'import_rva' => sub {
-        my $pe = Brocken::Target::Format::PE->new;
-        ok lives { $pe->import_rva('ExitProcess') }, 'ExitProcess is known';
-        ok lives { $pe->import_rva('WriteFile') },   'WriteFile is known';
-        ok dies { $pe->import_rva('Unknown') }, 'unknown import dies';
-    };
+subtest 'import_rva' => sub {
+    my $pe = Brocken::Target::Format::PE->new;
+    ok lives { $pe->import_rva('ExitProcess') }, 'ExitProcess is known';
+    ok lives { $pe->import_rva('WriteFile') },   'WriteFile is known';
+    ok dies { $pe->import_rva('Unknown') }, 'unknown import dies';
 };
 subtest 'pre_layout' => sub {
     my $pe = Brocken::Target::Format::PE->new;

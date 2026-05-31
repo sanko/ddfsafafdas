@@ -6,7 +6,8 @@ package Brocken::Compiler::DataSegment {
     use Encode qw(encode);
 
     class Brocken::Compiler::DataSegment {
-        field $raw_data : reader : writer = '';
+        field $raw_data : reader = '';
+        method set_raw_data($data) {$raw_data = $data }
         field %string_offsets;
 
         method add_string($str) {
