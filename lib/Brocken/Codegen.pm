@@ -198,9 +198,9 @@ class Brocken::Codegen {
     }
 
     method _allocate_registers( $instructions, $driver ) {
-        my $changed       = 1;
+        my $changed = 1;
         my %rmap;
-        my $safety        = 2000;
+        my $safety = 2000;
         my %spilled;
         while ( $changed && $safety-- > 0 ) {
             $changed = 0;
@@ -211,6 +211,7 @@ class Brocken::Codegen {
             my @active;
             %rmap = ();
             my $i = 0;
+
             while ( $i < @intervals ) {
                 my $iv = $intervals[$i];
                 @active = grep {
@@ -221,10 +222,11 @@ class Brocken::Codegen {
                 if ( !$phys ) {
                     @active = sort { $b->{end} <=> $a->{end} } @active;
                     if ( $active[0] && $active[0]->{end} > $iv->{end} ) {
+
                         # Spill an already-allocated vreg to free its register for the current vreg
                         $spilled{ $active[0]->{vreg} } = 1;
                         my $freed = $active[0]->{phys};
-                        @active  = grep { $_->{vreg} ne $active[0]->{vreg} } @active;
+                        @active = grep { $_->{vreg} ne $active[0]->{vreg} } @active;
                         unshift @free, $freed;
                         $changed = 1;
                         redo;

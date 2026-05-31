@@ -12,11 +12,11 @@ use Brocken;
 
 Loads all compiler components and defines base types used throughout:
 
-- Brocken::Symbol
+- Brocken::Core::Symbol
 
     Metadata for a single variable: name, type, is\_state, state\_idx, stack\_offset.
 
-- Brocken::Scope
+- Brocken::Core::Scope
 
     Lexical scope with parent chain. `define()` registers a symbol (dies on redeclaration). `resolve()` looks up a symbol
     in the current scope and walks up the parent chain.

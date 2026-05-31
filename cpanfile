@@ -4,5 +4,5 @@ on configure => sub {
     requires 'perl', 'v5.40.0';
 };
 on test => sub {
-    requires 'Affix';
+    recommends 'Affix';
 };

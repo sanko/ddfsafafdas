@@ -39,15 +39,15 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         return Brocken::Target::Architecture::ARM64::Emit->new();
     }
 
-    method _compute_local_pos_offset($driver, $slot) {
+    method _compute_local_pos_offset( $driver, $slot ) {
         return $driver->frame_local_size - $slot;
     }
 
-    method _move_val_to_scratch($as, $v, $inst, $reg_map, $idx = 0) {
+    method _move_val_to_scratch( $as, $v, $inst, $reg_map, $idx = 0 ) {
         my $arg = $inst->{args}[$idx];
-        if ( $arg =~ /^%/ ) { return $reg_map->{$arg}; }
-        elsif ( $arg =~ /^[a-z]/i ) { $as->mov_reg('x16', $arg); return 'x16'; }
-        else { $as->mov_imm('x16', $v->($arg)); return 'x16'; }
+        if    ( $arg =~ /^%/ )      { return $reg_map->{$arg}; }
+        elsif ( $arg =~ /^[a-z]/i ) { $as->mov_reg( 'x16', $arg ); return 'x16'; }
+        else                        { $as->mov_imm( 'x16', $v->($arg) ); return 'x16'; }
     }
 
     method emit_op( $as, $inst, $reg_map, $driver ) {
@@ -66,9 +66,9 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'mov' ) {
             my $src = $inst->{args}[0];
-            if    ( $src =~ /^%/ ) { $as->mov_reg( $d_reg, $reg_map->{$src} ) if $d_reg ne $reg_map->{$src}; }
+            if    ( $src =~ /^%/ )      { $as->mov_reg( $d_reg, $reg_map->{$src} ) if $d_reg ne $reg_map->{$src}; }
             elsif ( $src =~ /^[a-z]/i ) { $as->mov_reg( $d_reg, $src ) if $d_reg ne $src; }
-            else                { $as->mov_imm( $d_reg, $v->($src) ); }
+            else                        { $as->mov_imm( $d_reg, $v->($src) ); }
         }
         elsif ( $op eq 'ret' ) {
             $as->ret();
@@ -82,89 +82,93 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         elsif ( $op eq 'label' ) {
             $as->mark_label( $inst->{name} );
         }
+
         # --- Function Prologue / Epilogue ---
         elsif ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
             for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
-            $as->mov_reg('x29', 'sp');
+            $as->mov_reg( 'x29', 'sp' );
             my $fsz = $driver->frame_local_size;
-            if ( $fsz <= 4095 ) { $as->sub_imm('sp', $fsz); }
+            if ( $fsz <= 4095 ) { $as->sub_imm( 'sp', $fsz ); }
             else {
-                $as->mov_imm('x16', $fsz);
-                $as->sub_reg('sp', 'sp', 'x16');
+                $as->mov_imm( 'x16', $fsz );
+                $as->sub_reg( 'sp', 'sp', 'x16' );
             }
         }
         elsif ( $op eq 'leave_func' ) {
             if ( defined $inst->{args}[0] ) {
                 my $arg = $inst->{args}[0];
-                if ( $arg =~ /^%/ ) { $as->mov_reg('x0', $reg_map->{$arg}); }
-                else                { $as->mov_imm('x0', $v->($arg)); }
+                if ( $arg =~ /^%/ ) { $as->mov_reg( 'x0', $reg_map->{$arg} ); }
+                else                { $as->mov_imm( 'x0', $v->($arg) ); }
             }
             my $fsz = $driver->frame_local_size;
-            if ( $fsz <= 4095 ) { $as->add_imm('sp', $fsz); }
+            if ( $fsz <= 4095 ) { $as->add_imm( 'sp', $fsz ); }
             else {
-                $as->mov_imm('x16', $fsz);
-                $as->add_reg('sp', 'sp', 'x16');
+                $as->mov_imm( 'x16', $fsz );
+                $as->add_reg( 'sp', 'sp', 'x16' );
             }
             for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
             $as->ret();
         }
+
         # --- Local Load / Store (register spills & lower-level stack slots) ---
         elsif ( $op eq 'local_store' ) {
             my $slot = $inst->{args}[0];
-            my $pos  = $self->_compute_local_pos_offset($driver, $slot);
-            my $src  = $self->_move_val_to_scratch($as, $v, $inst, $reg_map, 1);
-            $as->store_mem_disp_reg('sp', $pos, $src);
+            my $pos  = $self->_compute_local_pos_offset( $driver, $slot );
+            my $src  = $self->_move_val_to_scratch( $as, $v, $inst, $reg_map, 1 );
+            $as->store_mem_disp_reg( 'sp', $pos, $src );
         }
         elsif ( $op eq 'local_load' ) {
             my $slot = $inst->{args}[0];
-            my $pos  = $self->_compute_local_pos_offset($driver, $slot);
-            $as->load_reg_mem($d_reg, 'sp', $pos);
+            my $pos  = $self->_compute_local_pos_offset( $driver, $slot );
+            $as->load_reg_mem( $d_reg, 'sp', $pos );
         }
+
         # --- Memory load/store with displacement ---
         elsif ( $op eq 'store_mem_disp' ) {
             my $base = $reg_map->{ $inst->{args}[0] };
             my $disp = $inst->{args}[1];
-            my $src  = $self->_move_val_to_scratch($as, $v, $inst, $reg_map, 2);
+            my $src  = $self->_move_val_to_scratch( $as, $v, $inst, $reg_map, 2 );
             if ( $disp >= 0 && ( $disp & 7 ) == 0 && $disp <= 32760 ) {
-                $as->store_mem_disp_reg($base, $disp, $src);
+                $as->store_mem_disp_reg( $base, $disp, $src );
             }
             else {
-                if ( $disp >= 0 && $disp <= 4095 ) { $as->lea_reg_disp('x16', $base, $disp); }
-                else { $as->mov_imm('x16', $disp); $as->add_reg('x16', 'x16', $base); }
-                $as->store_mem_disp_reg('x16', 0, $src);
+                if ( $disp >= 0 && $disp <= 4095 ) { $as->lea_reg_disp( 'x16', $base, $disp ); }
+                else                               { $as->mov_imm( 'x16', $disp ); $as->add_reg( 'x16', 'x16', $base ); }
+                $as->store_mem_disp_reg( 'x16', 0, $src );
             }
         }
         elsif ( $op eq 'load_mem_disp' ) {
             my $base = $reg_map->{ $inst->{args}[0] };
             my $disp = $inst->{args}[1];
             if ( $disp >= 0 && ( $disp & 7 ) == 0 && $disp <= 32760 ) {
-                $as->load_reg_mem($d_reg, $base, $disp);
+                $as->load_reg_mem( $d_reg, $base, $disp );
             }
             else {
-                $as->mov_imm('x16', $disp);
-                $as->add_reg('x16', $base, 'x16');
-                $as->load_reg_mem($d_reg, 'x16', 0);
+                $as->mov_imm( 'x16', $disp );
+                $as->add_reg( 'x16', $base, 'x16' );
+                $as->load_reg_mem( $d_reg, 'x16', 0 );
             }
         }
         elsif ( $op eq 'load_mem_byte' ) {
             my $base = $reg_map->{ $inst->{args}[0] };
             my $idx  = $inst->{args}[1];
             if ( $idx =~ /^%/ ) {
-                $as->add_reg('x16', $base, $reg_map->{$idx});
-                $as->load_reg_mem_byte($d_reg, 'x16', 0);
+                $as->add_reg( 'x16', $base, $reg_map->{$idx} );
+                $as->load_reg_mem_byte( $d_reg, 'x16', 0 );
             }
-            else { $as->load_reg_mem_byte($d_reg, $base, $v->($idx)); }
+            else { $as->load_reg_mem_byte( $d_reg, $base, $v->($idx) ); }
         }
         elsif ( $op eq 'store_mem_byte' ) {
-            my $base    = $reg_map->{ $inst->{args}[0] };
-            my $idx     = $inst->{args}[1];
-            my $src     = $self->_move_val_to_scratch($as, $v, $inst, $reg_map, 2);
+            my $base = $reg_map->{ $inst->{args}[0] };
+            my $idx  = $inst->{args}[1];
+            my $src  = $self->_move_val_to_scratch( $as, $v, $inst, $reg_map, 2 );
             if ( $idx =~ /^%/ ) {
-                $as->add_reg('x16', $base, $reg_map->{$idx});
-                $as->store_mem_disp_byte('x16', 0, $src);
+                $as->add_reg( 'x16', $base, $reg_map->{$idx} );
+                $as->store_mem_disp_byte( 'x16', 0, $src );
             }
-            else { $as->store_mem_disp_byte($base, $v->($idx), $src); }
+            else { $as->store_mem_disp_byte( $base, $v->($idx), $src ); }
         }
+
         # --- Function Calls ---
         elsif ( $op =~ /^call_/ || $op =~ /^tail_call_/ ) {
             my @args   = @{ $inst->{args} };
@@ -172,57 +176,59 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             if ( $op =~ /_reg$/ ) {
                 my $first_arg = shift @args;
                 my $src_reg   = ( $first_arg =~ /^%/ && exists $reg_map->{$first_arg} ) ? $reg_map->{$first_arg} : 'x16';
-                $as->mov_reg('x16', $src_reg);
+                $as->mov_reg( 'x16', $src_reg );
             }
             for my $i ( 0 .. $#args ) {
                 my $dst = $self->_abi_arg_reg($i);
                 my $arg = $args[$i];
-                if ( $arg =~ /^%/ ) { $as->mov_reg($dst, $reg_map->{$arg}) if $dst ne $reg_map->{$arg}; }
-                elsif ( $arg =~ /^[A-Z_]/i ) { $as->lea_rva('x16', $arg, $driver->text_rva); $as->mov_reg($dst, 'x16') if $dst ne 'x16'; }
+                if    ( $arg =~ /^%/ )       { $as->mov_reg( $dst, $reg_map->{$arg} ) if $dst ne $reg_map->{$arg}; }
+                elsif ( $arg =~ /^[A-Z_]/i ) { $as->lea_rva( 'x16', $arg, $driver->text_rva ); $as->mov_reg( $dst, 'x16' ) if $dst ne 'x16'; }
                 else {
                     my $imm = $v->($arg);
-                    if ( $imm == 0 ) { $as->mov_reg($dst, 'xzr'); }
-                    else             { $as->mov_imm($dst, $imm); }
+                    if ( $imm == 0 ) { $as->mov_reg( $dst, 'xzr' ); }
+                    else             { $as->mov_imm( $dst, $imm ); }
                 }
             }
             if ( $op =~ /^tail_call_/ ) {
                 my $fsz = $driver->frame_local_size;
-                if ( $fsz <= 4095 ) { $as->add_imm('sp', $fsz); }
-                else { $as->mov_imm('x16', $fsz); $as->add_reg('sp', 'sp', 'x16'); }
+                if ( $fsz <= 4095 ) { $as->add_imm( 'sp', $fsz ); }
+                else                { $as->mov_imm( 'x16', $fsz ); $as->add_reg( 'sp', 'sp', 'x16' ); }
                 for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
                 if   ( $op eq 'tail_call_func' ) { $as->jmp($target); }
                 else                             { $as->jmp_reg('x16'); }
             }
             else {
                 if   ( $op eq 'call_func' ) { $as->call_label($target); }
-                else                        { $as->append_code(pack('L<', 0xD63F0200)); } # blr x16
-                if ( defined $d_reg ) { $as->mov_reg($d_reg, 'x0'); }
+                else                        { $as->append_code( pack( 'L<', 0xD63F0200 ) ); }    # blr x16
+                if ( defined $d_reg ) { $as->mov_reg( $d_reg, 'x0' ); }
             }
         }
+
         # --- Shadow Stack ---
         elsif ( $op eq 'shadow_push' ) {
-            $as->load_reg_mem('x16', 'x28', $driver->iso_offset('current_fcb'));
-            $as->load_reg_mem('x17', 'x16', $driver->fcb_offset('shadow_ptr'));
-            my $src = $self->_move_val_to_scratch($as, $v, $inst, $reg_map, 0);
-            $as->store_mem_disp_reg('x17', 0, $src);
-            $as->add_imm('x17', 8);
-            $as->store_mem_disp_reg('x16', $driver->fcb_offset('shadow_ptr'), 'x17');
+            $as->load_reg_mem( 'x16', 'x28', $driver->iso_offset('current_fcb') );
+            $as->load_reg_mem( 'x17', 'x16', $driver->fcb_offset('shadow_ptr') );
+            my $src = $self->_move_val_to_scratch( $as, $v, $inst, $reg_map, 0 );
+            $as->store_mem_disp_reg( 'x17', 0, $src );
+            $as->add_imm( 'x17', 8 );
+            $as->store_mem_disp_reg( 'x16', $driver->fcb_offset('shadow_ptr'), 'x17' );
         }
         elsif ( $op eq 'shadow_pop' ) {
-            $as->load_reg_mem('x16', 'x28', $driver->iso_offset('current_fcb'));
-            $as->load_reg_mem('x17', 'x16', $driver->fcb_offset('shadow_ptr'));
-            $as->sub_imm('x17', 8);
-            $as->load_reg_mem($d_reg, 'x17', 0) if defined $d_reg;
-            $as->store_mem_disp_reg('x16', $driver->fcb_offset('shadow_ptr'), 'x17');
+            $as->load_reg_mem( 'x16', 'x28', $driver->iso_offset('current_fcb') );
+            $as->load_reg_mem( 'x17', 'x16', $driver->fcb_offset('shadow_ptr') );
+            $as->sub_imm( 'x17', 8 );
+            $as->load_reg_mem( $d_reg, 'x17', 0 ) if defined $d_reg;
+            $as->store_mem_disp_reg( 'x16', $driver->fcb_offset('shadow_ptr'), 'x17' );
         }
         elsif ( $op =~ /^shadow_(get|set|restore)$/ ) {
-            $as->load_reg_mem('x16', 'x28', $driver->iso_offset('current_fcb'));
-            if ( $op eq 'shadow_get' ) { $as->load_reg_mem($d_reg, 'x16', $driver->fcb_offset('shadow_ptr')); }
+            $as->load_reg_mem( 'x16', 'x28', $driver->iso_offset('current_fcb') );
+            if ( $op eq 'shadow_get' ) { $as->load_reg_mem( $d_reg, 'x16', $driver->fcb_offset('shadow_ptr') ); }
             else {
-                my $src = $self->_move_val_to_scratch($as, $v, $inst, $reg_map, 0);
-                $as->store_mem_disp_reg('x16', $driver->fcb_offset('shadow_ptr'), $src);
+                my $src = $self->_move_val_to_scratch( $as, $v, $inst, $reg_map, 0 );
+                $as->store_mem_disp_reg( 'x16', $driver->fcb_offset('shadow_ptr'), $src );
             }
         }
+
         # --- Stack Allocation ---
         elsif ( $op eq 'stack_alloc' ) {
             my $psz            = $inst->{args}[0];
@@ -230,134 +236,146 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             my $slot           = $inst->{slot};
             my $hdr_offset     = -$slot;
             my $payload_offset = -$slot + 8;
-            my $fhdr = $aligned_sz | ( $psz & 0xC000000000000000 );
-            $as->mov_imm('x16', $fhdr);
-            $as->store_mem_disp_reg('x29', $hdr_offset, 'x16');
+            my $fhdr           = $aligned_sz | ( $psz & 0xC000000000000000 );
+            $as->mov_imm( 'x16', $fhdr );
+            $as->store_mem_disp_reg( 'x29', $hdr_offset, 'x16' );
+
             for ( my $off = $payload_offset; $off < $hdr_offset + $aligned_sz; $off += 8 ) {
-                $as->mov_imm('x16', 0);
-                $as->store_mem_disp_reg('x29', $off, 'x16');
+                $as->mov_imm( 'x16', 0 );
+                $as->store_mem_disp_reg( 'x29', $off, 'x16' );
             }
-            $as->lea_reg_disp($d_reg, 'x29', $payload_offset);
+            $as->lea_reg_disp( $d_reg, 'x29', $payload_offset );
         }
+
         # --- ALU (integer) ---
         elsif ( $op =~ /^(add|sub|mul|and|or|xor)$/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
             my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'x16';
-            if ( $l_raw !~ /^%/ && $l_raw !~ /^[a-z]/i ) { $as->mov_imm('x16', $v->($l_raw)); }
-            elsif ( $l_raw =~ /^[a-z]/i ) { $as->mov_reg('x16', $l_raw); $l_reg = 'x16'; }
-            if ( $l_reg ne $d_reg ) { $as->mov_reg($d_reg, $l_reg); }
-            if ( $r_raw =~ /^%/ ) {
+            if    ( $l_raw !~ /^%/ && $l_raw !~ /^[a-z]/i ) { $as->mov_imm( 'x16', $v->($l_raw) ); }
+            elsif ( $l_raw =~ /^[a-z]/i ) { $as->mov_reg( 'x16',  $l_raw ); $l_reg = 'x16'; }
+            if    ( $l_reg ne $d_reg )    { $as->mov_reg( $d_reg, $l_reg ); }
+            if    ( $r_raw =~ /^%/ ) {
                 my $rr = $reg_map->{$r_raw};
-                if    ( $op eq 'add' ) { $as->add_reg($d_reg, $d_reg, $rr); }
-                elsif ( $op eq 'sub' ) { $as->sub_reg($d_reg, $d_reg, $rr); }
-                elsif ( $op eq 'mul' ) { $as->mul_reg($d_reg, $d_reg, $rr); }
-                elsif ( $op eq 'and' ) { $as->and_reg($d_reg, $d_reg, $rr); }
-                elsif ( $op eq 'or' )  { $as->or_reg($d_reg, $d_reg, $rr); }
-                elsif ( $op eq 'xor' ) { $as->xor_reg($d_reg, $d_reg, $rr); }
+                if    ( $op eq 'add' ) { $as->add_reg( $d_reg, $d_reg, $rr ); }
+                elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, $d_reg, $rr ); }
+                elsif ( $op eq 'mul' ) { $as->mul_reg( $d_reg, $d_reg, $rr ); }
+                elsif ( $op eq 'and' ) { $as->and_reg( $d_reg, $d_reg, $rr ); }
+                elsif ( $op eq 'or' )  { $as->or_reg( $d_reg, $d_reg, $rr ); }
+                elsif ( $op eq 'xor' ) { $as->xor_reg( $d_reg, $d_reg, $rr ); }
             }
             else {
                 my $imm = $v->($r_raw);
-                if    ( $op eq 'add' ) { $as->add_imm($d_reg, $imm); }
-                elsif ( $op eq 'sub' ) { $as->sub_imm($d_reg, $imm); }
+                if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $imm ); }
+                elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $imm ); }
                 else {
-                    if ( $imm > 4095 || $imm < 0 ) { $as->mov_imm('x16', $imm); }
-                    if    ( $op eq 'add' ) { $as->add_imm($d_reg, $imm); }
-                    elsif ( $op eq 'sub' ) { $as->sub_imm($d_reg, $imm); }
-                    elsif ( $op eq 'mul' ) { $as->mul_reg($d_reg, $d_reg, 'x16'); }
-                    elsif ( $op eq 'and' ) { $as->and_reg($d_reg, $d_reg, 'x16'); }
-                    elsif ( $op eq 'or' )  { $as->or_reg($d_reg, $d_reg, 'x16'); }
-                    elsif ( $op eq 'xor' ) { $as->xor_reg($d_reg, $d_reg, 'x16'); }
+                    if    ( $imm > 4095 || $imm < 0 ) { $as->mov_imm( 'x16', $imm ); }
+                    if    ( $op eq 'add' )            { $as->add_imm( $d_reg, $imm ); }
+                    elsif ( $op eq 'sub' )            { $as->sub_imm( $d_reg, $imm ); }
+                    elsif ( $op eq 'mul' )            { $as->mul_reg( $d_reg, $d_reg, 'x16' ); }
+                    elsif ( $op eq 'and' )            { $as->and_reg( $d_reg, $d_reg, 'x16' ); }
+                    elsif ( $op eq 'or' )             { $as->or_reg( $d_reg, $d_reg, 'x16' ); }
+                    elsif ( $op eq 'xor' )            { $as->xor_reg( $d_reg, $d_reg, 'x16' ); }
                 }
             }
         }
+
         # --- Division and Modulo ---
         elsif ( $op =~ /^(div|mod)$/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
             my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'x16';
-            if ( $l_raw !~ /^%/ ) { $as->mov_imm('x16', $v->($l_raw)); $l_reg = 'x16'; }
-            $as->mov_reg('x16', $l_reg);
-            if ( $r_raw =~ /^%/ ) { $as->sdiv_reg('x17', 'x16', $reg_map->{$r_raw}); }
-            else                  { $as->mov_imm('x17', $v->($r_raw)); $as->sdiv_reg('x17', 'x16', 'x17'); }
-            if ( $op eq 'div' ) { $as->mov_reg($d_reg, 'x17'); }
+            if ( $l_raw !~ /^%/ ) { $as->mov_imm( 'x16', $v->($l_raw) ); $l_reg = 'x16'; }
+            $as->mov_reg( 'x16', $l_reg );
+            if ( $r_raw =~ /^%/ ) { $as->sdiv_reg( 'x17', 'x16', $reg_map->{$r_raw} ); }
+            else                  { $as->mov_imm( 'x17', $v->($r_raw) ); $as->sdiv_reg( 'x17', 'x16', 'x17' ); }
+            if ( $op eq 'div' ) { $as->mov_reg( $d_reg, 'x17' ); }
             else {
                 # modulo: dividend - (divisor * quotient)
-                $as->mul_reg('x17', 'x17', ( $r_raw =~ /^%/ ? $reg_map->{$r_raw} : 'x17' ) );
-                $as->sub_reg($d_reg, 'x16', 'x17');
+                $as->mul_reg( 'x17', 'x17', ( $r_raw =~ /^%/ ? $reg_map->{$r_raw} : 'x17' ) );
+                $as->sub_reg( $d_reg, 'x16', 'x17' );
             }
         }
+
         # --- Shifts ---
         elsif ( $op =~ /^(shl|shr)$/ ) {
             my ( $val_raw, $amt_raw ) = @{ $inst->{args} };
             my $val_reg = ( $val_raw =~ /^%/ ) ? $reg_map->{$val_raw} : 'x16';
-            if ( $val_raw !~ /^%/ ) { $as->mov_imm('x16', $v->($val_raw)); $val_reg = 'x16'; }
-            $as->mov_reg($d_reg, $val_reg) if $d_reg ne $val_reg;
+            if ( $val_raw !~ /^%/ ) { $as->mov_imm( 'x16', $v->($val_raw) ); $val_reg = 'x16'; }
+            $as->mov_reg( $d_reg, $val_reg ) if $d_reg ne $val_reg;
             if ( $amt_raw =~ /^%/ ) {
                 my $ar = $reg_map->{$amt_raw};
-                if   ( $op eq 'shl' ) { $as->lslv_reg($d_reg, $d_reg, $ar); }
-                else                  { $as->lsrv_reg($d_reg, $d_reg, $ar); }
+                if ( $op eq 'shl' ) { $as->lslv_reg( $d_reg, $d_reg, $ar ); }
+                else                { $as->lsrv_reg( $d_reg, $d_reg, $ar ); }
             }
             else {
                 my $amt = $v->($amt_raw);
-                if   ( $op eq 'shl' ) { $as->lsl_imm($d_reg, $d_reg, $amt); }
-                else                  { $as->shr_imm($d_reg, $d_reg, $amt); }
+                if ( $op eq 'shl' ) { $as->lsl_imm( $d_reg, $d_reg, $amt ); }
+                else                { $as->shr_imm( $d_reg, $d_reg, $amt ); }
             }
         }
+
         # --- Comparisons ---
         elsif ( $op =~ /^cmp_/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
             my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'x16';
-            if ( $l_raw !~ /^%/ ) { $as->mov_imm('x16', $v->($l_raw)); $l_reg = 'x16'; }
-            if ( $r_raw =~ /^%/ ) { $as->cmp_reg_reg($l_reg, $reg_map->{$r_raw}); }
+            if ( $l_raw !~ /^%/ ) { $as->mov_imm( 'x16', $v->($l_raw) ); $l_reg = 'x16'; }
+            if ( $r_raw =~ /^%/ ) { $as->cmp_reg_reg( $l_reg, $reg_map->{$r_raw} ); }
             else {
                 my $imm = $v->($r_raw);
-                if ( $imm > 4095 || $imm < 0 ) { $as->mov_imm('x17', $imm); $as->cmp_reg_reg($l_reg, 'x17'); }
-                else                           { $as->cmp_reg_imm($l_reg, $imm); }
+                if ( $imm > 4095 || $imm < 0 ) { $as->mov_imm( 'x17', $imm ); $as->cmp_reg_reg( $l_reg, 'x17' ); }
+                else                           { $as->cmp_reg_imm( $l_reg, $imm ); }
             }
-            my $cc = { eq => 0, ne => 1, lt => 0xB, gt => 0xC, le => 0xD, ge => 0xA }->{ substr($op, 4) };
-            $as->cset($d_reg, $cc);
+            my $cc = { eq => 0, ne => 1, lt => 0xB, gt => 0xC, le => 0xD, ge => 0xA }->{ substr( $op, 4 ) };
+            $as->cset( $d_reg, $cc );
         }
+
         # --- Reference Counting ---
         elsif ( $op =~ /^(local|atomic)_(inc|dec)_ref$/ ) {
             my $is_atomic = $1 eq 'atomic';
             my $is_inc    = $2 eq 'inc';
             my $obj       = $reg_map->{ $inst->{args}[0] };
-            my $rc_adj = 1 << 48;
+            my $rc_adj    = 1 << 48;
             if ($is_atomic) {
+
                 # Use load-linked/store-conditional for atomic ref counting
-                $as->ldxr_reg('x16', $obj);
+                $as->ldxr_reg( 'x16', $obj );
                 my $adj = $is_inc ? $rc_adj : -$rc_adj;
-                $as->add_imm('x17', $obj, -8);
-                $as->add_reg('x16', 'x16', ($is_inc ? 'x16' : 'x17'));
-                $as->stxr_reg('x16', 'x16', 'x17');
+                $as->add_imm( 'x17', $obj, -8 );
+                $as->add_reg( 'x16', 'x16', ( $is_inc ? 'x16' : 'x17' ) );
+                $as->stxr_reg( 'x16', 'x16', 'x17' );
             }
             else {
-                $as->mov_imm('x16', $rc_adj);
-                if ($is_inc) { $as->load_reg_mem('x17', $obj, -8); $as->add_reg('x16', 'x17', 'x16'); $as->store_mem_disp_reg($obj, -8, 'x16'); }
-                else         { $as->load_reg_mem('x17', $obj, -8); $as->sub_reg('x16', 'x17', 'x16'); $as->store_mem_disp_reg($obj, -8, 'x16'); }
+                $as->mov_imm( 'x16', $rc_adj );
+                if ($is_inc) {
+                    $as->load_reg_mem( 'x17', $obj, -8 );
+                    $as->add_reg( 'x16', 'x17', 'x16' );
+                    $as->store_mem_disp_reg( $obj, -8, 'x16' );
+                }
+                else { $as->load_reg_mem( 'x17', $obj, -8 ); $as->sub_reg( 'x16', 'x17', 'x16' ); $as->store_mem_disp_reg( $obj, -8, 'x16' ); }
             }
         }
+
         # --- Isolate context access ---
-        elsif ( $op eq 'load_iso_disp' ) { $as->load_reg_mem($d_reg, 'x28', $inst->{args}[0]); }
+        elsif ( $op eq 'load_iso_disp' ) { $as->load_reg_mem( $d_reg, 'x28', $inst->{args}[0] ); }
         elsif ( $op eq 'store_iso_disp' ) {
-            my $src = $self->_move_val_to_scratch($as, $v, $inst, $reg_map, 1);
-            $as->store_mem_disp_reg('x28', $inst->{args}[0], $src);
+            my $src = $self->_move_val_to_scratch( $as, $v, $inst, $reg_map, 1 );
+            $as->store_mem_disp_reg( 'x28', $inst->{args}[0], $src );
         }
         elsif ( $op =~ /^load_(func|data)_addr$/ ) {
             my $trva = $inst->{args}[0];
             if ( $trva =~ /^\d+$/ ) {
-                if ( $op eq 'load_data_addr' ) { $as->lea_rva($d_reg, "DATA:$trva"); }
-                else                            { $as->lea_rva($d_reg, $trva, $driver->text_rva); }
+                if ( $op eq 'load_data_addr' ) { $as->lea_rva( $d_reg, "DATA:$trva" ); }
+                else                           { $as->lea_rva( $d_reg, $trva, $driver->text_rva ); }
             }
-            else { $as->lea_rva($d_reg, $trva); }
+            else { $as->lea_rva( $d_reg, $trva ); }
         }
-        elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg($d_reg, 'x28'); }
-        elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg('x28', $reg_map->{ $inst->{args}[0] }); }
+        elsif ( $op eq 'get_isolate_ctx' ) { $as->mov_reg( $d_reg, 'x28' ); }
+        elsif ( $op eq 'set_isolate_ctx' ) { $as->mov_reg( 'x28',  $reg_map->{ $inst->{args}[0] } ); }
         elsif ( $op eq 'get_arg' ) {
             my $arg_idx = $inst->{args}[0];
-            $as->mov_reg($d_reg, $self->_abi_arg_reg($arg_idx));
+            $as->mov_reg( $d_reg, $self->_abi_arg_reg($arg_idx) );
         }
-        elsif ( $op eq 'get_sp' ) { $as->mov_reg($d_reg, 'sp'); }
-        elsif ( $op eq 'get_bp' ) { $as->mov_reg($d_reg, 'x29'); }
+        elsif ( $op eq 'get_sp' ) { $as->mov_reg( $d_reg, 'sp' ); }
+        elsif ( $op eq 'get_bp' ) { $as->mov_reg( $d_reg, 'x29' ); }
     }
 }
 
@@ -723,14 +741,17 @@ class Brocken::Target::Architecture::ARM64::Emit {
         my $r = $self->reg($reg);
         $code .= pack( 'L<', 0x9A9F07E0 | ( $cond << 12 ) | $r );
     }
+
     method jmp_reg($reg) {
         my $r = $self->reg($reg);
         $code .= pack( 'L<', 0xD61F0000 | ( $r << 5 ) );
     }
+
     method lslv_reg( $d, $n, $m ) {
         my ( $rd, $rn, $rm ) = ( $self->reg($d), $self->reg($n), $self->reg($m) );
         $code .= pack( 'L<', 0xDA802800 | ( $rm << 16 ) | ( $rn << 5 ) | $rd );
     }
+
     method lsrv_reg( $d, $n, $m ) {
         my ( $rd, $rn, $rm ) = ( $self->reg($d), $self->reg($n), $self->reg($m) );
         $code .= pack( 'L<', 0xDA802C00 | ( $rm << 16 ) | ( $rn << 5 ) | $rd );

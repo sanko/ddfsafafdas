@@ -9,7 +9,10 @@ use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
 use Brocken::Codegen;
-use Affix;
+
+BEGIN {
+    eval { require Affix; Affix->import(); 1 } or plan skip_all => "Affix not available";
+}
 subtest 'Pointer type parsing' => sub {
     my $source = 'sub test_ptr(Pointer $p) { return $p; }';
     my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();

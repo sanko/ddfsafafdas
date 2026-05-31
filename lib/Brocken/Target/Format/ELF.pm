@@ -5,9 +5,7 @@ no warnings 'experimental::class';
 class Brocken::Target::Format::ELF : isa(Brocken::Format) {
 
     method _detect_elf_info ( $ref = undef ) {
-        my @candidates = $ref
-            ? ($ref)
-            : ( '/bin/sh', '/sbin/init', '/usr/bin/env', '/boot/system/bin/sh', '/boot/system/bin/env' );
+        my @candidates = $ref ? ($ref) : ( '/bin/sh', '/sbin/init', '/usr/bin/env', '/boot/system/bin/sh', '/boot/system/bin/env' );
         for my $candidate (@candidates) {
             next if !-e $candidate || !-r _;
             open my $fh, '<:raw', $candidate or next;
@@ -19,6 +17,7 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
             my $ei_class = ord( substr( $ehdr, 4, 1 ) );
             next if $ei_class != 1 && $ei_class != 2;
             my ( $e_phoff, $e_phentsize, $e_phnum );
+
             if ( $ei_class == 2 ) {
                 $e_phoff     = unpack( 'Q', substr( $ehdr, 32, 8 ) );
                 $e_phentsize = unpack( 'S', substr( $ehdr, 54, 2 ) );
@@ -37,6 +36,7 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
             close $fh2;
             next if !$read_ok;
             my ( $note_data, $has_pintable ) = ( '', 0 );
+
             for my $i ( 0 .. $e_phnum - 1 ) {
                 my $phdr   = substr( $phdrs, $i * $e_phentsize, $e_phentsize );
                 my $p_type = unpack( 'L', substr( $phdr, 0, 4 ) );
@@ -151,15 +151,15 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
         }
 
         # 1. Setup Interp path for executable
-        my $interp = '';
+        my $interp     = '';
         my $has_interp = 0;
         if ( $self->type eq 'exe' ) {
             my $interp_key = ( $arch eq 'arm64' && $os eq 'linux' ) ? 'linux_arm' : $os;
-            my $ipath = $interp_map{$interp_key} // '/lib/ld.so.1';
+            my $ipath      = $interp_map{$interp_key} // '/lib/ld.so.1';
             if ( length $ipath ) {
-                $interp = $ipath . "\0";
+                $interp                    = $ipath . "\0";
                 $l->get('.interp')->{size} = length($interp);
-                $has_interp = 1;
+                $has_interp                = 1;
             }
         }
 
@@ -390,10 +390,10 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
         print $fh $_ for @shdrs;
 
         # Program Headers
-        my $num_ph = 4;                               # PT_PHDR, PT_LOAD (RX), PT_LOAD (RW), PT_DYNAMIC
-        if ($has_interp)            { $num_ph++; }    # PT_INTERP
-        if ($note_data)             { $num_ph++; }    # PT_NOTE
-        if ($pintable_data)         { $num_ph++; }    # PT_OPENBSD_PINTABLE
+        my $num_ph = 4;                       # PT_PHDR, PT_LOAD (RX), PT_LOAD (RW), PT_DYNAMIC
+        if ($has_interp)    { $num_ph++; }    # PT_INTERP
+        if ($note_data)     { $num_ph++; }    # PT_NOTE
+        if ($pintable_data) { $num_ph++; }    # PT_OPENBSD_PINTABLE
         my @phdrs = ();
 
         # 1. PT_PHDR (type 6)

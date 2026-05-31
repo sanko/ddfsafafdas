@@ -3,7 +3,10 @@ use warnings;
 use v5.40;
 use lib 'lib';
 use Test::More;
-use Affix;
+
+BEGIN {
+    eval { require Affix; Affix->import(); 1 } or plan skip_all => "Affix not available";
+}
 use Brocken;
 use Brocken::Compiler::Pipeline;
 use Brocken::Compiler::DataSegment;
@@ -54,7 +57,9 @@ BROCKEN
     ok( -f $out_name, 'Float shared library generated with XMM ABI' );
 
     # Test Float pass-through
-    use Affix;
+    BEGIN {
+        eval { require Affix; Affix->import(); 1 } or plan skip_all => "Affix not available";
+    }
     affix $out_file, 'pass_float', [Float] => Float;
     my $result = pass_float(3.14);
     cmp_ok( abs( $result - 3.14 ), '<', 0.01, 'Float pass-through: 3.14' );

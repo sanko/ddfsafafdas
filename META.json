@@ -30,9 +30,10 @@
          }
       },
       "test" : {
-         "requires" : {
+         "recommends" : {
             "Affix" : "0"
-         }
+         },
+         "requires" : {}
       }
    },
    "provides" : {
@@ -192,9 +193,6 @@
       "Brocken::Codegen" : {
          "file" : "lib/Brocken/Codegen.pm"
       },
-      "Brocken::Compiler" : {
-         "file" : "lib/Brocken/Compiler.pm"
-      },
       "Brocken::Compiler::DataSegment" : {
          "file" : "lib/Brocken/Compiler/DataSegment.pm"
       },
@@ -204,80 +202,107 @@
       "Brocken::Compiler::Optimizer" : {
          "file" : "lib/Brocken/Compiler/Optimizer.pm"
       },
+      "Brocken::Compiler::Pipeline" : {
+         "file" : "lib/Brocken/Compiler/Pipeline.pm"
+      },
+      "Brocken::Core::IR::Builder" : {
+         "file" : "lib/Brocken/Core/IR/Builder.pm"
+      },
+      "Brocken::Core::Lexer" : {
+         "file" : "lib/Brocken/Core/Lexer.pm"
+      },
+      "Brocken::Core::Parser" : {
+         "file" : "lib/Brocken/Core/Parser.pm"
+      },
+      "Brocken::Core::Scope" : {
+         "file" : "lib/Brocken/Core/Scope.pm"
+      },
+      "Brocken::Core::Symbol" : {
+         "file" : "lib/Brocken/Core/Symbol.pm"
+      },
+      "Brocken::Core::Type" : {
+         "file" : "lib/Brocken/Core/Type.pm"
+      },
       "Brocken::Emit::ARM64" : {
          "file" : "lib/Brocken/Emit.pm"
       },
       "Brocken::Format" : {
          "file" : "lib/Brocken/Format.pm"
       },
-      "Brocken::Format::DWARF" : {
-         "file" : "lib/Brocken/Format/DWARF.pm"
-      },
-      "Brocken::Format::ELF" : {
-         "file" : "lib/Brocken/Format/ELF.pm"
-      },
-      "Brocken::Format::JIT" : {
-         "file" : "lib/Brocken/Format/JIT.pm"
-      },
-      "Brocken::Format::Layout" : {
-         "file" : "lib/Brocken/Format/Layout.pm"
-      },
-      "Brocken::Format::MachO" : {
-         "file" : "lib/Brocken/Format/MachO.pm"
-      },
       "Brocken::Format::MyFormat" : {
          "file" : "lib/Brocken/Format.pm"
-      },
-      "Brocken::Format::PE" : {
-         "file" : "lib/Brocken/Format/PE.pm"
-      },
-      "Brocken::IR::Builder" : {
-         "file" : "lib/Brocken/IR.pm"
-      },
-      "Brocken::Lexer" : {
-         "file" : "lib/Brocken/Lexer.pm"
-      },
-      "Brocken::Parser" : {
-         "file" : "lib/Brocken/Parser.pm"
       },
       "Brocken::Platform" : {
          "file" : "lib/Brocken/Platform.pm"
       },
-      "Brocken::Platform::Darwin" : {
-         "file" : "lib/Brocken/Platform/Darwin.pm"
-      },
-      "Brocken::Platform::Linux" : {
-         "file" : "lib/Brocken/Platform/Linux.pm"
-      },
-      "Brocken::Platform::Windows" : {
-         "file" : "lib/Brocken/Platform/Windows.pm"
-      },
-      "Brocken::Scope" : {
-         "file" : "lib/Brocken/Scope.pm"
-      },
-      "Brocken::Symbol" : {
-         "file" : "lib/Brocken/Symbol.pm"
-      },
       "Brocken::Target" : {
          "file" : "lib/Brocken/Target.pm"
       },
-      "Brocken::Target::ARM64" : {
-         "file" : "lib/Brocken/Target/ARM64.pm"
+      "Brocken::Target::ABI" : {
+         "file" : "lib/Brocken/Target/ABI.pm"
       },
-      "Brocken::Target::ARM64::Emit" : {
-         "file" : "lib/Brocken/Target/ARM64.pm"
+      "Brocken::Target::Architecture" : {
+         "file" : "lib/Brocken/Target/Architecture.pm"
       },
-      "Brocken::Target::X64" : {
-         "file" : "lib/Brocken/Target/X64.pm"
+      "Brocken::Target::Architecture::ARM64" : {
+         "file" : "lib/Brocken/Target/Architecture/ARM64.pm"
       },
-      "Brocken::Target::X64::Emit" : {
-         "file" : "lib/Brocken/Target/X64.pm"
+      "Brocken::Target::Architecture::ARM64::Emit" : {
+         "file" : "lib/Brocken/Target/Architecture/ARM64.pm"
+      },
+      "Brocken::Target::Architecture::RISCV64" : {
+         "file" : "lib/Brocken/Target/Architecture/RISCV64.pm"
+      },
+      "Brocken::Target::Architecture::RISCV64::Emit" : {
+         "file" : "lib/Brocken/Target/Architecture/RISCV64.pm"
+      },
+      "Brocken::Target::Architecture::x64" : {
+         "file" : "lib/Brocken/Target/Architecture/x64.pm"
+      },
+      "Brocken::Target::Architecture::x64::Emit" : {
+         "file" : "lib/Brocken/Target/Architecture/x64.pm"
+      },
+      "Brocken::Target::Format::DWARF" : {
+         "file" : "lib/Brocken/Target/Format/DWARF.pm"
+      },
+      "Brocken::Target::Format::ELF" : {
+         "file" : "lib/Brocken/Target/Format/ELF.pm"
+      },
+      "Brocken::Target::Format::JIT" : {
+         "file" : "lib/Brocken/Target/Format/JIT.pm"
+      },
+      "Brocken::Target::Format::Layout" : {
+         "file" : "lib/Brocken/Target/Format/Layout.pm"
+      },
+      "Brocken::Target::Format::MachO" : {
+         "file" : "lib/Brocken/Target/Format/MachO.pm"
+      },
+      "Brocken::Target::Format::PE" : {
+         "file" : "lib/Brocken/Target/Format/PE.pm"
+      },
+      "Brocken::Target::OS" : {
+         "file" : "lib/Brocken/Target/OS.pm"
+      },
+      "Brocken::Target::OS::DragonflyBSD" : {
+         "file" : "lib/Brocken/Target/OS/DragonflyBSD.pm"
+      },
+      "Brocken::Target::OS::Haiku" : {
+         "file" : "lib/Brocken/Target/OS/Haiku.pm"
+      },
+      "Brocken::Target::OS::Linux" : {
+         "file" : "lib/Brocken/Target/OS/Linux.pm"
+      },
+      "Brocken::Target::OS::MidnightBSD" : {
+         "file" : "lib/Brocken/Target/OS/MidnightBSD.pm"
+      },
+      "Brocken::Target::OS::Windows" : {
+         "file" : "lib/Brocken/Target/OS/Windows.pm"
+      },
+      "Brocken::Target::OS::macOS" : {
+         "file" : "lib/Brocken/Target/OS/macOS.pm"
       },
       "Brocken::TestHelpers" : {
          "file" : "lib/Brocken/TestHelpers.pm"
-      },
-      "Brocken::Type" : {
-         "file" : "lib/Brocken/Type.pm"
       }
    },
    "release_status" : "stable",
