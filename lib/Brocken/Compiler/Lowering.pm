@@ -376,6 +376,10 @@ package Brocken::Compiler::Lowering {
             my $l_old_not_smi = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_smi_old, 0 ] ), $l_next, $l_old_not_smi );
             $builder->emit_label($l_old_not_smi);
+            my $undef_ptr_for_old = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
+            my $l_old_not_undef   = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $old, $undef_ptr_for_old ] ), $l_next, $l_old_not_undef );
+            $builder->emit_label($l_old_not_undef);
             {
                 my $hdr      = $builder->emit( 'load_mem_disp', 'i64', [ $old, -8 ] );
                 my $shared   = $builder->emit( 'and', 'i64', [ $builder->emit( 'shr', 'i64', [ $hdr, 62 ] ), 1 ] );
@@ -404,6 +408,10 @@ package Brocken::Compiler::Lowering {
             my $l_new_not_smi = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $is_smi_new, 0 ] ), $l_end, $l_new_not_smi );
             $builder->emit_label($l_new_not_smi);
+            my $undef_ptr_for_new = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
+            my $l_new_not_undef   = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $val, $undef_ptr_for_new ] ), $l_end, $l_new_not_undef );
+            $builder->emit_label($l_new_not_undef);
             {
                 my $hdr = $builder->emit( 'load_mem_disp', 'i64', [ $val, -8 ] );
 

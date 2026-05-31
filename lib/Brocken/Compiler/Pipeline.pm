@@ -46,7 +46,7 @@ class Brocken::Compiler::Pipeline {
     method get_func_local_size($name)        { $func_local_sizes{$name} // 0; }
     #
     ADJUST {
-        $optimizations = { escape => 1, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$optimizations };
+        $optimizations = { escape => 0, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$optimizations };
         my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
         $os //= $detected_os;
         my $detected_arch = 'x64';

@@ -8,7 +8,7 @@ class Brocken::Compiler::Optimizer {
     field $opts : param : reader = {};
     ADJUST {
         # Setup defaults
-        $opts = { escape => 1, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$opts };
+        $opts = { escape => 0, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$opts };
     }
 
     method escape_analysis($insts) {
