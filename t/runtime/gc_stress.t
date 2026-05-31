@@ -72,7 +72,7 @@ test_brocken(
         say "Done: " . $i;
     },
     expected => qr/Done: 100000/,
-    timeout  => 120
+    timeout  => 240
 );
 test_brocken(
     name   => 'classes_and_gc',

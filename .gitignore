@@ -53,3 +53,7 @@ test_*
 *.dll
 *.so
 
+nul
+
+eg/alternative/*
+eg/ELF.pm

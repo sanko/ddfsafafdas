@@ -15,7 +15,10 @@ sub test_brocken (%args) {
     require Brocken::Compiler::Pipeline;
     require Test2::V0;
     require File::Temp;
-    my $detected_os   = $^O eq 'MSWin32'                          ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
+    my $detected_os   = do {
+        my %omap = ( MSWin32 => 'win64', darwin => 'macos', freebsd => 'freebsd', netbsd => 'netbsd', openbsd => 'openbsd', dragonfly => 'dragonfly', solaris => 'solaris', haiku => 'haiku', midnightbsd => 'midnightbsd' );
+        $omap{$^O} // 'linux'
+    };
     my $detected_arch = ( $Config{archname} =~ /aarch64|arm64/i ) ? 'arm64' : 'x64';
     my $os            = delete $opts->{os}   // delete $args{os}   // $detected_os;
     my $arch          = delete $opts->{arch} // delete $args{arch} // $detected_arch;

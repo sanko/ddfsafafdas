@@ -64,7 +64,7 @@ class Brocken::Compiler::Pipeline {
             $platform = Brocken::Target::OS::Windows->new( os => $os );
             $format   = Brocken::Target::Format::PE->new( type => $type );
         }
-        elsif ( $os =~ /^(linux|freebsd|openbsd|netbsd|dragonfly)$/ ) {
+        elsif ( $os =~ /^(linux|freebsd|openbsd|netbsd|dragonfly|solaris|haiku|midnightbsd)$/ ) {
             require Brocken::Target::OS::Linux;
             require Brocken::Target::Format::ELF;
             $platform = Brocken::Target::OS::Linux->new( os => $os );

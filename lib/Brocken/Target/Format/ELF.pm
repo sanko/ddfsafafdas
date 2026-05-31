@@ -4,6 +4,66 @@ no warnings 'experimental::class';
 
 class Brocken::Target::Format::ELF : isa(Brocken::Format) {
 
+    method _detect_elf_info ( $ref = undef ) {
+        my @candidates = $ref
+            ? ($ref)
+            : ( '/bin/sh', '/sbin/init', '/usr/bin/env', '/boot/system/bin/sh', '/boot/system/bin/env' );
+        for my $candidate (@candidates) {
+            next if !-e $candidate || !-r _;
+            open my $fh, '<:raw', $candidate or next;
+            my $bytes = read( $fh, my $ehdr, 64 );
+            close $fh;
+            next if $bytes != 64;
+            next if substr( $ehdr, 0, 4 ) ne "\x7fELF";
+            my $osabi    = ord( substr( $ehdr, 7, 1 ) );
+            my $ei_class = ord( substr( $ehdr, 4, 1 ) );
+            next if $ei_class != 1 && $ei_class != 2;
+            my ( $e_phoff, $e_phentsize, $e_phnum );
+            if ( $ei_class == 2 ) {
+                $e_phoff     = unpack( 'Q', substr( $ehdr, 32, 8 ) );
+                $e_phentsize = unpack( 'S', substr( $ehdr, 54, 2 ) );
+                $e_phnum     = unpack( 'S', substr( $ehdr, 56, 2 ) );
+            }
+            else {
+                $e_phoff     = unpack( 'L', substr( $ehdr, 28, 4 ) );
+                $e_phentsize = unpack( 'S', substr( $ehdr, 42, 2 ) );
+                $e_phnum     = unpack( 'S', substr( $ehdr, 44, 2 ) );
+            }
+            next if !$e_phnum || !$e_phentsize;
+            open my $fh2, '<:raw', $candidate or next;
+            seek( $fh2, $e_phoff, 0 );
+            my $ph_bytes = $e_phentsize * $e_phnum;
+            my $read_ok  = read( $fh2, my $phdrs, $ph_bytes );
+            close $fh2;
+            next if !$read_ok;
+            my ( $note_data, $has_pintable ) = ( '', 0 );
+            for my $i ( 0 .. $e_phnum - 1 ) {
+                my $phdr   = substr( $phdrs, $i * $e_phentsize, $e_phentsize );
+                my $p_type = unpack( 'L', substr( $phdr, 0, 4 ) );
+                if ( $p_type == 4 && !$note_data ) {
+                    my ( $p_offset, $p_filesz );
+                    if ( $ei_class == 2 ) {
+                        $p_offset = unpack( 'Q', substr( $phdr, 8,  8 ) );
+                        $p_filesz = unpack( 'Q', substr( $phdr, 32, 8 ) );
+                    }
+                    else {
+                        $p_offset = unpack( 'L', substr( $phdr, 4,  4 ) );
+                        $p_filesz = unpack( 'L', substr( $phdr, 16, 4 ) );
+                    }
+                    open my $fh3, '<:raw', $candidate or next;
+                    seek( $fh3, $p_offset, 0 );
+                    read( $fh3, $note_data, $p_filesz );
+                    close $fh3;
+                }
+                elsif ( $p_type == 0x65a3dbe9 && !$has_pintable ) {
+                    $has_pintable = 1;
+                }
+            }
+            return ( $osabi, $note_data, $has_pintable );
+        }
+        return ( 0, '', 0 );
+    }
+
     method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 ) {
         $l->add_section( '.text', $t, 5 );    # RX
         $l->add_section( '.data', $d, 6 );    # RW
@@ -39,43 +99,48 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
         my $base     = $self->image_base;
         my $elf_type = $type eq 'shared' ? 3 : 2;    # ET_DYN or ET_EXEC
 
-        # Comprehensive OSABI Map
-        my %osabis = (
-            linux     => 0,
-            freebsd   => 9,
-            netbsd    => 2,
-            solaris   => 6,
-            openbsd   => 0,    # OpenBSD prefers 0 + Note
-            dragonfly => 0     # DragonFly prefers 0 + Note
-        );
-        my $osabi = $osabis{$os} // 0;
+        # Probe system binaries for the correct OSABI and PT_NOTE data
+        my ( $osabi, $note_data, $has_pintable ) = $self->_detect_elf_info();
 
-        # Generate Identification Notes for BSDs
-        my $note_data     = '';
+        # Per-OS interpreter path for dynamic executables
+        my %interp_map = (
+            linux       => '/lib64/ld-linux-x86-64.so.2',
+            linux_arm   => '/lib/ld-linux-aarch64.so.1',
+            freebsd     => '/libexec/ld-elf.so.1',
+            netbsd      => '/usr/libexec/ld.elf_so',
+            openbsd     => '/usr/libexec/ld.so',
+            dragonfly   => '/libexec/ld-elf.so.2',
+            solaris     => '/lib/64/ld.so.1',
+            midnightbsd => '/libexec/ld-elf.so.1',
+            haiku       => '',
+        );
+
+        # Per-OS libc name for DT_NEEDED
+        my %libc_map = (
+            linux       => 'libc.so.6',
+            freebsd     => 'libc.so.7',
+            netbsd      => 'libc.so.12',
+            openbsd     => 'libc.so.98.1',
+            dragonfly   => 'libc.so.8',
+            solaris     => 'libc.so.1',
+            midnightbsd => 'libc.so.7',
+            haiku       => 'libroot.so',
+        );
+
+        # Generate pintable data for OpenBSD (syscall allowlisting)
         my $pintable_data = '';
-        if ( $os eq 'netbsd' ) {
-            $note_data = pack( 'L<L<L<', 7, 4, 1 ) . "NetBSD\0\0" . pack( 'L<', 900000000 );
-        }
-        elsif ( $os eq 'freebsd' ) {
-            $note_data = pack( 'L<L<L<', 8, 4, 1 ) . "FreeBSD\0" . pack( 'L<', 1400000 );
-        }
-        elsif ( $os eq 'dragonfly' ) {
-            $note_data = pack( 'L<L<L<', 10, 4, 1 ) . "DragonFly\0\0" . pack( 'L<', 0 );
-        }
-        elsif ( $os eq 'openbsd' ) {
-            $note_data = pack( 'L<L<L<', 8, 4, 1 ) . "OpenBSD\0" . pack( 'L<', 0 );
+        if ($has_pintable) {
             my $pos      = 0;
             my $text_rva = $l->get('.text')->{rva};
             if ( $arch eq 'x64' ) {
                 while ( ( my $idx = index( $text, "\x0F\x05", $pos ) ) != -1 ) {
                     my $vaddr = $base + $text_rva + $idx;
-                    $pintable_data .= pack( 'L<L<', $vaddr, 1 );    # SYS_exit
-                    $pintable_data .= pack( 'L<L<', $vaddr, 4 );    # SYS_write
+                    $pintable_data .= pack( 'L<L<', $vaddr, 1 );
+                    $pintable_data .= pack( 'L<L<', $vaddr, 4 );
                     $pos = $idx + 2;
                 }
             }
             else {
-                # ARM64 SVC #0
                 while ( ( my $idx = index( $text, "\x01\x00\x00\xd4", $pos ) ) != -1 ) {
                     my $vaddr = $base + $text_rva + $idx;
                     $pintable_data .= pack( 'L<L<', $vaddr, 1 );
@@ -87,15 +152,22 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
 
         # 1. Setup Interp path for executable
         my $interp = '';
+        my $has_interp = 0;
         if ( $self->type eq 'exe' ) {
-            $interp = ( $arch eq 'arm64' ) ? "/lib/ld-linux-aarch64.so.1\0" : "/lib64/ld-linux-x86-64.so.2\0";
-            $l->get('.interp')->{size} = length($interp);
+            my $interp_key = ( $arch eq 'arm64' && $os eq 'linux' ) ? 'linux_arm' : $os;
+            my $ipath = $interp_map{$interp_key} // '/lib/ld.so.1';
+            if ( length $ipath ) {
+                $interp = $ipath . "\0";
+                $l->get('.interp')->{size} = length($interp);
+                $has_interp = 1;
+            }
         }
 
         # 2. Setup Dynamic Strings Table
         my @exports = @{ $self->exported_funcs // [] };
         my @imports = ( 'dlopen', 'dlsym', 'pthread_create' );
-        my @libs    = ('libc.so.6');
+        my $libc    = $libc_map{$os} // 'libc.so';
+        my @libs    = ($libc);
         my $dynstr  = "\0";
         my %str_off;
         for my $s ( @libs, @imports, @exports ) {
@@ -185,7 +257,7 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
         my $rela_rva       = $l->get('.rela.dyn')->{rva};
         my $got_rva_actual = $l->get('.got')->{rva};
         my $dynamic        = '';
-        $dynamic .= pack( 'Q< Q<', 1,  $str_off{'libc.so.6'} );      # DT_NEEDED
+        $dynamic .= pack( 'Q< Q<', 1,  $str_off{$libc} );            # DT_NEEDED
         $dynamic .= pack( 'Q< Q<', 4,  $base + $hash_rva );          # DT_HASH
         $dynamic .= pack( 'Q< Q<', 5,  $base + $str_rva );           # DT_STRTAB
         $dynamic .= pack( 'Q< Q<', 6,  $base + $sym_rva );           # DT_SYMTAB
@@ -319,7 +391,7 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
 
         # Program Headers
         my $num_ph = 4;                               # PT_PHDR, PT_LOAD (RX), PT_LOAD (RW), PT_DYNAMIC
-        if ( $self->type eq 'exe' ) { $num_ph++; }    # PT_INTERP
+        if ($has_interp)            { $num_ph++; }    # PT_INTERP
         if ($note_data)             { $num_ph++; }    # PT_NOTE
         if ($pintable_data)         { $num_ph++; }    # PT_OPENBSD_PINTABLE
         my @phdrs = ();
@@ -328,7 +400,7 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
         push @phdrs, pack( 'L< L< Q< Q< Q< Q< Q< Q<', 6, 4, 64, $base + 64, $base + 64, $num_ph * 56, $num_ph * 56, 8 );
 
         # 2. PT_INTERP (type 3)
-        if ( $self->type eq 'exe' ) {
+        if ($has_interp) {
             my $interp_sec = $l->get('.interp');
             push @phdrs,
                 pack(
