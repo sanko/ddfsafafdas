@@ -198,17 +198,21 @@ class Brocken::Codegen {
     }
 
     method _allocate_registers( $instructions, $driver ) {
-        my $changed = 1;
+        my $changed       = 1;
         my %rmap;
-        my $safety = 2000;
+        my $safety        = 2000;
+        my %spilled;
         while ( $changed && $safety-- > 0 ) {
             $changed = 0;
+            %spilled = ();
             my %live      = $self->_analyze_liveness($instructions);
             my @free      = @{ $driver->target->registers() };
             my @intervals = sort { $a->{start} <=> $b->{start} } map { { vreg => $_, %{ $live{$_} } } } keys %live;
             my @active;
             %rmap = ();
-            for my $iv (@intervals) {
+            my $i = 0;
+            while ( $i < @intervals ) {
+                my $iv = $intervals[$i];
                 @active = grep {
                     if ( $_->{end} < $iv->{start} ) { push @free, $_->{phys}; 0 }
                     else                            {1}
@@ -216,13 +220,29 @@ class Brocken::Codegen {
                 my $phys = shift @free;
                 if ( !$phys ) {
                     @active = sort { $b->{end} <=> $a->{end} } @active;
-                    my $spill = ( $active[0] && $active[0]->{end} > $iv->{end} ) ? $active[0]->{vreg} : $iv->{vreg};
-                    $self->_spill_vreg( $instructions, $spill, $driver );
-                    $changed = 1;
-                    last;
+                    if ( $active[0] && $active[0]->{end} > $iv->{end} ) {
+                        # Spill an already-allocated vreg to free its register for the current vreg
+                        $spilled{ $active[0]->{vreg} } = 1;
+                        my $freed = $active[0]->{phys};
+                        @active  = grep { $_->{vreg} ne $active[0]->{vreg} } @active;
+                        unshift @free, $freed;
+                        $changed = 1;
+                        redo;
+                    }
+                    else {
+                        # Spill current vreg — skip it
+                        $spilled{ $iv->{vreg} } = 1;
+                        $changed = 1;
+                        $i++;
+                        next;
+                    }
                 }
                 $rmap{ $iv->{vreg} } = $phys;
                 push @active, { vreg => $iv->{vreg}, phys => $phys, end => $iv->{end} };
+                $i++;
+            }
+            for my $sv ( keys %spilled ) {
+                $self->_spill_vreg( $instructions, $sv, $driver );
             }
         }
         return %rmap;
