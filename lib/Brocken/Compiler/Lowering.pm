@@ -550,7 +550,7 @@ package Brocken::Compiler::Lowering {
             my @boxed_args;
             for my $s (@saved_slots) {
                 my $raw = $builder->emit( 'local_load', $s->{ir_type}, [ $s->{slot} ] );
-                if ( $s->{type} eq 'Int' || $s->{type} =~ /^Int\\d+$/ ) {
+                if ( $s->{type} eq 'Int' || $s->{type} =~ /^Int\d+$/ ) {
                     my $shifted = $builder->emit( 'shl', 'i64', [ $raw, 1 ] );
                     push @boxed_args, $builder->emit( 'or', 'i64', [ $shifted, 1 ] );
                 }
@@ -561,7 +561,7 @@ package Brocken::Compiler::Lowering {
                 elsif ( $s->{type} eq 'double' || $s->{type} eq 'Double' ) {
                     push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $raw ] );
                 }
-                elsif ( $s->{type} =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
+                elsif ( $s->{type} =~ /^(Pointer|Pointer\[.*\]|\*.*)$/ ) {
                     push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_pointer', $raw ] );
                 }
                 else {
