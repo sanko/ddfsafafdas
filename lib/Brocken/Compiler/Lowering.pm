@@ -520,11 +520,11 @@ package Brocken::Compiler::Lowering {
             $export_name   //= 'E_' . $node->name;
             $builder->emit_label($export_name);
 
-            # Save caller's R14 BEFORE enter_func overwrites it with the second iso load
             my $caller_r14_s = $driver->alloc_local_slot();
+            $builder->emit( 'push_frame',      'void', [] );
             my $old_r14      = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
-            $builder->emit( 'enter_func',  'void', [] );
-            $builder->emit( 'local_store', 'void', [ $caller_r14_s, $old_r14 ] );
+            $builder->emit( 'local_store',     'void', [ $caller_r14_s, $old_r14 ] );
+            $builder->emit( 'load_isolate_ctx', 'void', [] );
 
             # --- 2. CAPTURE RAW REGS IMMEDIATELY ---
             my @saved_slots;
@@ -5065,7 +5065,8 @@ package Brocken::Compiler::Lowering {
                     my ($r, $t) = $self->lower_block( $node->body->statements );
                     $self->_emit_all_defers();
                     $self->_flush_func_locals();
-                    $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
+                    # $builder->emit( 'call_func', 'void', [ 'M_debug_print_reg', 'rax' ] );
+            $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
                     $routine_depth--;
                     $current_scope = $current_scope->parent;
                     @defer_stack   = @old_defers;
@@ -5151,6 +5152,7 @@ package Brocken::Compiler::Lowering {
             }
             my ($r, $t) = $self->lower_block( $node->body->statements );
             $self->_emit_all_defers();
+            # $builder->emit( 'call_func', 'void', [ 'M_debug_print_reg', 'rax' ] );
             $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
             $routine_depth--;
             $current_scope = $current_scope->parent;

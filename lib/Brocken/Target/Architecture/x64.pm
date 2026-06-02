@@ -341,8 +341,11 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 }
                 else {
                     $as->mov_reg( $dst, $src ) if $dst ne $src;
-                    my $xmm_dst = "xmm$i";
-                    $as->movq_reg_xmm( $xmm_dst, $src );    # Keep ABI fully happy
+                    # Only move to XMM if it's a floating-point argument
+                    if ($args[$i] =~ /_float$|_double$/) {
+                        my $xmm_dst = $self->_abi_fp_arg_reg($i);
+                        $as->movq_reg_xmm( $xmm_dst, $src );
+                    }
                 }
             }
             if ( $op =~ /^tail_call_/ ) {
@@ -383,6 +386,25 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 $as->mov_reg( 'rbp', 'rsp' );
             }
             $as->sub_imm( 'rsp', $driver->frame_local_size );
+            if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
+                $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
+                $as->load_reg_mem( 'r14', 'r11', 0 );
+            }
+        }
+        elsif ( $op eq 'push_frame' ) {
+            if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
+                my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_global_label();
+                $as->test_reg_reg( 'r14', 'r14' );
+                $as->jcc( $driver->cc('nz'), $l_has_iso );
+                $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
+                $as->load_reg_mem( 'r14', 'r11', 0 );
+                $as->mark_label($l_has_iso);
+            }
+            for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
+            $as->mov_reg( 'rbp', 'rsp' );
+            $as->sub_imm( 'rsp', $driver->frame_local_size );
+        }
+        elsif ( $op eq 'load_isolate_ctx' ) {
             if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
                 $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
                 $as->load_reg_mem( 'r14', 'r11', 0 );
