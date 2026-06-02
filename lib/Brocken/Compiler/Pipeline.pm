@@ -42,6 +42,7 @@ class Brocken::Compiler::Pipeline {
     # Enable all optimizations by default, allowing selective overrides
     field $optimizations : param : reader = {};
     field %func_local_sizes;
+    field $eval_counter = 0;
     method set_func_local_size( $name, $sz ) { $func_local_sizes{$name} = $sz; }
     method get_func_local_size($name)        { $func_local_sizes{$name} // 0; }
     #
@@ -211,10 +212,8 @@ class Brocken::Compiler::Pipeline {
             { eq => 0, ne => 1, lt => 0xB, gt => 0xC }->{$name};
     }
     {
-        my $_x = 0;
-
         method compile_source( $source, $output_file, $filename = undef ) {
-            $filename //= 'eval_' . ++$_x;
+            $filename //= 'eval_' . ++$eval_counter;
             require Brocken::Core::Lexer;
             require Brocken::Codegen;
             require Brocken::Compiler::DataSegment;

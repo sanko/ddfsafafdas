@@ -154,7 +154,7 @@ class Brocken::Codegen {
                     for my $t (@targets) {
                         my $target_idx = $label_idx{$t};
                         if ( defined $target_idx && $target_idx < $i ) {
-                            for my $v ( keys %live ) {
+                            for my $v ( sort keys %live ) {
                                 if ( $live{$v}{start} <= $target_idx && $live{$v}{end} >= $target_idx ) {
                                     if ( $live{$v}{end} < $i ) {
                                         $live{$v}{end} = $i;
@@ -207,7 +207,7 @@ class Brocken::Codegen {
             %spilled = ();
             my %live      = $self->_analyze_liveness($instructions);
             my @free      = @{ $driver->target->registers() };
-            my @intervals = sort { $a->{start} <=> $b->{start} } map { { vreg => $_, %{ $live{$_} } } } keys %live;
+            my @intervals = sort { $a->{start} <=> $b->{start} || $a->{vreg} cmp $b->{vreg} } map { { vreg => $_, %{ $live{$_} } } } keys %live;
             my @active;
             %rmap = ();
             my $i = 0;
@@ -243,7 +243,7 @@ class Brocken::Codegen {
                 push @active, { vreg => $iv->{vreg}, phys => $phys, end => $iv->{end} };
                 $i++;
             }
-            for my $sv ( keys %spilled ) {
+            for my $sv ( sort keys %spilled ) {
                 $self->_spill_vreg( $instructions, $sv, $driver );
             }
         }
