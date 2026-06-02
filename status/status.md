@@ -1,7 +1,7 @@
 ## Build and Test Summary
 | OS | Architecture | Result |
 |:---|:---|:---|
-| Linux | Intel | ✅ |
+| Linux | Intel | ❌ |
 | Linux | ARM | ❌ |
 | Linux | RISC-V | ❌ |
 | macOS | Intel | ❌ |
