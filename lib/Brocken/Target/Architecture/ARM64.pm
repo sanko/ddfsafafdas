@@ -1,3 +1,4 @@
+
 use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
@@ -92,6 +93,22 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             else {
                 $as->mov_imm( 'x16', $fsz );
                 $as->sub_reg( 'sp', 'sp', 'x16' );
+            }
+        }
+        elsif ( $op eq 'push_frame' ) {
+            for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
+            $as->mov_reg( 'x29', 'sp' );
+            my $fsz = $driver->frame_local_size;
+            if ( $fsz <= 4095 ) { $as->sub_imm( 'sp', $fsz ); }
+            else {
+                $as->mov_imm( 'x16', $fsz );
+                $as->sub_reg( 'sp', 'sp', 'x16' );
+            }
+        }
+        elsif ( $op eq 'load_isolate_ctx' ) {
+            if ( defined $driver->global_iso_offset ) {
+                $as->lea_rva( 'x16', "DATA:" . $driver->global_iso_offset );
+                $as->load_reg_mem( 'x28', 'x16', 0 );
             }
         }
         elsif ( $op eq 'leave_func' ) {
@@ -302,7 +319,6 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             else                  { $as->mov_imm( 'x17', $v->($r_raw) ); $as->sdiv_reg( 'x17', 'x16', 'x17' ); }
             if ( $op eq 'div' ) { $as->mov_reg( $d_reg, 'x17' ); }
             else {
-                # modulo: dividend - (divisor * quotient)
                 $as->mul_reg( 'x17', 'x17', ( $r_raw =~ /^%/ ? $reg_map->{$r_raw} : 'x17' ) );
                 $as->sub_reg( $d_reg, 'x16', 'x17' );
             }

@@ -108,7 +108,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             $as->mov_reg( 'rsp', $source_bp );
 
             # 2. Restore callee-saved registers from the source frame
-            # This restores the register state as it was when the source frame called its child.
             for my $r ( reverse @{ $driver->preserved_regs() } ) {
                 $as->pop_reg($r);
             }
@@ -142,8 +141,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'constant' ) {
             if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) ) {
-
-                # Load 64-bit floating point bit pattern directly into GP register
                 my $bits = unpack( 'Q<', pack( 'd<', $inst->{args}[0] // 0.0 ) );
                 $as->mov_imm( $d_reg, $bits );
             }
@@ -154,7 +151,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         elsif ( $op eq 'mov' ) {
             my $src = $inst->{args}[0];
             if    ( $src =~ /^%/ ) { $as->mov_reg( $d_reg, $reg_map->{$src} ) if $d_reg ne $reg_map->{$src}; }
-            elsif ( $src =~ /^[a-z]/i ) {    # Safely handle physical register names (like 'rax')
+            elsif ( $src =~ /^[a-z]/i ) {
                 $as->mov_reg( $d_reg, $src ) if $d_reg ne $src;
             }
             else { $as->mov_imm( $d_reg, $v->($src) ); }
@@ -166,7 +163,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             if ( $is_float && $op =~ /^(add|sub|mul|div)$/ ) {
                 my $is_32 = ( $inst->{type} eq 'float' || $inst->{type} eq 'Float' );
 
-                # Move GP stored floats into XMM0/XMM1 temps
                 if ( $l_raw =~ /^%/ ) {
                     if ($is_32) { $as->movd_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
                     else        { $as->movq_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
@@ -198,7 +194,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     elsif ( $op eq 'div' ) { $as->divsd_reg( 'xmm0', 'xmm1' ) }
                 }
 
-                # Move result back to GP
                 if ( defined $d_reg ) {
                     if ($is_32) { $as->movd_xmm_reg( $d_reg, 'xmm0' ); }
                     else        { $as->movq_xmm_reg( $d_reg, 'xmm0' ); }
@@ -218,7 +213,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 $as->mov_reg( $d_reg, 'r10' );
             }
             else {
-                # Integer Add/Sub/Mul/Logical
                 if ( $l_raw !~ /^%/ ) { $as->mov_imm( $d_reg, $v->($l_raw) ); }
                 else                  { $as->mov_reg( $d_reg, $reg_map->{$l_raw} ) if $d_reg ne $reg_map->{$l_raw}; }
                 if ( $r_raw =~ /^%/ ) {
@@ -326,7 +320,9 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             $as->mov_imm( 'r11', $v->( $inst->{args}[2] ) ) if $inst->{args}[2] !~ /^%/;
             $as->store_mem_disp_reg( $reg_map->{ $inst->{args}[0] }, $inst->{args}[1], $src );
         }
-        elsif ( $op eq 'load_mem_disp' ) { $as->load_reg_mem( $d_reg, $reg_map->{ $inst->{args}[0] }, $inst->{args}[1] ); }
+        elsif ( $op eq 'load_mem_disp' ) {
+            $as->load_reg_mem( $d_reg, $reg_map->{ $inst->{args}[0] }, $inst->{args}[1] );
+        }
         elsif ( $op eq 'load_mem_byte' ) {
             my ( $base, $idx ) = ( $reg_map->{ $inst->{args}[0] }, $inst->{args}[1] );
             if ( $idx =~ /^%/ ) {
@@ -376,8 +372,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 }
             }
             if ( $op =~ /^tail_call_/ ) {
-
-                # Epilogue before jumping
                 $as->add_imm( 'rsp', $driver->frame_local_size );
                 for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
                 if   ( $op eq 'tail_call_func' ) { $as->jmp($target); }
@@ -400,42 +394,17 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             }
         }
         elsif ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
-            if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
-
-                # Guard: Only load from memory if R14 isn't already set.
-                # This allows M_runtime_init to set R14 once and have it persist.
-                my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_global_label();    # globally unique label
-                $as->test_reg_reg( 'r14', 'r14' );
-                $as->jcc( $driver->cc('nz'), $l_has_iso );
-                $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
-                $as->load_reg_mem( 'r14', 'r11', 0 );
-                $as->mark_label($l_has_iso);
-            }
-            if ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
-                for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
-                $as->mov_reg( 'rbp', 'rsp' );
-            }
+            for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
+            $as->mov_reg( 'rbp', 'rsp' );
             $self->_sub_rsp_with_probing( $as, $driver );
-            if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
-                $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
-                $as->load_reg_mem( 'r14', 'r11', 0 );
-            }
         }
         elsif ( $op eq 'push_frame' ) {
-            if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
-                my $l_has_iso = "L_skip_iso_load_" . $driver->alloc_global_label();
-                $as->test_reg_reg( 'r14', 'r14' );
-                $as->jcc( $driver->cc('nz'), $l_has_iso );
-                $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
-                $as->load_reg_mem( 'r14', 'r11', 0 );
-                $as->mark_label($l_has_iso);
-            }
             for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
             $as->mov_reg( 'rbp', 'rsp' );
             $self->_sub_rsp_with_probing( $as, $driver );
         }
         elsif ( $op eq 'load_isolate_ctx' ) {
-            if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
+            if ( defined $driver->global_iso_offset ) {
                 $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
                 $as->load_reg_mem( 'r14', 'r11', 0 );
             }
@@ -492,27 +461,22 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         elsif ( $op eq 'stack_alloc' ) {
             my $psz            = $inst->{args}[0];
             my $aligned_sz     = $inst->{args}[1];
-            my $slot           = $inst->{slot};      # Read the pre-scanned slot offset
+            my $slot           = $inst->{slot};
             my $hdr_offset     = -$slot;
             my $payload_offset = -$slot + 8;
 
-            # Form the proper GC header (aligned_size + Leaf flags)
             my $fhdr = $aligned_sz | ( $psz & hex("C000000000000000") );
             $as->mov_imm( 'r11', $fhdr );
             $as->store_mem_disp_reg( 'rbp', $hdr_offset, 'r11' );
 
-            # Inline zero-out the stack payload
             for ( my $off = $payload_offset; $off < $hdr_offset + $aligned_sz; $off += 8 ) {
                 $as->mov_imm( 'r11', 0 );
                 $as->store_mem_disp_reg( 'rbp', $off, 'r11' );
             }
 
-            # Destination register gets the address of the payload
             $as->lea_reg_disp( $d_reg, 'rbp', $payload_offset );
         }
         elsif ( $op eq 'shadow_pop' ) {
-
-            # r14 = Isolate, current_fcb offset is 24, shadow_ptr offset in FCB is 32
             $as->load_reg_mem( 'r11', 'r14', $driver->iso_offset('current_fcb') );
             $as->load_reg_mem( 'r10', 'r11', $driver->fcb_offset('shadow_ptr') );
             $as->sub_imm( 'r10', 8 );
@@ -524,7 +488,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             my $is_inc    = $2 eq 'inc';
             my $obj       = $reg_map->{ $inst->{args}[0] };
 
-            # RC is at bit 48. Incrementing by 1 << 48 adjusts the RC field.
             $as->mov_imm( 'r11', 1 << 48 );
             $as->lock() if $is_atomic;
             if ($is_inc) { $as->add_mem_disp_reg( $obj, -8, 'r11' ); }
@@ -672,10 +635,26 @@ class Brocken::Target::Architecture::x64::Emit {
     method mark_label($n)    { $labels{$n} = length $code }
     method lock()            { $code .= pack( 'C', 0xF0 ) }
 
-    method mov_reg( $d, $s ) {
-        my $di = $self->reg($d);
-        my $si = $self->reg($s);
+    method mov_reg( $dest, $src ) {
+        my $di = $self->reg($dest);
+        my $si = $self->reg($src);
         $code .= $self->_rex( 1, $si, 0, $di ) . pack( 'CC', 0x89, 0xC0 | ( ( $si & 7 ) << 3 ) | ( $di & 7 ) );
+    }
+
+    method load_reg_mem( $dest, $s, $off = 0 ) {
+        $self->_emit_modrm( 0x8B, $dest, $s, $off, 1 );
+    }
+
+    method load_reg_mem_byte( $dest, $s, $off = 0 ) {
+        $self->_emit_modrm( 0xB6, $dest, $s, $off, 1, pack( 'C', 0x0F ) );
+    }
+
+    method store_mem_disp_reg( $base, $disp, $src ) {
+        $self->_emit_modrm( 0x89, $src, $base, $disp, 1 );
+    }
+
+    method store_mem_disp_byte( $base, $disp, $src ) {
+        $self->_emit_modrm( 0x88, $src, $base, $disp, 0 );
     }
 
     method mov_imm( $r, $imm = 0 ) {
@@ -759,11 +738,7 @@ class Brocken::Target::Architecture::x64::Emit {
         my $ri = $self->reg($r);
         $code .= pack( 'C', 0x40 | ( $ri >= 8 ? 1 : 0 ) ) . pack( 'CCC', 0x0F, 0x90 + $cc, 0xC0 | ( $ri & 7 ) );
     }
-    method store_mem_disp_byte( $b, $d, $s )      { $self->_emit_modrm( 0x88, $s, $b, $d, 0 ); }
-    method store_mem_disp_reg( $b, $d, $s )       { $self->_emit_modrm( 0x89, $s, $b, $d, 1 ); }
-    method load_reg_mem( $d, $s, $off = 0 )       { $self->_emit_modrm( 0x8B, $d, $s, $off, 1 ); }
-    method load_reg_mem_byte( $d, $s, $off = 0 )  { $self->_emit_modrm( 0xB6, $d, $s, $off, 1, pack( 'C', 0x0F ) ); }
-    method lea_reg_disp( $d, $b, $off )           { $self->_emit_modrm( 0x8D, $d, $b, $off, 1 ); }
+    method lea_reg_disp( $d, $b, $off ) { $self->_emit_modrm( 0x8D, $d, $b, $off, 1 ); }
     method add_mem_disp_reg( $b, $d, $s, $w = 1 ) { $self->_emit_modrm( 0x01, $s, $b, $d, $w ); }
     method sub_mem_disp_reg( $b, $d, $s, $w = 1 ) { $self->_emit_modrm( 0x29, $s, $b, $d, $w ); }
 

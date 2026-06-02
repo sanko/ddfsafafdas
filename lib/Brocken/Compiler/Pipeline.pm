@@ -116,8 +116,8 @@ class Brocken::Compiler::Pipeline {
         return ( $arch eq 'arm64' || $arch eq 'riscv64' ) ? 16 : $self->context_size() - 8;
     }
 
-   method frame_local_size() {
-        my $locals = 1048576; # Support up to 1 MB of stack memory dynamically probed!
+    method frame_local_size() {
+        my $locals = 2048; # Reduced below 4096 to prevent stack-probing loops in the prologue
         my $shadow = $platform->shadow_space();
         my $total  = $locals + $shadow;
         if ( $arch eq 'x64' ) {
@@ -130,6 +130,7 @@ class Brocken::Compiler::Pipeline {
         }
         return ( $total + 15 ) & ~15;
     }
+
     method text_rva ()                                { $format->rva_for('.text') }
     method data_rva ()                                { $format->rva_for('.data') }
     method import_rva ($name)                         { $format->import_rva($name) }
@@ -149,7 +150,7 @@ class Brocken::Compiler::Pipeline {
     field $global_label_counter = 0;
     method alloc_global_label() { return ++$global_label_counter; }
 
- method alloc_local_slot () {
+    method alloc_local_slot () {
         $local_ptr += 8;
         die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;

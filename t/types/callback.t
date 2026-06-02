@@ -47,28 +47,55 @@ BROCKEN
     my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
     my $out_name  = "test_fun${out_ext}";
     my $out_file  = ( $^O eq 'MSWin32' ? '' : './' ) . $out_name;
-    my $driver    = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
-    my $ds        = Brocken::Compiler::DataSegment->new();
-    my $lowering  = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
+
+    # 1. Instantiate the pipeline with debug symbols enabled (debug => 4)
+    my $driver   = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 4 );
+    my $ds       = Brocken::Compiler::DataSegment->new();
+    my $lowering = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
     $lowering->lower_program($ast2);
     my $optimizer = Brocken::Compiler::Optimizer->new();
     $optimizer->optimize( $lowering->builder );
     my $format = $driver->format;
     my $data   = $ds->raw_data();
-    $format->pre_layout( 65536, length($data), 'x64', $target_os );
+
+    # Calculate text size and pre-layout, passing the debug level as the fifth parameter
+    my @insts     = $lowering->builder->instructions;
+    my $text_size = scalar(@insts) * 64 + 8192;
+    $format->pre_layout( $text_size, length($data), 'x64', $target_os, $driver->debug );
     my $codegen = Brocken::Codegen->new( arch => 'x64' );
-    my @insts   = $lowering->builder->instructions;
     $codegen->compile( \@insts, $driver );
     my $as = $driver->as;
     $as->resolve( $driver->text_rva, $driver->data_rva );
+    $format->set_func_ranges( [ $driver->func_ranges ] );
+
+    # 2. Construct and register DWARF debug data if debug is enabled
+    if ( $driver->debug ) {
+        require Brocken::Target::Format::DWARF;
+        my $dwarf = Brocken::Target::Format::DWARF->new(
+            source_locs    => [ $driver->source_locs ],
+            text_base      => $format->image_base + $driver->text_rva,
+            func_ranges    => [ $driver->func_ranges ],
+            context_size   => $driver->context_size,
+            arch           => $driver->arch,
+            preserved_regs => $driver->preserved_regs,
+            class_info     => { $lowering->class_info },
+            source_file    => 'test_fun.brocken'
+        );
+        my $dwarf_data = $dwarf->build_all();
+        $format->set_debug_data($dwarf_data);
+        for my $sec ( keys %$dwarf_data ) {
+            eval { $format->layout->get($sec)->{size} = length( $dwarf_data->{$sec} ) };
+        }
+        $format->layout->calculate(0x1000);
+    }
     my $all_labels = $as->labels;
     $format->set_labels($all_labels);
     my @exports = sort(qw(pass_callback return_null));
     $format->set_exported_funcs( \@exports );
     my $text = $as->code;
     $format->write_bin( $out_file, $text, $data, 'x64', $target_os, 'shared' );
-    ok( -f $out_file, 'Callback shared library generated' );
+    ok( -f $out_file, 'Callback shared library generated with debug symbols' );
     affix $out_file, 'pass_callback', [ Callback [ [Int] => Int ] ], Int;
     affix $out_file, 'return_null',   [],                            Int;
 
@@ -82,8 +109,6 @@ BROCKEN
 
     # If arg is unboxed: 3 * 2 = 6. If arg is boxed: 7 * 2 = 14
     is( $cb_result2, 6, 'Callback receives unboxed argument (3 * 2 = 6)' );
-
-    # unlink $out_name if -f $out_name;
-    unlink $out_name if 0;
+    unlink $out_file if -f $out_file;
 };
 done_testing();
