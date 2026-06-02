@@ -203,30 +203,35 @@ package Brocken::Compiler {
                 require Brocken::Codegen;
                 require Brocken::Compiler::DataSegment;
                 $source_file = $filename;
-
                 my $tokens = Brocken::Lexer->new( source => $source, file => $filename )->lex();
                 my $ds     = Brocken::Compiler::DataSegment->new();
-
                 my $lowerer;
+
                 if ( $self->parser eq 'cfg' ) {
                     require Brocken::Compiler::CFGParser;
                     require Brocken::Compiler::CFGLowering;
                     my $cfg_parser = Brocken::Compiler::CFGParser->new( tokens => $tokens, data_segment => $ds, filename => $filename );
                     my $cfg        = $cfg_parser->parse();
-                    $lowerer       = Brocken::Compiler::CFGLowering->new( cfg => $cfg, data_segment => $ds, driver => $self, builder => $cfg_parser->builder, undef_ptr_offset => $cfg_parser->undef_ptr_offset );
+                    $lowerer = Brocken::Compiler::CFGLowering->new(
+                        cfg              => $cfg,
+                        data_segment     => $ds,
+                        driver           => $self,
+                        builder          => $cfg_parser->builder,
+                        undef_ptr_offset => $cfg_parser->undef_ptr_offset
+                    );
                     $lowerer->lower();
                 }
                 else {
                     require Brocken::Parser;
                     require Brocken::Compiler::Lowering;
-                    my $ast     = Brocken::Parser->new( tokens => $tokens )->parse();
-                    $lowerer    = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
+                    my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+                    $lowerer = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
                     $lowerer->lower_program($ast);
                 }
 
                 # --- RUN OPTIMIZER ---
                 require Brocken::Compiler::Optimizer;
-                my $opt       = Brocken::Compiler::Optimizer->new( opts => $self->optimizations );
+                my $opt          = Brocken::Compiler::Optimizer->new( opts => $self->optimizations );
                 my @instructions = $lowerer->builder->instructions();
 
                 # Run static Escape Analysis before register allocation and code generation!

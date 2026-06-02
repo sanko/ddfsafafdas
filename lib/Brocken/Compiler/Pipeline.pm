@@ -42,7 +42,8 @@ class Brocken::Compiler::Pipeline {
     # Enable all optimizations by default, allowing selective overrides
     field $optimizations : param : reader = {};
     field %func_local_sizes;
-    field $eval_counter = 0;
+    field $eval_counter    = 0;
+    field $max_local_used  = 0;
     method set_func_local_size( $name, $sz ) { $func_local_sizes{$name} = $sz; }
     method get_func_local_size($name)        { $func_local_sizes{$name} // 0; }
     #
@@ -118,7 +119,12 @@ class Brocken::Compiler::Pipeline {
     }
 
     method frame_local_size() {
-        my $locals = 2048; # Reduced below 4096 to prevent stack-probing loops in the prologue
+        my $base_locals = 4096;
+        my $max_func    = $max_local_used;
+        for my $sz ( values %func_local_sizes ) {
+            $max_func = $sz if $sz > $max_func;
+        }
+        my $locals = $base_locals > $max_func ? $base_locals : $max_func;
         my $shadow = $platform->shadow_space();
         my $total  = $locals + $shadow;
         if ( $arch eq 'x64' ) {
@@ -153,12 +159,14 @@ class Brocken::Compiler::Pipeline {
 
     method alloc_local_slot () {
         $local_ptr += 8;
+        $max_local_used = $local_ptr if $local_ptr > $max_local_used;
         die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;
     }
 
     method alloc_local_chunk ($size) {
         $local_ptr += $size;
+        $max_local_used = $local_ptr if $local_ptr > $max_local_used;
         die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;
     }
