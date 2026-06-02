@@ -43,6 +43,8 @@ package Brocken::Core::Type {
         'double'     => { name => 'double',     size => 8,  align => 8,  is_float => 1 },
         'float64'    => { name => 'float64',    size => 8,  align => 8,  is_float => 1 },
         'longdouble' => { name => 'longdouble', size => 16, align => 16, is_float => 1 },
+        'Float'      => { name => 'Float',      size => 4,  align => 4,  is_float => 1 },
+        'Double'     => { name => 'Double',     size => 8,  align => 8,  is_float => 1 },
 
         # Special
         'string'  => { name => 'string',  size => 8, align => 8, is_pointer => 1 },

@@ -118,9 +118,18 @@ class Brocken::Compiler::Pipeline {
 
     method frame_local_size() {
         my $locals = 4096;
-        my $ctx    = $self->context_size();
         my $shadow = $platform->shadow_space();
         my $total  = $locals + $shadow;
+
+        if ( $arch eq 'x64' ) {
+
+            # On x64, we need (8 [ret addr] + preserved_regs * 8 + frame_local_size) % 16 == 0
+            my $offset = ( 1 + scalar( @{ $self->preserved_regs() } ) ) * 8;
+            my $base   = ( $total + 15 ) & ~15;
+            my $rem    = ( $offset + $base ) % 16;
+            return $rem == 0 ? $base : $base + ( 16 - $rem );
+        }
+
         return ( $total + 15 ) & ~15;
     }
     method text_rva ()                                { $format->rva_for('.text') }

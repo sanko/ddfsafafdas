@@ -150,12 +150,14 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         }
         elsif ( $op =~ /^(add|sub|mul|and|or|xor|div|mod)$/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
-            my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) );
+            my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' || $inst->{type} eq 'Float' || $inst->{type} eq 'Double' ) );
             if ( $is_float && $op =~ /^(add|sub|mul|div)$/ ) {
+                my $is_32 = ( $inst->{type} eq 'float' || $inst->{type} eq 'Float' );
 
                 # Move GP stored floats into XMM0/XMM1 temps
                 if ( $l_raw =~ /^%/ ) {
-                    $as->movq_reg_xmm( 'xmm0', $reg_map->{$l_raw} );
+                    if ($is_32) { $as->movd_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
+                    else        { $as->movq_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
                 }
                 else {
                     my $bits = unpack( 'Q<', pack( 'd<', $v->($l_raw) // 0.0 ) );
@@ -163,20 +165,32 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     $as->movq_reg_xmm( 'xmm0', 'r10' );
                 }
                 if ( $r_raw =~ /^%/ ) {
-                    $as->movq_reg_xmm( 'xmm1', $reg_map->{$r_raw} );
+                    if ($is_32) { $as->movd_reg_xmm( 'xmm1', $reg_map->{$r_raw} ); }
+                    else        { $as->movq_reg_xmm( 'xmm1', $reg_map->{$r_raw} ); }
                 }
                 else {
                     my $bits = unpack( 'Q<', pack( 'd<', $v->($r_raw) // 0.0 ) );
                     $as->mov_imm( 'r11', $bits );
                     $as->movq_reg_xmm( 'xmm1', 'r11' );
                 }
-                if    ( $op eq 'add' ) { $as->addsd_reg( 'xmm0', 'xmm1' ) }
-                elsif ( $op eq 'sub' ) { $as->subsd_reg( 'xmm0', 'xmm1' ) }
-                elsif ( $op eq 'mul' ) { $as->mulsd_reg( 'xmm0', 'xmm1' ) }
-                elsif ( $op eq 'div' ) { $as->divsd_reg( 'xmm0', 'xmm1' ) }
+                if    ($is_32) {
+                    if    ( $op eq 'add' ) { $as->addss_reg( 'xmm0', 'xmm1' ) }
+                    elsif ( $op eq 'sub' ) { $as->subss_reg( 'xmm0', 'xmm1' ) }
+                    elsif ( $op eq 'mul' ) { $as->mulss_reg( 'xmm0', 'xmm1' ) }
+                    elsif ( $op eq 'div' ) { $as->divss_reg( 'xmm0', 'xmm1' ) }
+                }
+                else {
+                    if    ( $op eq 'add' ) { $as->addsd_reg( 'xmm0', 'xmm1' ) }
+                    elsif ( $op eq 'sub' ) { $as->subsd_reg( 'xmm0', 'xmm1' ) }
+                    elsif ( $op eq 'mul' ) { $as->mulsd_reg( 'xmm0', 'xmm1' ) }
+                    elsif ( $op eq 'div' ) { $as->divsd_reg( 'xmm0', 'xmm1' ) }
+                }
 
                 # Move result back to GP
-                $as->movq_xmm_reg( $d_reg, 'xmm0' ) if defined $d_reg;
+                if ( defined $d_reg ) {
+                    if ($is_32) { $as->movd_xmm_reg( $d_reg, 'xmm0' ); }
+                    else        { $as->movq_xmm_reg( $d_reg, 'xmm0' ); }
+                }
             }
             elsif ( $op =~ /^(div|mod)$/ ) {
                 $as->push_reg('rdx');
@@ -414,11 +428,16 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             if ( defined $inst->{args}[0] ) {
                 my $arg  = $inst->{args}[0];
                 my $type = $inst->{type} // 'i64';
-                if ( $type eq 'double' || $type eq 'float' ) {
+                if ( $type eq 'double' || $type eq 'float' || $type eq 'Float' || $type eq 'Double' ) {
 
                     # Float return goes in XMM0
                     if ( $arg =~ /^%/ ) {
-                        $as->movq_reg_xmm( 'xmm0', $reg_map->{$arg} );
+                        if ( $type eq 'float' || $type eq 'Float' ) {
+                            $as->movd_reg_xmm( 'xmm0', $reg_map->{$arg} );
+                        }
+                        else {
+                            $as->movq_reg_xmm( 'xmm0', $reg_map->{$arg} );
+                        }
                     }
                     else {
                         my $bits = unpack( 'Q<', pack( 'd<', $v->($arg) // 0.0 ) );
@@ -517,9 +536,14 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         elsif ( $op eq 'get_arg' ) {
             my $arg_idx = $inst->{args}[0];
             my $type    = $inst->{type} // 'i64';
-            if ( $type eq 'double' || $type eq 'float' ) {
+            if ( $type eq 'double' || $type eq 'float' || $type eq 'Float' || $type eq 'Double' ) {
                 my $xmm_reg = $self->_abi_fp_arg_reg($arg_idx);
-                $as->movq_xmm_reg( $d_reg, $xmm_reg );
+                if ( $type eq 'float' || $type eq 'Float' ) {
+                    $as->movd_xmm_reg( $d_reg, $xmm_reg );
+                }
+                else {
+                    $as->movq_xmm_reg( $d_reg, $xmm_reg );
+                }
             }
             else {
                 $as->mov_reg( $d_reg, $self->_abi_arg_reg($arg_idx) );
@@ -727,6 +751,46 @@ class Brocken::Target::Architecture::x64::Emit {
     method syscall { $code .= pack 'CC', 0x0F, 0x05 }
 
     # SSE2 Floating Point Instructions
+    method addss_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF3 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x58 ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method subss_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF3 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x5C ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method mulss_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF3 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x59 ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method divss_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF3 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x5E ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method ucomiss_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0x0F ) .
+            pack( 'C', 0x2E ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
+    }
+
     method addsd_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF2 ) .
@@ -783,6 +847,28 @@ class Brocken::Target::Architecture::x64::Emit {
         $code
             .= pack( 'C', 0x66 ) .
             $self->_rex( 1, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x7E ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method movd_reg_xmm( $d, $s ) {
+
+        # 66 0F 6E /r - Move DWORD (from GP to XMM)
+        # REX.W must be 0 for 32-bit move
+        $code
+            .= pack( 'C', 0x66 ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
+            pack( 'CC', 0x0F, 0x6E ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
+    }
+
+    method movd_xmm_reg( $d, $s ) {
+
+        # 66 0F 7E /r - Move DWORD (from XMM to GP)
+        # REX.W must be 0 for 32-bit move
+        $code
+            .= pack( 'C', 0x66 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
             pack( 'CC', 0x0F, 0x7E ) .
             pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
     }
