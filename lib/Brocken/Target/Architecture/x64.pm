@@ -4,6 +4,17 @@ no warnings 'portable', 'experimental::class';
 
 class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
 
+    method _sub_rsp_with_probing( $as, $driver ) {
+        my $fsz = $driver->frame_local_size;
+        if ( $self->os eq 'win64' && $fsz >= 4096 ) {
+            my $pages = int( $fsz / 4096 );
+            for my $p ( 1 .. $pages ) {
+                $as->load_reg_mem( 'r11', 'rsp', -$p * 4096 );
+            }
+        }
+        $as->sub_imm( 'rsp', $fsz );
+    }
+
     method registers() {
 
         # Reserve R14 for Isolate and R10/R11 for internal compiler use
@@ -150,7 +161,8 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         }
         elsif ( $op =~ /^(add|sub|mul|and|or|xor|div|mod)$/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
-            my $is_float = ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' || $inst->{type} eq 'Float' || $inst->{type} eq 'Double' ) );
+            my $is_float = ( $inst->{type} &&
+                    ( $inst->{type} eq 'double' || $inst->{type} eq 'float' || $inst->{type} eq 'Float' || $inst->{type} eq 'Double' ) );
             if ( $is_float && $op =~ /^(add|sub|mul|div)$/ ) {
                 my $is_32 = ( $inst->{type} eq 'float' || $inst->{type} eq 'Float' );
 
@@ -173,7 +185,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     $as->mov_imm( 'r11', $bits );
                     $as->movq_reg_xmm( 'xmm1', 'r11' );
                 }
-                if    ($is_32) {
+                if ($is_32) {
                     if    ( $op eq 'add' ) { $as->addss_reg( 'xmm0', 'xmm1' ) }
                     elsif ( $op eq 'sub' ) { $as->subss_reg( 'xmm0', 'xmm1' ) }
                     elsif ( $op eq 'mul' ) { $as->mulss_reg( 'xmm0', 'xmm1' ) }
@@ -350,14 +362,15 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     if ( $args[$i] =~ /^[A-Z_]/i ) { $as->lea_rva( 'r10', $args[$i], $driver->text_rva ); }
                     else                           { $as->mov_imm( 'r10', $v->( $args[$i] ) ); }
                 }
-                if ( $dst =~ /^\d+$/ ) {
+                if ( $dst =~ /^\\d+$/ ) {
                     $as->store_mem_disp_reg( 'rsp', $dst * 8, $src );
                 }
                 else {
                     $as->mov_reg( $dst, $src ) if $dst ne $src;
-                    # Only move to XMM if it's a floating-point argument
-                    if ($args[$i] =~ /_float$|_double$/) {
-                        my $xmm_dst = $self->_abi_fp_arg_reg($i);
+
+                    # Unconditionally mirror all arguments to XMM registers for FFI compatibility
+                    if ( $i < 8 ) {
+                        my $xmm_dst = "xmm$i";
                         $as->movq_reg_xmm( $xmm_dst, $src );
                     }
                 }
@@ -374,8 +387,11 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 if   ( $op eq 'call_func' ) { $as->call_label($target); }
                 else                        { $as->append_code( pack( 'CCC', 0x41, 0xFF, 0xD3 ) ); }         # call r11
                 if ( defined $d_reg ) {
-                    if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'float' ) ) {
+                    if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} eq 'Double' ) ) {
                         $as->movq_xmm_reg( $d_reg, 'xmm0' );
+                    }
+                    elsif ( $inst->{type} && ( $inst->{type} eq 'float' || $inst->{type} eq 'Float' ) ) {
+                        $as->movd_xmm_reg( $d_reg, 'xmm0' );
                     }
                     else {
                         $as->mov_reg( $d_reg, 'rax' );
@@ -399,7 +415,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
                 $as->mov_reg( 'rbp', 'rsp' );
             }
-            $as->sub_imm( 'rsp', $driver->frame_local_size );
+            $self->_sub_rsp_with_probing( $as, $driver );
             if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
                 $as->lea_rva( 'r11', "DATA:" . $driver->global_iso_offset );
                 $as->load_reg_mem( 'r14', 'r11', 0 );
@@ -416,7 +432,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             }
             for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
             $as->mov_reg( 'rbp', 'rsp' );
-            $as->sub_imm( 'rsp', $driver->frame_local_size );
+            $self->_sub_rsp_with_probing( $as, $driver );
         }
         elsif ( $op eq 'load_isolate_ctx' ) {
             if ( $driver->type eq 'shared' && defined $driver->global_iso_offset ) {
@@ -516,6 +532,36 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'get_bp' ) {
             $as->mov_reg( $d_reg, 'rbp' );
+        }
+        elsif ( $op eq 'cvt_f32_f64' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'r10';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'r10', $v->($src) ); }
+            $as->movd_reg_xmm( 'xmm0', $s_reg );
+            $as->cvtss2sd_reg( 'xmm0', 'xmm0' );
+            $as->movq_xmm_reg( $d_reg, 'xmm0' );
+        }
+        elsif ( $op eq 'cvt_f64_f32' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'r10';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'r10', $v->($src) ); }
+            $as->movq_reg_xmm( 'xmm0', $s_reg );
+            $as->cvtsd2ss_reg( 'xmm0', 'xmm0' );
+            $as->movd_xmm_reg( $d_reg, 'xmm0' );
+        }
+        elsif ( $op eq 'cvt_i64_f64' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'r10';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'r10', $v->($src) ); }
+            $as->cvtsi2sd_reg( 'xmm0', $s_reg );
+            $as->movq_xmm_reg( $d_reg, 'xmm0' );
+        }
+        elsif ( $op eq 'cvt_f64_i64' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'r10';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'r10', $v->($src) ); }
+            $as->movq_reg_xmm( 'xmm0', $s_reg );
+            $as->cvttsd2si_reg( $d_reg, 'xmm0' );
         }
         elsif ( $op eq 'load_iso_disp' ) { $as->load_reg_mem( $d_reg, 'r14', $inst->{args}[0] ); }
         elsif ( $op eq 'store_iso_disp' ) {
@@ -754,33 +800,33 @@ class Brocken::Target::Architecture::x64::Emit {
     method addss_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF3 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x58 ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method subss_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF3 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x5C ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method mulss_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF3 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x59 ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method divss_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF3 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x5E ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method ucomiss_reg( $d, $s ) {
@@ -794,33 +840,65 @@ class Brocken::Target::Architecture::x64::Emit {
     method addsd_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF2 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x58 ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method subsd_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF2 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x5C ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method mulsd_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF2 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x59 ) .
-            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method divsd_reg( $d, $s ) {
         $code
             .= pack( 'C', 0xF2 ) .
-            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            $self->_rex( 0, $self->reg($d), 0, $self->reg($s) ) .
             pack( 'CC', 0x0F, 0x5E ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
+    }
+
+    method cvtss2sd_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF3 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x5A ) .
             pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method cvtsd2ss_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF2 ) .
+            $self->_rex( 0, $self->reg($s), 0, $self->reg($d) ) .
+            pack( 'CC', 0x0F, 0x5A ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($s) & 7 ) << 3 ) | ( $self->reg($d) & 7 ) );
+    }
+
+    method cvtsi2sd_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF2 ) .
+            $self->_rex( 1, $self->reg($d), 0, $self->reg($s) ) .
+            pack( 'CC', 0x0F, 0x2A ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
+    }
+
+    method cvttsd2si_reg( $d, $s ) {
+        $code
+            .= pack( 'C', 0xF2 ) .
+            $self->_rex( 1, $self->reg($d), 0, $self->reg($s) ) .
+            pack( 'CC', 0x0F, 0x2C ) .
+            pack( 'C', 0xC0 | ( ( $self->reg($d) & 7 ) << 3 ) | ( $self->reg($s) & 7 ) );
     }
 
     method ucomisd_reg( $d, $s ) {

@@ -1,8 +1,8 @@
 use strict;
 use warnings;
 use v5.40;
-use lib 'lib';
-use Test::More;
+use lib 'lib', '../../lib';
+use Test2::V0;
 use Brocken;
 use Brocken::Compiler::Pipeline;
 use Brocken::Compiler::DataSegment;
@@ -82,6 +82,7 @@ BROCKEN
 
     # If arg is unboxed: 3 * 2 = 6. If arg is boxed: 7 * 2 = 14
     is( $cb_result2, 6, 'Callback receives unboxed argument (3 * 2 = 6)' );
+
     # unlink $out_name if -f $out_name;
     unlink $out_name if 0;
 };

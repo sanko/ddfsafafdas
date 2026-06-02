@@ -116,11 +116,10 @@ class Brocken::Compiler::Pipeline {
         return ( $arch eq 'arm64' || $arch eq 'riscv64' ) ? 16 : $self->context_size() - 8;
     }
 
-    method frame_local_size() {
-        my $locals = 4096;
+   method frame_local_size() {
+        my $locals = 1048576; # Support up to 1 MB of stack memory dynamically probed!
         my $shadow = $platform->shadow_space();
         my $total  = $locals + $shadow;
-
         if ( $arch eq 'x64' ) {
 
             # On x64, we need (8 [ret addr] + preserved_regs * 8 + frame_local_size) % 16 == 0
@@ -129,7 +128,6 @@ class Brocken::Compiler::Pipeline {
             my $rem    = ( $offset + $base ) % 16;
             return $rem == 0 ? $base : $base + ( 16 - $rem );
         }
-
         return ( $total + 15 ) & ~15;
     }
     method text_rva ()                                { $format->rva_for('.text') }
@@ -151,15 +149,15 @@ class Brocken::Compiler::Pipeline {
     field $global_label_counter = 0;
     method alloc_global_label() { return ++$global_label_counter; }
 
-    method alloc_local_slot () {
+ method alloc_local_slot () {
         $local_ptr += 8;
-        die 'Stack Overflow: Local area exceeded 4096 bytes' if $local_ptr > 4096;
+        die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;
     }
 
     method alloc_local_chunk ($size) {
         $local_ptr += $size;
-        die 'Stack Overflow: Local area exceeded 4096 bytes' if $local_ptr > 4096;
+        die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;
     }
 

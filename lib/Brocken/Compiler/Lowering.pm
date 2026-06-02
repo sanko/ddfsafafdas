@@ -519,11 +519,10 @@ package Brocken::Compiler::Lowering {
             $internal_name //= 'M_' . $node->name;
             $export_name   //= 'E_' . $node->name;
             $builder->emit_label($export_name);
-
             my $caller_r14_s = $driver->alloc_local_slot();
-            $builder->emit( 'push_frame',      'void', [] );
-            my $old_r14      = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
-            $builder->emit( 'local_store',     'void', [ $caller_r14_s, $old_r14 ] );
+            $builder->emit( 'push_frame', 'void', [] );
+            my $old_r14 = $builder->emit( 'get_isolate_ctx', 'ptr', [] );
+            $builder->emit( 'local_store',      'void', [ $caller_r14_s, $old_r14 ] );
             $builder->emit( 'load_isolate_ctx', 'void', [] );
 
             # --- 2. CAPTURE RAW REGS IMMEDIATELY ---
@@ -531,9 +530,12 @@ package Brocken::Compiler::Lowering {
             my $arg_idx = 0;
             for my $p ( @{ $node->params } ) {
                 my $param_type = $p->{type};
-                my $ir_type    = ( $param_type eq 'Float' || $param_type eq 'double' ) ? 'double' : 'i64';
-                my $slot       = $driver->alloc_local_slot();
-                my $raw_reg    = $builder->emit( 'get_arg', $ir_type, [ $arg_idx++ ] );
+                my $ir_type
+                    = ( $param_type eq 'Float' || $param_type eq 'float' ) ? 'float' :
+                    ( $param_type eq 'double' || $param_type eq 'Double' ) ? 'double' :
+                    'i64';
+                my $slot    = $driver->alloc_local_slot();
+                my $raw_reg = $builder->emit( 'get_arg', $ir_type, [ $arg_idx++ ] );
                 $builder->emit( 'local_store', 'void', [ $slot, $raw_reg ] );
                 push @saved_slots, { slot => $slot, type => $param_type, ir_type => $ir_type };
             }
@@ -548,9 +550,19 @@ package Brocken::Compiler::Lowering {
             my @boxed_args;
             for my $s (@saved_slots) {
                 my $raw = $builder->emit( 'local_load', $s->{ir_type}, [ $s->{slot} ] );
-                if ( $s->{type} eq 'Int' || $s->{type} =~ /^Int\d+$/ ) {
+                if ( $s->{type} eq 'Int' || $s->{type} =~ /^Int\\d+$/ ) {
                     my $shifted = $builder->emit( 'shl', 'i64', [ $raw, 1 ] );
                     push @boxed_args, $builder->emit( 'or', 'i64', [ $shifted, 1 ] );
+                }
+                elsif ( $s->{type} eq 'Float' || $s->{type} eq 'float' ) {
+                    my $dbl = $builder->emit( 'cvt_f32_f64', 'double', [$raw] );
+                    push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $dbl ] );
+                }
+                elsif ( $s->{type} eq 'double' || $s->{type} eq 'Double' ) {
+                    push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $raw ] );
+                }
+                elsif ( $s->{type} =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
+                    push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_pointer', $raw ] );
                 }
                 else {
                     push @boxed_args, $raw;
@@ -558,17 +570,27 @@ package Brocken::Compiler::Lowering {
             }
 
             # --- 5. CALL INTERNAL LOGIC ---
-            my $has_float   = grep { $_->{type} eq 'Float' || $_->{type} eq 'double' } @{ $node->params };
-            my $ret_ir_type = $has_float ? 'double' : 'i64';
-            my $result      = $builder->emit( 'call_func', $ret_ir_type, [ $internal_name, @boxed_args ] );
+            # Internal logic ALWAYS returns i64 (Any boxed variant)
+            my $result = $builder->emit( 'call_func', 'i64', [ $internal_name, @boxed_args ] );
 
             # --- 6. UNBOX RETURN VALUE ---
-            my $ret_type = $self->_infer_return_type($node);
+            my $ret_type    = $self->_infer_return_type($node);
+            my $ret_ir_type = 'i64';
             if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
                 $result = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $result, 1 ] ), 2 ] );
             }
-            elsif ( $ret_type eq 'Float' || $ret_type eq 'double' || $ret_type eq 'float' ) {
-                $result = $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $result ] );
+            elsif ( $ret_type eq 'Float' || $ret_type eq 'float' ) {
+                $result      = $builder->emit( 'call_func',   'double', [ 'M_unbox_float', $result ] );
+                $result      = $builder->emit( 'cvt_f64_f32', 'float',  [$result] );
+                $ret_ir_type = 'float';
+            }
+            elsif ( $ret_type eq 'double' || $ret_type eq 'Double' ) {
+                $result      = $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $result ] );
+                $ret_ir_type = 'double';
+            }
+            elsif ( $ret_type =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
+                $result      = $builder->emit( 'call_func', 'ptr', [ 'M_unbox_pointer', $result ] );
+                $ret_ir_type = 'ptr';
             }
 
             # --- 7. RESTORE CALLER'S R14 ---
@@ -583,8 +605,46 @@ package Brocken::Compiler::Lowering {
                 next unless $stmt isa Brocken::AST::Stmt::Return;
                 next unless defined $stmt->expr;
                 my $e = $stmt->expr;
-                if ( $e isa Brocken::AST::Expr::BinOp   && $e->op =~ /^[+\-*\/%]$/ ) { return 'Int'; }
-                if ( $e isa Brocken::AST::Expr::UnaryOp && $e->op eq '-' )           { return 'Int'; }
+                if ( $e isa Brocken::AST::Expr::BinOp && $e->op =~ /^[+\-*\/%]$/ ) {
+                    my $float_type = undef;
+                    if ( ( $e->left isa Brocken::AST::Expr::Const && ( $e->left->type eq 'Float' || $e->left->type eq 'double' ) ) ) {
+                        $float_type = $e->left->type;
+                    }
+                    elsif ( ( $e->right isa Brocken::AST::Expr::Const && ( $e->right->type eq 'Float' || $e->right->type eq 'double' ) ) ) {
+                        $float_type = $e->right->type;
+                    }
+                    for my $p ( @{ $node->params // [] } ) {
+                        if ( $p->{type} eq 'Float' || $p->{type} eq 'float' || $p->{type} eq 'double' || $p->{type} eq 'Double' ) {
+                            if ( ( $e->left isa Brocken::AST::Expr::Var && $e->left->name eq $p->{name} ) ||
+                                ( $e->right isa Brocken::AST::Expr::Var && $e->right->name eq $p->{name} ) ) {
+                                $float_type = $p->{type};
+                            }
+                        }
+                    }
+                    return $float_type ? $float_type : 'Int';
+                }
+                if ( $e isa Brocken::AST::Expr::UnaryOp && $e->op eq '-' ) {
+                    my $float_type = undef;
+                    for my $p ( @{ $node->params // [] } ) {
+                        if ( $p->{type} eq 'Float' || $p->{type} eq 'float' || $p->{type} eq 'double' || $p->{type} eq 'Double' ) {
+                            if ( $e->expr isa Brocken::AST::Expr::Var && $e->expr->name eq $p->{name} ) {
+                                $float_type = $p->{type};
+                            }
+                        }
+                    }
+                    return $float_type ? $float_type : 'Int';
+                }
+                if ( $e isa Brocken::AST::Expr::UnaryOp && $e->op eq '-' ) {
+                    my $is_float = 0;
+                    for my $p ( @{ $node->params // [] } ) {
+                        if ( $p->{type} eq 'Float' || $p->{type} eq 'float' || $p->{type} eq 'double' || $p->{type} eq 'Double' ) {
+                            if ( $e->expr isa Brocken::AST::Expr::Var && $e->expr->name eq $p->{name} ) {
+                                $is_float = 1;
+                            }
+                        }
+                    }
+                    return $is_float ? 'Float' : 'Int';
+                }
                 if ( $e isa Brocken::AST::Expr::Const ) { return $e->type; }
                 if ( $e isa Brocken::AST::Expr::Var ) {
                     for my $p ( @{ $node->params } ) { return $p->{type} if $p->{name} eq $e->name; }
@@ -619,6 +679,7 @@ package Brocken::Compiler::Lowering {
             $self->inject_runtime_init_env();
             $self->inject_runtime_init_argv();
             $self->inject_runtime_print_int();
+            $self->inject_runtime_float_to_str();
             $self->inject_runtime_to_string();
             $self->inject_runtime_print_any();
             $self->inject_runtime_dump();
@@ -1698,6 +1759,164 @@ package Brocken::Compiler::Lowering {
             $builder->emit( 'leave_func', 'void', [0] );
         }
 
+        method inject_runtime_float_to_str() {
+            $driver->reset_locals();
+            $builder->emit_label('M_float_to_str');
+            $builder->emit( 'enter_func', 'void', [] );
+            my $val_reg = $builder->emit( 'get_arg', 'double', [0] );
+            my $val_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $val_s, $val_reg ] );
+
+            # Allocate String Object: header + 16 bytes metadata + 32 bytes buffer = 56 bytes.
+            # Align to 64 bytes for GC safety: 64 | Leaf flags (0xC000000000000000)
+            my $str_obj
+                = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $builder->emit( 'constant', 'i64', [ 64 | hex("C000000000000000") ] ) ] );
+            $builder->emit( 'shadow_push', 'void', [$str_obj] );
+            my $buf_ptr = $builder->emit( 'add', 'ptr', [ $str_obj, 16 ] );
+            my $pos_s   = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $pos_s, 0 ] );
+            my $val = $builder->emit( 'local_load', 'double', [$val_s] );
+
+            # Check if negative
+            my $l_not_neg = $builder->new_label();
+            my $is_neg    = $builder->emit( 'cmp_lt', 'double', [ $val, $builder->emit( 'constant', 'i64', [0] ) ] );
+            $builder->emit_cond_br( $is_neg, $builder->new_label(), $l_not_neg );
+            $builder->emit_label( $builder->last_instruction->{true_l} );
+            {
+                # Write '-'
+                my $pos = $builder->emit( 'local_load', 'i64', [$pos_s] );
+                $builder->emit( 'store_mem_byte', 'void', [ $buf_ptr, $pos, ord('-') ] );
+                $builder->emit( 'local_store', 'void', [ $pos_s, $builder->emit( 'add', 'i64', [ $pos, 1 ] ) ] );
+
+                # Negate val
+                my $neg_val = $builder->emit( 'sub', 'double', [ $builder->emit( 'constant', 'i64', [0] ), $val ] );
+                $builder->emit( 'local_store', 'void', [ $val_s, $neg_val ] );
+            }
+            $builder->emit_label($l_not_neg);
+
+            # val is now positive.
+            $val = $builder->emit( 'local_load', 'double', [$val_s] );
+            my $int_part   = $builder->emit( 'cvt_f64_i64', 'i64', [$val] );
+            my $int_part_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $int_part_s, $int_part ] );
+
+            # frac = val - (double)int_part
+            my $int_part_dbl = $builder->emit( 'cvt_i64_f64', 'double', [$int_part] );
+            my $frac         = $builder->emit( 'sub',         'double', [ $val, $int_part_dbl ] );
+
+            # frac_part = (int)(frac * 100000.0)
+            my $frac_scaled
+                = $builder->emit( 'mul', 'double', [ $frac, $builder->emit( 'constant', 'i64', [ unpack( 'Q<', pack( 'd<', 100000.0 ) ) ] ) ] );
+            my $frac_part   = $builder->emit( 'cvt_f64_i64', 'i64', [$frac_scaled] );
+            my $frac_part_s = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $frac_part_s, $frac_part ] );
+
+            # --- Format Integer Part ---
+            my $scratch_s = $driver->alloc_local_slot();
+            for ( 1 .. 3 ) { $driver->alloc_local_slot() }
+            my $bp       = $builder->emit( 'get_bp', 'ptr', [] );
+            my $temp_buf = $builder->emit( 'sub',    'ptr', [ $bp, $scratch_s ] );
+            my $is_s     = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $is_s, 0 ] );
+            my $ns = $driver->alloc_local_slot();
+            $builder->emit( 'local_store', 'void', [ $ns, $int_part ] );
+            my $l_z  = $builder->new_label();
+            my $l_nz = $builder->new_label();
+            $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $int_part, 0 ] ), $l_z, $l_nz );
+            $builder->emit_label($l_z);
+            {
+                my $pos = $builder->emit( 'local_load', 'i64', [$pos_s] );
+                $builder->emit( 'store_mem_byte', 'void', [ $buf_ptr, $pos, 48 ] );
+                $builder->emit( 'local_store', 'void', [ $pos_s, $builder->emit( 'add', 'i64', [ $pos, 1 ] ) ] );
+            }
+            $builder->emit_jump($l_nz);
+            $builder->emit_label($l_nz);
+            {
+                # Loop to extract digits
+                my $l_loop1     = $builder->new_label();
+                my $l_loop1_end = $builder->new_label();
+                $builder->emit_label($l_loop1);
+                my $cn = $builder->emit( 'local_load', 'i64', [$ns] );
+                my $ci = $builder->emit( 'local_load', 'i64', [$is_s] );
+                $builder->emit( 'store_mem_byte', 'void',
+                    [ $temp_buf, $ci, $builder->emit( 'add', 'i64', [ $builder->emit( 'mod', 'i64', [ $cn, 10 ] ), 48 ] ) ] );
+                $builder->emit( 'local_store', 'void', [ $is_s, $builder->emit( 'add', 'i64', [ $ci, 1 ] ) ] );
+                my $nn = $builder->emit( 'div', 'i64', [ $cn, 10 ] );
+                $builder->emit( 'local_store', 'void', [ $ns, $nn ] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $nn, 0 ] ), $l_loop1, $l_loop1_end );
+                $builder->emit_label($l_loop1_end);
+
+                # Write in reverse order
+                my $l_loop2     = $builder->new_label();
+                my $l_loop2_end = $builder->new_label();
+                $builder->emit_label($l_loop2);
+                my $fci = $builder->emit( 'sub', 'i64', [ $builder->emit( 'local_load', 'i64', [$is_s] ), 1 ] );
+                $builder->emit( 'local_store', 'void', [ $is_s, $fci ] );
+                my $pos   = $builder->emit( 'local_load',    'i64', [$pos_s] );
+                my $digit = $builder->emit( 'load_mem_byte', 'Int', [ $temp_buf, $fci ] );
+                $builder->emit( 'store_mem_byte', 'void', [ $buf_ptr, $pos, $digit ] );
+                $builder->emit( 'local_store', 'void', [ $pos_s, $builder->emit( 'add', 'i64', [ $pos, 1 ] ) ] );
+                $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $fci, 0 ] ), $l_loop2, $l_loop2_end );
+                $builder->emit_label($l_loop2_end);
+            }
+
+            # --- Write '.' ---
+            my $pos = $builder->emit( 'local_load', 'i64', [$pos_s] );
+            $builder->emit( 'store_mem_byte', 'void', [ $buf_ptr, $pos, ord('.') ] );
+            $builder->emit( 'local_store', 'void', [ $pos_s, $builder->emit( 'add', 'i64', [ $pos, 1 ] ) ] );
+
+            # --- Format Fractional Part (5 decimal places with leading zeros) ---
+            my $f_val = $builder->emit( 'local_load', 'i64', [$frac_part_s] );
+
+            # Print leading zeros if frac_part < 10000, 1000, 100, 10
+            my $divs = [ 10000, 1000, 100, 10 ];
+            for my $d (@$divs) {
+                my $l_no_zero = $builder->new_label();
+                $builder->emit_cond_br( $builder->emit( 'cmp_lt', 'Int', [ $f_val, $d ] ), $builder->new_label(), $l_no_zero );
+                $builder->emit_label( $builder->last_instruction->{true_l} );
+                {
+                    my $pos = $builder->emit( 'local_load', 'i64', [$pos_s] );
+                    $builder->emit( 'store_mem_byte', 'void', [ $buf_ptr, $pos, 48 ] );
+                    $builder->emit( 'local_store', 'void', [ $pos_s, $builder->emit( 'add', 'i64', [ $pos, 1 ] ) ] );
+                }
+                $builder->emit_label($l_no_zero);
+            }
+
+            # Now print the actual frac_part digits
+            $builder->emit( 'local_store', 'void', [ $ns,   $f_val ] );
+            $builder->emit( 'local_store', 'void', [ $is_s, 0 ] );
+            my $l_floop1     = $builder->new_label();
+            my $l_floop1_end = $builder->new_label();
+            $builder->emit_label($l_floop1);
+            my $cn = $builder->emit( 'local_load', 'i64', [$ns] );
+            my $ci = $builder->emit( 'local_load', 'i64', [$is_s] );
+            $builder->emit( 'store_mem_byte', 'void',
+                [ $temp_buf, $ci, $builder->emit( 'add', 'i64', [ $builder->emit( 'mod', 'i64', [ $cn, 10 ] ), 48 ] ) ] );
+            $builder->emit( 'local_store', 'void', [ $is_s, $builder->emit( 'add', 'i64', [ $ci, 1 ] ) ] );
+            my $nn = $builder->emit( 'div', 'i64', [ $cn, 10 ] );
+            $builder->emit( 'local_store', 'void', [ $ns, $nn ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $nn, 0 ] ), $l_floop1, $l_floop1_end );
+            $builder->emit_label($l_floop1_end);
+            my $l_floop2     = $builder->new_label();
+            my $l_floop2_end = $builder->new_label();
+            $builder->emit_label($l_floop2);
+            my $fci = $builder->emit( 'sub', 'i64', [ $builder->emit( 'local_load', 'i64', [$is_s] ), 1 ] );
+            $builder->emit( 'local_store', 'void', [ $is_s, $fci ] );
+            my $pos_f = $builder->emit( 'local_load',    'i64', [$pos_s] );
+            my $digit = $builder->emit( 'load_mem_byte', 'Int', [ $temp_buf, $fci ] );
+            $builder->emit( 'store_mem_byte', 'void', [ $buf_ptr, $pos_f, $digit ] );
+            $builder->emit( 'local_store', 'void', [ $pos_s, $builder->emit( 'add', 'i64', [ $pos_f, 1 ] ) ] );
+            $builder->emit_cond_br( $builder->emit( 'cmp_gt', 'Int', [ $fci, 0 ] ), $l_floop2, $l_floop2_end );
+            $builder->emit_label($l_floop2_end);
+
+            # Store final string length
+            my $final_len = $builder->emit( 'local_load', 'i64', [$pos_s] );
+            $builder->emit( 'store_mem_disp', 'void', [ $str_obj, 0, $final_len ] );
+            $builder->emit( 'store_mem_disp', 'void', [ $str_obj, 8, $final_len ] );
+            $builder->emit( 'shadow_pop',     'void', [] );
+            $builder->emit( 'leave_func',     'ptr',  [$str_obj] );
+        }
+
         method inject_runtime_print_any() {
             $driver->reset_locals();
             $builder->emit_label('M_print_any');
@@ -2526,13 +2745,11 @@ package Brocken::Compiler::Lowering {
             my $l_p_box = $builder->new_label();
             $builder->emit_cond_br( $builder->emit( 'cmp_eq', 'Int', [ $type_id, 1 ] ), $l_f_box, $l_p_box );
 
-            # Boxed Float: format to string
+            # Boxed Float: format to string using our M_float_to_str!
             $builder->emit_label($l_f_box);
-
-            # For now, just return "[Float]" or a dummy.
-            # Real implementation would call snprintf.
-            # But wait, I'll try to just return the value as string if I can.
-            $builder->emit( 'leave_func', 'ptr', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string("[Float]") ] ) ] );
+            my $f_val_raw = $builder->emit( 'load_mem_disp', 'double', [ $ptr_val, 8 ] );
+            my $f_str_obj = $builder->emit( 'call_func',     'ptr',    [ 'M_float_to_str', $f_val_raw ] );
+            $builder->emit( 'leave_func', 'ptr', [$f_str_obj] );
 
             # Boxed Pointer: format to hex
             $builder->emit_label($l_p_box);
@@ -3899,10 +4116,10 @@ package Brocken::Compiler::Lowering {
             }
             $current_func_name = 'L_MAIN_START';
             @func_locals       = ();
-            my ($r, $t) = $self->lower_block( \@main_statements );
+            my ( $r, $t ) = $self->lower_block( \@main_statements );
             $self->_emit_all_defers();
-            if   ( $self->skip_runtime ) { $builder->emit( 'leave_func',     'i64',  [ defined $r ? $r : $builder->emit( 'constant', 'i64', [1] ) ] ); }
-            else                         { $builder->emit( 'intrinsic_exit', 'void', [ defined $r ? $r : $builder->emit( 'constant', 'i64', [0] ) ] ); }
+            if ( $self->skip_runtime ) { $builder->emit( 'leave_func', 'i64', [ defined $r ? $r : $builder->emit( 'constant', 'i64', [1] ) ] ); }
+            else                       { $builder->emit( 'intrinsic_exit', 'void', [ defined $r ? $r : $builder->emit( 'constant', 'i64', [0] ) ] ); }
             while (@fragments) { my $f = shift @fragments; $builder->push_instruction($_) for @$f; }
             $builder->emit( 'intrinsic_emit_runtime', 'void', [] ) unless $self->skip_runtime;
 
@@ -3920,7 +4137,8 @@ package Brocken::Compiler::Lowering {
                 return ( $builder->emit( 'constant', $node->type, [ $node->value ] ), $node->type );
             }
             if ( $node->type eq 'Float' || $node->type eq 'double' ) {
-                return ( $builder->emit( 'constant', 'double', [ unpack( 'Q<', pack( 'd<', $node->value ) ) ] ), 'Float' );
+                my $raw = $builder->emit( 'constant', 'double', [ unpack( 'Q<', pack( 'd<', $node->value ) ) ] );
+                return ( $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $raw ] ), 'Float' );
             }
             return ( $builder->emit( 'constant', 'i64', [ ( $node->value << 1 ) | 1 ] ), 'Int' );
         }
@@ -3959,7 +4177,7 @@ package Brocken::Compiler::Lowering {
             my $sl  = $driver->alloc_local_slot();
             my $ft  = $node->type eq 'Any' ? $vt : $node->type;
             my $sho = undef;
-            if ( $ft =~ /^(Any|String|Array|Fiber|Class|Undef)$/ || $ft !~ /^(Int|Float|i64|double|ptr|void)$/ ) {
+            if ( $ft =~ /^(Any|String|Array|Fiber|Class|Undef|Float)$/ || $ft !~ /^(Int|i64|double|ptr|void)$/ ) {
                 $sho = $builder->emit( 'shadow_get', 'ptr', [] );
                 $builder->emit( 'shadow_push', 'void', [$vr] );
             }
@@ -4203,10 +4421,42 @@ package Brocken::Compiler::Lowering {
             }
             my ( $lr, $lt ) = $self->lower( $node->left );
             my ( $rr, $rt ) = $self->lower( $node->right );
-            my $isf = ( $lt eq 'Float' || $rt eq 'Float' || $lt eq 'double' || $rt eq 'double' );
-            my $mm  = { '+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod' };
+            my $isf
+                = ( $lt eq 'Float' ||
+                    $rt eq 'Float'  ||
+                    $lt eq 'double' ||
+                    $rt eq 'double' ||
+                    $lt eq 'Double' ||
+                    $rt eq 'Double' ||
+                    $lt eq 'float'  ||
+                    $rt eq 'float' );
+            my $mm = { '+' => 'add', '-' => 'sub', '*' => 'mul', '/' => 'div', '%' => 'mod' };
             if ( exists $mm->{ $node->op } ) {
-                if ($isf) { return ( $builder->emit( $mm->{ $node->op }, 'double', [ $lr, $rr ] ), 'Float' ) }
+                if ($isf) {
+                    $builder->emit( 'shadow_push', 'void', [$lr] ) if $lt eq 'Float';
+                    $builder->emit( 'shadow_push', 'void', [$rr] ) if $rt eq 'Float';
+                    my $l_val
+                        = ( $lt eq 'Float' || $lt eq 'float' || $lt eq 'Double' || $lt eq 'double' ) ?
+                        $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $lr ] ) :
+                        $lr;
+                    my $r_val
+                        = ( $rt eq 'Float' || $rt eq 'float' || $rt eq 'Double' || $rt eq 'double' ) ?
+                        $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $rr ] ) :
+                        $rr;
+                    if ( $lt eq 'Int' ) {
+                        my $untagged = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $l_val, 1 ] ), 2 ] );
+                        $l_val = $builder->emit( 'cvt_i64_f64', 'double', [$untagged] );
+                    }
+                    if ( $rt eq 'Int' ) {
+                        my $untagged = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $r_val, 1 ] ), 2 ] );
+                        $r_val = $builder->emit( 'cvt_i64_f64', 'double', [$untagged] );
+                    }
+                    my $res_raw   = $builder->emit( $mm->{ $node->op }, 'double', [ $l_val, $r_val ] );
+                    my $boxed_res = $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $res_raw ] );
+                    $builder->emit( 'shadow_pop', 'void', [] ) if $rt eq 'Float';
+                    $builder->emit( 'shadow_pop', 'void', [] ) if $lt eq 'Float';
+                    return ( $boxed_res, 'Float' );
+                }
                 my $res_raw = $builder->emit(
                     $mm->{ $node->op },
                     'i64',
@@ -4218,7 +4468,31 @@ package Brocken::Compiler::Lowering {
             }
             my $cm = { '==' => 'cmp_eq', '!=' => 'cmp_ne', '<' => 'cmp_lt', '>' => 'cmp_gt', '<=' => 'cmp_le', '>=' => 'cmp_ge' };
             if ( exists $cm->{ $node->op } ) {
-                my $raw = $builder->emit( $cm->{ $node->op }, ( $isf ? 'double' : 'i64' ), [ $lr, $rr ] );
+                if ($isf) {
+                    $builder->emit( 'shadow_push', 'void', [$lr] ) if $lt eq 'Float';
+                    $builder->emit( 'shadow_push', 'void', [$rr] ) if $rt eq 'Float';
+                    my $l_val
+                        = ( $lt eq 'Float' || $lt eq 'float' || $lt eq 'Double' || $lt eq 'double' ) ?
+                        $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $lr ] ) :
+                        $lr;
+                    my $r_val
+                        = ( $rt eq 'Float' || $rt eq 'float' || $rt eq 'Double' || $rt eq 'double' ) ?
+                        $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $rr ] ) :
+                        $rr;
+                    if ( $lt eq 'Int' ) {
+                        my $untagged = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $l_val, 1 ] ), 2 ] );
+                        $l_val = $builder->emit( 'cvt_i64_f64', 'double', [$untagged] );
+                    }
+                    if ( $rt eq 'Int' ) {
+                        my $untagged = $builder->emit( 'div', 'i64', [ $builder->emit( 'sub', 'i64', [ $r_val, 1 ] ), 2 ] );
+                        $r_val = $builder->emit( 'cvt_i64_f64', 'double', [$untagged] );
+                    }
+                    my $raw = $builder->emit( $cm->{ $node->op }, 'double', [ $l_val, $r_val ] );
+                    $builder->emit( 'shadow_pop', 'void', [] ) if $rt eq 'Float';
+                    $builder->emit( 'shadow_pop', 'void', [] ) if $lt eq 'Float';
+                    return ( $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $raw, 2 ] ), 1 ] ), 'Int' );
+                }
+                my $raw = $builder->emit( $cm->{ $node->op }, 'i64', [ $lr, $rr ] );
                 return ( $builder->emit( 'add', 'i64', [ $builder->emit( 'mul', 'i64', [ $raw, 2 ] ), 1 ] ), 'Int' );
             }
             my $scm = { 'eq' => 'cmp_eq', 'ne' => 'cmp_ne', 'lt' => 'cmp_lt', 'gt' => 'cmp_gt', 'le' => 'cmp_le', 'ge' => 'cmp_ge' };
@@ -5062,11 +5336,12 @@ package Brocken::Compiler::Lowering {
                         $current_scope->define( $p->{name}, $p->{type}, 0, undef, $sl );
                         $builder->emit( 'local_store', 'void', [ $sl, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
                     }
-                    my ($r, $t) = $self->lower_block( $node->body->statements );
+                    my ( $r, $t ) = $self->lower_block( $node->body->statements );
                     $self->_emit_all_defers();
                     $self->_flush_func_locals();
+
                     # $builder->emit( 'call_func', 'void', [ 'M_debug_print_reg', 'rax' ] );
-            $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
+                    $builder->emit( 'leave_func', 'void', [ defined $r ? $r : 0 ] );
                     $routine_depth--;
                     $current_scope = $current_scope->parent;
                     @defer_stack   = @old_defers;
@@ -5150,10 +5425,11 @@ package Brocken::Compiler::Lowering {
                 $current_scope->define( $p->{name}, $p->{type}, 0, undef, $l );
                 $builder->emit( 'local_store', 'void', [ $l, $builder->emit( 'get_arg', 'i64', [ $ai++ ] ) ] );
             }
-            my ($r, $t) = $self->lower_block( $node->body->statements );
+            my ( $r, $t ) = $self->lower_block( $node->body->statements );
             $self->_emit_all_defers();
+
             # $builder->emit( 'call_func', 'void', [ 'M_debug_print_reg', 'rax' ] );
-            $builder->emit( 'leave_func', 'void', [defined $r ? $r : 0] );
+            $builder->emit( 'leave_func', 'void', [ defined $r ? $r : 0 ] );
             $routine_depth--;
             $current_scope = $current_scope->parent;
 
@@ -5337,55 +5613,53 @@ package Brocken::Compiler::Lowering {
                         my $t   = $arg_types[$i];
                         my $arg = $builder->emit( 'local_load', 'Any', [ $saved_slots[$i] ] );
                         if ( $t eq 'Int' || $t eq 'Bool' ) {
-
-                            # Untag integer: arg >> 1
                             push @raw_args, $builder->emit( 'shr', 'i64', [ $arg, 1 ] );
                         }
                         elsif ( $t eq 'String' ) {
-
-                            # C strings are just raw pointers to payload (skips 16-byte Brocken String Header)
                             push @raw_args, $builder->emit( 'add', 'ptr', [ $arg, 16 ] );
                         }
                         elsif ( $t eq 'Array' ) {
-
-                            # Pass raw pointer to flat C array elements (skips 8-byte tag word)
                             push @raw_args, $builder->emit( 'add', 'ptr', [ $arg, 8 ] );
                         }
-                        elsif ( $t eq 'Float' || $t eq 'double' || $t eq 'float' ) {
-
-                            # Unbox Float
+                        elsif ( $t eq 'Float' || $t eq 'float' ) {
+                            my $dbl = $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $arg ] );
+                            push @raw_args, $builder->emit( 'cvt_f64_f32', 'float', [$dbl] );
+                        }
+                        elsif ( $t eq 'double' || $t eq 'Double' ) {
                             push @raw_args, $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $arg ] );
                         }
-                        elsif ( $t =~ /^(Pointer|Pointer\[.*\]|\*.*)$/ ) {
-
-                            # Unbox Pointer
+                        elsif ( $t =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
                             push @raw_args, $builder->emit( 'call_func', 'ptr', [ 'M_unbox_pointer', $arg ] );
                         }
                         else {
-                            push @raw_args, $arg;    # Default raw pass-through
+                            push @raw_args, $arg;
                         }
                     }
-
-                    # FEATURE: Float return type registers (mapped to xmm0)
-                    my $ret_ir_type = ( $ret_type eq 'Float' || $ret_type eq 'double' || $ret_type eq 'float' ) ? 'double' : 'i64';
-                    my $ret_val     = $builder->emit( 'call_reg', $ret_ir_type, [ $final_c_ptr, @raw_args ] );
+                    my $ret_ir_type
+                        = ( $ret_type eq 'Float' || $ret_type eq 'float' ) ? 'float' :
+                        ( $ret_type eq 'double' || $ret_type eq 'Double' ) ? 'double' :
+                        'i64';
+                    my $ret_val = $builder->emit( 'call_reg', $ret_ir_type, [ $final_c_ptr, @raw_args ] );
 
                     # --- Box Return Value ---
                     my $boxed_ret;
                     if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
                         $boxed_ret = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $ret_val, 1 ] ), 1 ] );
                     }
-                    elsif ( $ret_type eq 'Float' || $ret_type eq 'double' || $ret_type eq 'float' ) {
+                    elsif ( $ret_type eq 'Float' || $ret_type eq 'float' ) {
+                        my $dbl = $builder->emit( 'cvt_f32_f64', 'double', [$ret_val] );
+                        $boxed_ret = $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $dbl ] );
+                    }
+                    elsif ( $ret_type eq 'double' || $ret_type eq 'Double' ) {
                         $boxed_ret = $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $ret_val ] );
                     }
-                    elsif ( $ret_type =~ /^(Pointer|Pointer\[.*\]|\*.*)$/ ) {
+                    elsif ( $ret_type =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
                         $boxed_ret = $builder->emit( 'call_func', 'ptr', [ 'M_box_pointer', $ret_val ] );
                     }
                     elsif ( $ret_type eq 'void' ) {
                         $boxed_ret = $builder->emit( 'load_data_addr', 'ptr', [$undef_ptr_offset] );
                     }
                     else {
-                        # Default fallback: Treat unknown C returns as generic Ints so we don't crash
                         $boxed_ret = $builder->emit( 'or', 'i64', [ $builder->emit( 'shl', 'i64', [ $ret_val, 1 ] ), 1 ] );
                     }
                     $builder->emit( 'leave_func', 'Any', [$boxed_ret] );
@@ -5475,28 +5749,47 @@ package Brocken::Compiler::Lowering {
                         my @boxed_args;
                         my $arg_idx = 0;
                         for my $t (@arg_types) {
-                            my $raw = $builder->emit( 'get_arg', 'i64', [ $arg_idx++ ] );
-
-                            # Pass arguments through as-is, they are already native unboxed values.
-                            push @boxed_args, $raw;
+                            my $ir_type = ( $t eq 'Float' || $t eq 'float' ) ? 'float' : ( $t eq 'double' || $t eq 'Double' ) ? 'double' : 'i64';
+                            my $raw     = $builder->emit( 'get_arg', $ir_type, [ $arg_idx++ ] );
+                            if ( $t eq 'Int' || $t eq 'Bool' ) {
+                                my $shifted = $builder->emit( 'shl', 'i64', [ $raw, 1 ] );
+                                push @boxed_args, $builder->emit( 'or', 'i64', [ $shifted, 1 ] );
+                            }
+                            elsif ( $t eq 'Float' || $t eq 'double' || $t eq 'float' || $t eq 'Double' ) {
+                                push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_float', $raw ] );
+                            }
+                            elsif ( $t =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
+                                push @boxed_args, $builder->emit( 'call_func', 'ptr', [ 'M_box_pointer', $raw ] );
+                            }
+                            else {
+                                push @boxed_args, $raw;
+                            }
                         }
 
                         # Call target Brocken sub
                         my $ret_val = $builder->emit( 'call_reg', 'i64', [ $target_sub, @boxed_args ] );
 
-                        # Debug:
-                        $builder->emit( 'call_func', 'void', [ 'M_print_int', $ret_val ] );
-
                         # Unbox return value back to C ABI
                         my $raw_ret;
+                        my $ret_ir_type = 'i64';
                         if ( $ret_type eq 'Int' || $ret_type eq 'Bool' ) {
                             $raw_ret = $builder->emit( 'shr', 'i64', [ $ret_val, 1 ] );
                         }
-                        elsif ( $ret_type eq 'Float' || $ret_type eq 'double' || $ret_type eq 'float' ) {
-                            $raw_ret = $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $ret_val ] );
+                        elsif ( $ret_type eq 'Float' || $ret_type eq 'float' ) {
+                            my $dbl = $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $ret_val ] );
+                            $raw_ret     = $builder->emit( 'cvt_f64_f32', 'float', [$dbl] );
+                            $ret_ir_type = 'float';
+                        }
+                        elsif ( $ret_type eq 'double' || $ret_type eq 'Double' ) {
+                            $raw_ret     = $builder->emit( 'call_func', 'double', [ 'M_unbox_float', $ret_val ] );
+                            $ret_ir_type = 'double';
                         }
                         elsif ( $ret_type eq 'void' ) {
                             $raw_ret = 0;
+                        }
+                        elsif ( $ret_type =~ /^(Pointer|Pointer\\[.*\\]|\\*.*)$/ ) {
+                            $raw_ret     = $builder->emit( 'call_func', 'ptr', [ 'M_unbox_pointer', $ret_val ] );
+                            $ret_ir_type = 'ptr';
                         }
                         else {
                             $raw_ret = $ret_val;
@@ -5504,8 +5797,8 @@ package Brocken::Compiler::Lowering {
 
                         # --- 2. RESTORE CALLER'S R14 ---
                         my $orig_r14 = $builder->emit( 'local_load', 'ptr', [$caller_r14_s] );
-                        $builder->emit( 'set_isolate_ctx', 'void', [$orig_r14] );
-                        $builder->emit( 'leave_func',      'i64',  [$raw_ret] );
+                        $builder->emit( 'set_isolate_ctx', 'void',       [$orig_r14] );
+                        $builder->emit( 'leave_func',      $ret_ir_type, [$raw_ret] );
                     }
                 );
             }

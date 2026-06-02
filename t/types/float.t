@@ -1,8 +1,6 @@
-use strict;
-use warnings;
 use v5.40;
-use lib 'lib';
-use Test::More;
+use lib 'lib', '../../lib';
+use Test2::V0;
 
 BEGIN {
     eval { require Affix; Affix->import(); 1 } or plan skip_all => "Affix not available";
@@ -13,6 +11,7 @@ use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
 use Brocken::Codegen;
+#
 subtest 'Float type parsing' => sub {
     my $source = 'sub test_float(Float $x) { return $x; }';
     my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
@@ -24,7 +23,8 @@ subtest 'Float DLL generation with XMM ABI' => sub {
     # Simple pass-through first to verify basic Float handling
     my $source = <<'BROCKEN';
 sub pass_float(Float $x) {
-    return $x;
+    say 'The value of $x: '. $x;
+    return $x + 1;
 }
 BROCKEN
     my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
@@ -57,12 +57,9 @@ BROCKEN
     ok( -f $out_name, 'Float shared library generated with XMM ABI' );
 
     # Test Float pass-through
-    BEGIN {
-        eval { require Affix; Affix->import(); 1 } or plan skip_all => "Affix not available";
-    }
     affix $out_file, 'pass_float', [Float] => Float;
     my $result = pass_float(3.14);
-    cmp_ok( abs( $result - 3.14 ), '<', 0.01, 'Float pass-through: 3.14' );
+    is $result, float( 4.14, tolerance => 0.01 ), 'pass/return floats';
     unlink $out_name if -f $out_name;
 };
 done_testing();

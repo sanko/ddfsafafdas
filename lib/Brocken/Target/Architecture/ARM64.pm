@@ -188,6 +188,11 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
                     if ( $imm == 0 ) { $as->mov_reg( $dst, 'xzr' ); }
                     else             { $as->mov_imm( $dst, $imm ); }
                 }
+
+                # Unconditionally mirror to FP registers
+                if ( $i < 8 ) {
+                    $as->fmov_x_to_d( "d$i", $dst );
+                }
             }
             if ( $op =~ /^tail_call_/ ) {
                 my $fsz = $driver->frame_local_size;
@@ -200,7 +205,15 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             else {
                 if   ( $op eq 'call_func' ) { $as->call_label($target); }
                 else                        { $as->append_code( pack( 'L<', 0xD63F0200 ) ); }    # blr x16
-                if ( defined $d_reg ) { $as->mov_reg( $d_reg, 'x0' ); }
+                if ( defined $d_reg ) {
+                    if ( $inst->{type} &&
+                        ( $inst->{type} eq 'double' || $inst->{type} eq 'float' || $inst->{type} eq 'Float' || $inst->{type} eq 'Double' ) ) {
+                        $as->fmov_d_to_x( $d_reg, 'd0' );
+                    }
+                    else {
+                        $as->mov_reg( $d_reg, 'x0' );
+                    }
+                }
             }
         }
 
@@ -376,6 +389,36 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         }
         elsif ( $op eq 'get_sp' ) { $as->mov_reg( $d_reg, 'sp' ); }
         elsif ( $op eq 'get_bp' ) { $as->mov_reg( $d_reg, 'x29' ); }
+        elsif ( $op eq 'cvt_f32_f64' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'x16';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'x16', $v->($src) ); }
+            $as->fmov_x_to_d( 'd0', $s_reg );
+            $as->fcvt_s_to_d( 'd0', 'd0' );
+            $as->fmov_d_to_x( $d_reg, 'd0' );
+        }
+        elsif ( $op eq 'cvt_f64_f32' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'x16';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'x16', $v->($src) ); }
+            $as->fmov_x_to_d( 'd0', $s_reg );
+            $as->fcvt_d_to_s( 'd0', 'd0' );
+            $as->fmov_d_to_x( $d_reg, 'd0' );
+        }
+        elsif ( $op eq 'cvt_i64_f64' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'x16';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'x16', $v->($src) ); }
+            $as->scvtf_x_to_d( 'd0', $s_reg );
+            $as->fmov_d_to_x( $d_reg, 'd0' );
+        }
+        elsif ( $op eq 'cvt_f64_i64' ) {
+            my $src   = $inst->{args}[0];
+            my $s_reg = ( $src =~ /^%/ ) ? $reg_map->{$src} : 'x16';
+            if ( $src !~ /^%/ ) { $as->mov_imm( 'x16', $v->($src) ); }
+            $as->fmov_x_to_d( 'd0', $s_reg );
+            $as->fcvtzs_d_to_x( $d_reg, 'd0' );
+        }
     }
 }
 
@@ -715,6 +758,26 @@ class Brocken::Target::Architecture::ARM64::Emit {
     method fcmp_reg ( $l, $r ) {
         my ( $rl, $rr ) = ( $self->reg($l), $self->reg($r) );
         $code .= pack( 'L<', 0x1E602000 | ( $rr << 16 ) | ( $rl << 5 ) );
+    }
+
+    method fcvt_s_to_d ( $d, $s ) {
+        my ( $rd, $rs ) = ( $self->reg($d), $self->reg($s) );
+        $code .= pack( 'L<', 0x1E22C000 | ( $rs << 5 ) | $rd );
+    }
+
+    method fcvt_d_to_s ( $d, $s ) {
+        my ( $rd, $rs ) = ( $self->reg($d), $self->reg($s) );
+        $code .= pack( 'L<', 0x1E624000 | ( $rs << 5 ) | $rd );
+    }
+
+    method scvtf_x_to_d ( $d, $s ) {
+        my ( $rd, $rs ) = ( $self->reg($d), $self->reg($s) );
+        $code .= pack( 'L<', 0x9E620000 | ( $rs << 5 ) | $rd );
+    }
+
+    method fcvtzs_d_to_x ( $d, $s ) {
+        my ( $rd, $rs ) = ( $self->reg($d), $self->reg($s) );
+        $code .= pack( 'L<', 0x9E780000 | ( $rs << 5 ) | $rd );
     }
 
     method fmov_x_to_d ( $d, $s ) {

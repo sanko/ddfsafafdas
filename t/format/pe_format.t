@@ -56,10 +56,10 @@ subtest 'pre_layout' => sub {
     ok $l->get('.pdata')->{rva} > 0, '.pdata has RVA' or diag 'pdata not found (no win64 in setup_layout?)';
 };
 subtest 'debug_data flow' => sub {
-    my $pe       = Brocken::Target::Format::PE->new;
-    my $funcs    = make_fake_funcs;
-    my $sls      = make_source_locs;
-    my $dw       = Brocken::Target::Format::DWARF->new( source_locs => $sls, text_base => hex('140001000'), func_ranges => $funcs, context_size => 64 );
+    my $pe    = Brocken::Target::Format::PE->new;
+    my $funcs = make_fake_funcs;
+    my $sls   = make_source_locs;
+    my $dw    = Brocken::Target::Format::DWARF->new( source_locs => $sls, text_base => hex('140001000'), func_ranges => $funcs, context_size => 64 );
     my $sections = $dw->build_all;
     $pe->set_debug_data($sections);
     ok length( $pe->debug_section('.debug_line') ) > 0,  'debug_line accessible';

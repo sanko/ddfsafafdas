@@ -462,15 +462,13 @@ class Brocken::Target::Format::ELF : isa(Brocken::Format) {
                 );
             $extra_off += length($pintable_data);
         }
-
         my $entry_point = $self->type eq 'shared' ? 0 : $base + $l->get('.text')->{rva};
 
         # Finalize ELF Header and write program headers/extra data
         my $ehdr = pack(
             'A4 C C C C C x7 S< S< L< Q< Q< Q< L< S< S< S< S< S< S<',
             "\x7fELF", 2, 1, 1, $osabi, 0, $elf_type, ( $arch eq 'arm64' ? 183 : 62 ),
-            1,         $entry_point,
-            64,        $shoff, 0, 64, 56, $num_ph, 64, scalar(@shdrs), $shstrtab_idx
+            1, $entry_point, 64, $shoff, 0, 64, 56, $num_ph, 64, scalar(@shdrs), $shstrtab_idx
         );
         seek( $fh, 0, 0 );
         print $fh $ehdr, @phdrs, $note_data, $pintable_data;

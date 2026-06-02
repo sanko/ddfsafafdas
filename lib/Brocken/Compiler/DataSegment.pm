@@ -7,7 +7,7 @@ package Brocken::Compiler::DataSegment {
 
     class Brocken::Compiler::DataSegment {
         field $raw_data : reader = '';
-        method set_raw_data($data) {$raw_data = $data }
+        method set_raw_data($data) { $raw_data = $data }
         field %string_offsets;
 
         method add_string($str) {

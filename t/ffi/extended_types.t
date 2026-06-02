@@ -1,5 +1,5 @@
 use v5.40;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use Brocken::TestHelpers qw(test_brocken);
 use Test2::V0;
 
@@ -19,7 +19,7 @@ if ( $^O eq 'MSWin32' ) {
             my Any $s = sin(0.0);
             say "sin(0.0) = " . $s;
             },
-        expected => [ "2.0 ^ 3.0 = [Float]", "sin(0.0) = [Float]" ]
+        expected => [ "2.0 ^ 3.0 = 1.00000", "sin(0.0) = 00.00000" ]
     );
     test_brocken(
         name   => 'FFI Memory Management (Pointers)',
@@ -52,7 +52,7 @@ else {
             my Float $s = sin(0.0);
             say "sin(0.0) = " . $s;
         },
-        expected => [ "2.0 ^ 3.0 = [Float]", "sin(0.0) = [Float]" ]
+        expected => [ "2.0 ^ 3.0 = 1.00000", "sin(0.0) = 00.00000" ]
     );
 }
 done_testing;
