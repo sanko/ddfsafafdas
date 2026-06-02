@@ -38,7 +38,7 @@ subtest 'setup_layout with debug=1 non-win64' => sub {
 };
 subtest 'image_base' => sub {
     my $pe = Brocken::Target::Format::PE->new;
-    is $pe->image_base, 0x140000000, 'PE image base = 0x140000000';
+    is $pe->image_base, hex('140000000'), 'PE image base = 0x140000000';
 };
 subtest 'import_rva' => sub {
     my $pe = Brocken::Target::Format::PE->new;
@@ -59,7 +59,7 @@ subtest 'debug_data flow' => sub {
     my $pe       = Brocken::Target::Format::PE->new;
     my $funcs    = make_fake_funcs;
     my $sls      = make_source_locs;
-    my $dw       = Brocken::Target::Format::DWARF->new( source_locs => $sls, text_base => 0x140001000, func_ranges => $funcs, context_size => 64 );
+    my $dw       = Brocken::Target::Format::DWARF->new( source_locs => $sls, text_base => hex('140001000'), func_ranges => $funcs, context_size => 64 );
     my $sections = $dw->build_all;
     $pe->set_debug_data($sections);
     ok length( $pe->debug_section('.debug_line') ) > 0,  'debug_line accessible';

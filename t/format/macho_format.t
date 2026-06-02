@@ -13,7 +13,7 @@ subtest 'MachO instantiation' => sub {
 };
 subtest 'MachO image_base' => sub {
     my $f = Brocken::Target::Format::MachO->new;
-    is $f->image_base, 0x100000000, 'MachO image base = 0x100000000';
+    is $f->image_base, hex('100000000'), 'MachO image base = 0x100000000';
 };
 subtest 'MachO pre_layout without debug' => sub {
     my $f = Brocken::Target::Format::MachO->new;

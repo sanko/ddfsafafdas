@@ -33,7 +33,7 @@ subtest 'mov_imm small' => sub {
 };
 subtest 'mov_imm large (multi-part)' => sub {
     my $as = Brocken::Target::Architecture::ARM64::Emit->new;
-    $as->mov_imm( 'x3', 0x12345678ABCD );
+    $as->mov_imm( 'x3', hex("12345678ABCD") );
     my $code = $as->code;
     ok length($code) >= 4,  'large imm produces code';
     ok length($code) <= 16, 'large imm within reasonable size';

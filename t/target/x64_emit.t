@@ -96,7 +96,7 @@ subtest 'Control flow' => sub {
     $as->call_label('L_func');
     $as->call_reg('rax');
     $as->jmp_reg('rbx');
-    $as->jcc( 0x84, 'L_cond' );
+    $as->jcc( 4, 'L_cond' );
     my $code = $as->code;
     ok length($code) > 0, 'control flow produces code';
     is scalar( keys %{ $as->labels } ), 2, 'two labels defined';
@@ -110,7 +110,7 @@ subtest 'resolve fixups' => sub {
     $as->mark_label('L_after');
     $as->jmp('L_func');
     $as->call_label('L_func');
-    $as->jcc( 0x84, 'L_func' );
+    $as->jcc( 4, 'L_func' );
     $as->resolve( 0, 0 );
     my $code = $as->code;
     ok length($code) > 0, 'resolved code produced';

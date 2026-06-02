@@ -95,12 +95,12 @@ class Brocken::Compiler::Pipeline {
 
     method preserved_regs() {
         if ( $arch eq 'x64' ) {
-            return $os eq 'win64' ? [qw(rbp rbx rdi rsi r12 r13 r15)] : [qw(rbp rbx r12 r13 r15)];
+            return $os eq 'win64' ? [qw(rbp rbx rdi rsi r12 r13 r14 r15)] : [qw(rbp rbx r12 r13 r14 r15)];
         }
         elsif ( $arch eq 'arm64' ) {
-            return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27 x29 x30)];
+            return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27 x28 x29 x30)];
         }
-        return [qw(s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11)];
+        return [qw(s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11)];
     }
 
     method context_size() {

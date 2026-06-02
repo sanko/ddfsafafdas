@@ -1,6 +1,6 @@
 use v5.40;
 use feature 'class';
-no warnings 'experimental::class', 'portable';
+no warnings 'portable', 'experimental::class';
 
 class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
 
@@ -258,7 +258,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 }
                 $as->ucomisd_reg( 'xmm0', 'xmm1' );
                 $as->mov_imm( $d_reg, 0 );
-                my $cc = { eq => 0x94, ne => 0x95, lt => 0x92, gt => 0x97, le => 0x96, ge => 0x93 }->{ substr( $op, 4 ) };
+                my $cc = { eq => 4, ne => 5, lt => 2, gt => 7, le => 6, ge => 3 }->{ substr( $op, 4 ) };
                 $as->setcc( $cc, $d_reg );
             }
             else {
@@ -278,7 +278,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     }
                 }
                 $as->mov_imm( $d_reg, 0 );
-                my $cc = { eq => 0x94, ne => 0x95, lt => 0x9C, gt => 0x9F, le => 0x9E, ge => 0x9D }->{ substr( $op, 4 ) };
+                my $cc = { eq => 4, ne => 5, lt => 0xC, gt => 0xF, le => 0xE, ge => 0xD }->{ substr( $op, 4 ) };
                 $as->setcc( $cc, $d_reg );
             }
         }
@@ -687,7 +687,7 @@ class Brocken::Target::Architecture::x64::Emit {
 
     method setcc( $cc, $r ) {
         my $ri = $self->reg($r);
-        $code .= pack( 'C', 0x40 | ( $ri >= 8 ? 1 : 0 ) ) . pack( 'CCC', 0x0F, $cc, 0xC0 | ( $ri & 7 ) );
+        $code .= pack( 'C', 0x40 | ( $ri >= 8 ? 1 : 0 ) ) . pack( 'CCC', 0x0F, 0x90 + $cc, 0xC0 | ( $ri & 7 ) );
     }
     method store_mem_disp_byte( $b, $d, $s )      { $self->_emit_modrm( 0x88, $s, $b, $d, 0 ); }
     method store_mem_disp_reg( $b, $d, $s )       { $self->_emit_modrm( 0x89, $s, $b, $d, 1 ); }
