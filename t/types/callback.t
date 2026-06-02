@@ -68,6 +68,7 @@ BROCKEN
     my $as = $driver->as;
     $as->resolve( $driver->text_rva, $driver->data_rva );
     $format->set_func_ranges( [ $driver->func_ranges ] );
+    $format->set_frame_size( $driver->frame_local_size );
 
     # 2. Construct and register DWARF debug data if debug is enabled
     if ( $driver->debug ) {

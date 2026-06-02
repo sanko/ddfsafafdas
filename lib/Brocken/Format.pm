@@ -10,8 +10,10 @@ class Brocken::Format {
     field $labels         : reader = {};
     field $exported_funcs : reader = [];
     field $preserved_regs : reader = [];
+    field $frame_size    : reader = 0;
     #
     method set_preserved_regs($r) { $preserved_regs = $r; }
+    method set_frame_size($s)     { $frame_size    = $s; }
     method set_debug_data($d)     { $debug_data     = $d; }
     method debug_section($name)   { return $self->debug_data->{$name} // ''; }
     method set_func_ranges($r)    { $func_ranges = $r; }

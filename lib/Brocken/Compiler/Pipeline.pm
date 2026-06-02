@@ -42,8 +42,8 @@ class Brocken::Compiler::Pipeline {
     # Enable all optimizations by default, allowing selective overrides
     field $optimizations : param : reader = {};
     field %func_local_sizes;
-    field $eval_counter    = 0;
-    field $max_local_used  = 0;
+    field $eval_counter   = 0;
+    field $max_local_used = 0;
     method set_func_local_size( $name, $sz ) { $func_local_sizes{$name} = $sz; }
     method get_func_local_size($name)        { $func_local_sizes{$name} // 0; }
     #
@@ -137,7 +137,6 @@ class Brocken::Compiler::Pipeline {
         }
         return ( $total + 15 ) & ~15;
     }
-
     method text_rva ()                                { $format->rva_for('.text') }
     method data_rva ()                                { $format->rva_for('.data') }
     method import_rva ($name)                         { $format->import_rva($name) }
@@ -159,14 +158,14 @@ class Brocken::Compiler::Pipeline {
 
     method alloc_local_slot () {
         $local_ptr += 8;
-        $max_local_used = $local_ptr if $local_ptr > $max_local_used;
+        $max_local_used = $local_ptr                            if $local_ptr > $max_local_used;
         die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;
     }
 
     method alloc_local_chunk ($size) {
         $local_ptr += $size;
-        $max_local_used = $local_ptr if $local_ptr > $max_local_used;
+        $max_local_used = $local_ptr                            if $local_ptr > $max_local_used;
         die 'Stack Overflow: Local area exceeded 1048576 bytes' if $local_ptr > 1048576;
         return $local_ptr;
     }
@@ -220,6 +219,7 @@ class Brocken::Compiler::Pipeline {
             { eq => 0, ne => 1, lt => 0xB, gt => 0xC }->{$name};
     }
     {
+
         method compile_source( $source, $output_file, $filename = undef ) {
             $filename //= 'eval_' . ++$eval_counter;
             require Brocken::Core::Lexer;
@@ -316,6 +316,7 @@ class Brocken::Compiler::Pipeline {
                 $self->format->layout->calculate( $os eq 'macos' ? 0x4000 : 0x1000 );
             }
             $self->format->set_preserved_regs( $self->preserved_regs );
+            $self->format->set_frame_size( $self->frame_local_size );
             $self->format->write_bin( $output_file, $self->as->code, $ds->raw_data(), $arch, $os, $type );
             return $output_file;
         }

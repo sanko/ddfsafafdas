@@ -149,11 +149,9 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
 
         for my $s ( $l->sections ) {
             my $raw_size = ( $s->{size} + $fa - 1 ) & ~( $fa - 1 );
-            print $fh pack(
-                'a8 L< L< L< L< L< L< S< S< L<',
-                $sec_name{ $s->{name} },
-                $s->{size}, $s->{rva}, $raw_size, $s->{off}, 0, 0, 0, 0, $s->{flags}
-            );
+            print $fh
+                pack( 'a8 L< L< L< L< L< L< S< S< L<', $sec_name{ $s->{name} }, $s->{size}, $s->{rva}, $raw_size, $s->{off}, 0, 0, 0, 0,
+                $s->{flags} );
         }
         if ($num_syms) {
             print $fh pack('x18');                                    # 1 dummy COFF symbol entry (18 null bytes)
@@ -208,74 +206,96 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
     }
 
     method _build_xdata () {
+
         # SEH register numbers (AMD64 ABI)
         my %SEH_REG = (
             rax => 0, rcx => 1, rdx => 2, rbx => 3, rsp => 4, rbp => 5, rsi => 6, rdi => 7,
             r8  => 8, r9  => 9, r10 => 10, r11 => 11, r12 => 12, r13 => 13, r14 => 14, r15 => 15
         );
-        my @regs      = @{ $self->preserved_regs // [] };
+        my @regs = @{ $self->preserved_regs // [] };
 
-        # Replicate exact frame size calculation from Pipeline.pm
-        my $locals    = 2048;
-        my $shadow    = 32;
-        my $total_loc = $locals + $shadow;
-        my $offset_regs = ( 1 + scalar(@regs) ) * 8;
-        my $base   = ( $total_loc + 15 ) & ~15;
-        my $rem    = ( $offset_regs + $base ) % 16;
-        my $fsz    = $rem == 0 ? $base : $base + ( 16 - $rem );
+        # The actual frame size emitted by the prologue (set via set_frame_size).
+        # We must encode exactly the same value the prologue uses for `sub rsp, N`,
+        # otherwise the Windows unwinder will compute the wrong canonical CFA.
+        my $fsz = $self->frame_size;
+        if ( $fsz <= 0 ) {
+            die "PE.pm::_build_xdata: frame_size not set. "
+              . "Pipeline must call set_frame_size() before write_bin().";
+        }
         my $scaled = $fsz / 8;
-
-        my $codes     = '';
+        my $codes  = '';
         my $offset = 0;
         my @push_info;
 
-        # Windows preserved regs: rbp, rbx, rdi, rsi, r12, r13, r14, r15
-        # We push rbp first (due to enter_func / push_frame prologue order):
-        # push rbp (1 byte)
-        # mov rbp, rsp (3 bytes, total offset so far = 4)
-        # then push rbx, rdi, rsi, r12, r13, r14, r15
+        # The prologue is emitted by x64.pm's enter_func / push_frame in this order:
+        #   push <each preserved reg in order>  (1 byte for regs 0-7, 2 bytes for 8-15)
+        #   mov rbp, rsp                        (3 bytes)
+        #   sub rsp, $fsz                       (7 bytes)
+        #
+        # We mirror those exact byte counts so the UWOP CodeOffset values
+        # line up with the real prologue bytes.
 
-        # push rbp
-        $offset += 1;
-        push @push_info, { reg_num => $SEH_REG{rbp}, offset => $offset };
-
-        # mov rbp, rsp (3 bytes) -> offset = 4
-        $offset += 3;
-
-        # push remaining preserved registers
-        my @remaining = @regs;
-        shift @remaining if @remaining && defined($remaining[0]) && $remaining[0] eq 'rbp';
-        for my $r (@remaining) {
+        # 1. Each preserved-reg push
+        for my $r (@regs) {
             my $reg_num = $SEH_REG{$r};
             my $size    = ( $reg_num < 8 ) ? 1 : 2;
             $offset += $size;
             push @push_info, { reg_num => $reg_num, offset => $offset };
         }
 
-        # sub rsp, imm32 (7 bytes)
+        # 2. mov rbp, rsp (3 bytes) -> frame pointer established at this offset
+        my $mov_rbp_rsp_offset = $offset + 3;
+        $offset = $mov_rbp_rsp_offset;
+
+        # 3. sub rsp, imm32 (7 bytes) -> final prologue end
         my $alloc_offset  = $offset + 7;
         my $prologue_size = $alloc_offset;
 
-        # Emit unwind codes in reverse order (last executed first)
-        # 1. UWOP_ALLOC_LARGE (op=1, info=0) - 2 slots
-        $codes .= pack( 'CC', $prologue_size, ( 0 << 4 ) | 1 ) . pack( 'S<', $scaled );
+        # Frame register: rbp is used as the canonical frame pointer
+        # whenever it's part of the preserved set. SET_FPREG tells the
+        # unwinder that, from the `mov rbp, rsp` onward, rbp holds the CFA.
+        my $frame_reg     = 0;
+        my $frame_reg_off = 0;
+        if ( grep { $_ eq 'rbp' } @regs ) {
+            $frame_reg     = $SEH_REG{rbp};
+            $frame_reg_off = 0;
+        }
 
-        # 2. UWOP_PUSH_NONVOL (op=0) for other registers
+        # Emit unwind codes in REVERSE execution order (last executed first):
+        # 1. UWOP_ALLOC_LARGE (op=1) for sub rsp, $fsz
+        #    OpInfo: 1 = 1-byte scaled size, 2 = 2-byte scaled size
+        my $opinfo = ( $scaled > 0xFF ) ? 2 : 1;
+        $codes .= pack( 'CC', $prologue_size, ( $opinfo << 4 ) | 1 )
+              . ( $opinfo == 2 ? pack( 'S<', $scaled ) : pack( 'C', $scaled ) );
+
+        # 2. UWOP_SET_FPREG (op=3) at the mov rbp, rsp, if applicable
+        if ($frame_reg) {
+            $codes .= pack( 'CC', $mov_rbp_rsp_offset, ( $frame_reg_off << 4 ) | 3 );
+        }
+
+        # 3. UWOP_PUSH_NONVOL (op=0) for each pushed register, reverse order
         for my $pi ( reverse @push_info ) {
             $codes .= pack( 'CC', $pi->{offset}, ( $pi->{reg_num} << 4 ) | 0 );
         }
 
-        # Count how many 16-bit code words we have
+        # Count 16-bit code words
         my $num_codes = length($codes) / 2;
 
         # Pad to DWORD alignment
         my $pad = ( 4 - ( length($codes) % 4 ) ) % 4;
         $codes .= "\0" x $pad;
 
-        # Header: Ver=1, PrologueSize, NumCodes, FrameReg=0, FrameOffset=0
-        # FrameReg is configured as 0 (no frame pointer register configured for SEH),
-        # so Windows unwinds exclusively using stack offsets and registers pushed.
-        my $hdr = pack( 'C C C C', 1, $prologue_size, $num_codes, 0 );
+        # Header (4 bytes):
+        #   byte 0: Version (3 bits) | Flags (5 bits)
+        #   byte 1: SizeOfProlog
+        #   byte 2: CountOfCodes
+        #   byte 3: FrameRegister (4 bits) | FrameRegisterOffset (4 bits)
+        my $hdr = pack( 'C C C C',
+            1,                                          # Version=1, Flags=0
+            $prologue_size,
+            $num_codes,
+            ( $frame_reg << 4 ) | ( $frame_reg_off & 0xF ),
+        );
         return $hdr . $codes;
     }
 
@@ -297,11 +317,11 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         return ( "\0" x 2048 ) if $num_exports == 0;
         my $eat_off       = 40;
         my $npt_off       = $eat_off + ( 4 * $num_exports );
-        my $ot_off        = $npt_off + ( 4 * $num_exports ); # Fixed calculation offset
+        my $ot_off        = $npt_off + ( 4 * $num_exports );    # Fixed calculation offset
         my $name_data_off = $ot_off + ( 2 * $num_exports );
         my $edat          = pack(
             'L< L< S< S< L< L< L< L< L< L< L<',
-            0, 0,             0, 0, $base_rva + $name_data_off,
+            0, 0, 0, 0, $base_rva + $name_data_off,
             1, $num_exports, $num_exports,
             $base_rva + $eat_off,
             $base_rva + $npt_off,
