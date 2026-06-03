@@ -99,6 +99,28 @@ subtest 'Atomic (load-link/store-conditional)' => sub {
     my $code = $as->code;
     is length($code), 8, 'two atomic ops = 8 bytes';
 };
+subtest 'inc_byte_data' => sub {
+    my $as = Brocken::Target::Architecture::ARM64::Emit->new;
+    $as->inc_byte_data(64);
+    my $code = $as->code;
+    is length($code), 20, 'inc_byte_data emits 5 instructions (20 bytes)';
+    is( $as->labels->%* + 0, 0, 'no labels set' );
+    my @instrs = unpack( 'L<5', $code );
+    ok( ( $instrs[0] & 0x9F000000 ) == 0x90000000, '1st instruction is ADRP' );
+    ok( ( $instrs[1] & 0xFF000000 ) == 0x91000000, '2nd instruction is ADD (data page offset)' );
+    ok( ( $instrs[2] & 0xFFC00000 ) == 0x39400000, '3rd instruction is LDRB' );
+    ok( ( $instrs[3] & 0xFF000000 ) == 0x91000000, '4th instruction is ADD (increment)' );
+    ok( ( $instrs[4] & 0xFFC00000 ) == 0x39000000, '5th instruction is STRB' );
+    is( $instrs[0] & 0x1F,          9, 'ADRP targets x9' );
+    is( ( $instrs[1] >> 5 ) & 0x1F, 9, 'ADD source is x9 (page offset)' );
+    is( $instrs[1] & 0x1F,          9, 'ADD destination is x9' );
+    is( ( $instrs[2] >> 5 ) & 0x1F, 9, 'LDRB base is x9' );
+    is( $instrs[2] & 0x1F,          8, 'LDRB destination is w8' );
+    is( $instrs[3] & 0x1F,          8, 'ADD (inc) target is x8' );
+    is( ( $instrs[3] >> 5 ) & 0x1F, 8, 'ADD (inc) source is x8' );
+    is( ( $instrs[4] >> 5 ) & 0x1F, 9, 'STRB base is x9' );
+    is( $instrs[4] & 0x1F,          8, 'STRB source is w8' );
+};
 subtest 'Floating point ops' => sub {
     my $as = Brocken::Target::Architecture::ARM64::Emit->new;
     $as->fadd_reg( 'd0', 'd1', 'd2' );

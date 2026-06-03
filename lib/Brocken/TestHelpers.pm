@@ -3,7 +3,6 @@ use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Exporter 'import';
-use Config;
 our @EXPORT_OK = qw(make_fake_funcs make_source_locs with_temp_file test_brocken);
 
 sub test_brocken (%args) {
@@ -13,26 +12,12 @@ sub test_brocken (%args) {
     my $timeout  = $args{timeout} // 30;
     my $opts     = $args{opts}    // {};
     require Brocken::Compiler::Pipeline;
+    require Brocken::Host;
     require Test2::V0;
     require File::Temp;
-    my $detected_os = do {
-        my %omap = (
-            MSWin32     => 'win64',
-            darwin      => 'macos',
-            freebsd     => 'freebsd',
-            netbsd      => 'netbsd',
-            openbsd     => 'openbsd',
-            dragonfly   => 'dragonfly',
-            solaris     => 'solaris',
-            haiku       => 'haiku',
-            midnightbsd => 'midnightbsd'
-        );
-        $omap{$^O} // 'linux';
-    };
-    my $detected_arch = ( $Config{archname} =~ /aarch64|arm64/i ) ? 'arm64' : 'x64';
-    my $os            = delete $opts->{os}   // delete $args{os}   // $detected_os;
-    my $arch          = delete $opts->{arch} // delete $args{arch} // $detected_arch;
-    my $suffix        = $os eq 'win64' ? '.exe' : '';
+    my $os     = delete $opts->{os}   // delete $args{os}   // Brocken::Host::os();
+    my $arch   = delete $opts->{arch} // delete $args{arch} // Brocken::Host::arch();
+    my $suffix = $os eq 'win64' ? '.exe' : '';
     my ( $tmp_fh, $exe ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => $suffix );
     close $tmp_fh;
     my $filename = delete $opts->{filename};

@@ -15,6 +15,12 @@ jobs:
           perl-version: '${{ inputs.perl }}'
       - name: Install prereqs
         run: cpanm --installdeps --notest --with-suggests --with-recommends --with-configure -v .
+      - name: Detect host arch
+        shell: pwsh
+        run: |
+          perl -Ilib -MBrocken::Host -E 'say "Brocken::Host: os=", &Brocken::Host::os(), " arch=", &Brocken::Host::arch()'
+          Write-Output "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          Write-Output "PROCESSOR_ARCHITECTUREW6432=$env:PROCESSOR_ARCHITECTUREW6432"
       - name: Run tests
         run: |
           perl -V

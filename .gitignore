@@ -57,3 +57,5 @@ nul
 
 eg/alternative/*
 eg/ELF.pm
+
+ci-logs-*/**/*

@@ -47,17 +47,9 @@ package Brocken::Compiler {
         #
         ADJUST {
             $optimizations = { escape => 1, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$optimizations };
-            my $detected_os = $^O eq 'MSWin32' ? 'win64' : ( $^O eq 'darwin' ? 'macos' : 'linux' );
-            $os //= $detected_os;
-            my $detected_arch = 'x64';
-            if ( $^O eq 'MSWin32' ) {
-                $detected_arch = ( ( $ENV{PROCESSOR_ARCHITECTURE} // '' ) =~ /ARM64/i ) ? 'arm64' : 'x64';
-            }
-            else {
-                my $m = `uname -m` // 'x86_64';
-                $detected_arch = 'arm64' if $m =~ /aarch64|arm64|armv8/i;
-            }
-            $arch //= $detected_arch;
+            require Brocken::Host;
+            $os   //= Brocken::Host::os();
+            $arch //= Brocken::Host::arch();
             if ( $os eq 'win64' ) {
                 require Brocken::Target::OS::Windows;
                 require Brocken::Target::Format::PE;

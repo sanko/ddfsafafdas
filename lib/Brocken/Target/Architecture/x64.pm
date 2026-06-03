@@ -994,6 +994,3 @@ Returns a new L<Brocken::Target::Architecture::x64::Emit> instance.
 The core code generation loop. Translates a single IR instruction into one or more x64 machine instructions.
 
 =cut
-x64 machine instructions.
-
-=cut

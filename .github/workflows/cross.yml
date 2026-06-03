@@ -31,6 +31,7 @@ jobs:
           ${{ inputs.setup }}
           ${{ inputs.pkg }}
           perl -v
+          ${{ inputs.gcc_pkg }}
           curl -L https://cpanmin.us | sudo perl - --notest App::cpanminus Module::Build::Tiny
           # Add perl's site bin to PATH (needed on e.g. OmniOS where cpanm installs outside default PATH)
           export PATH="$PATH:$(perl -MConfig -e 'print $Config{installsitebin}' 2>/dev/null):$(perl -MConfig -e 'print $Config{installscript}' 2>/dev/null)"
@@ -69,12 +70,12 @@ on:
       perl:
         required: true
         type: string
-      perl_subversion:
-        default: 2
-        required: false
-        type: string
       pkg:
         required: true
+        type: string
+      gcc_pkg:
+        default: ''
+        required: false
         type: string
       setup:
         default: ''
@@ -82,4 +83,8 @@ on:
         type: string
       version:
         required: true
+        type: string
+      perl_subversion:
+        default: 2
+        required: false
         type: string

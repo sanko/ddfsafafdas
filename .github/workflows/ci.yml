@@ -95,6 +95,7 @@ jobs:
       os: dragonflybsd
       perl: "5.42"
       pkg: sudo pkg install -y perl5-5.42 || (sudo sed -i '' 's|/quarterly|/latest|' /usr/local/etc/pkg/repos/Avalon.conf && sudo pkg update -f && sudo pkg install -y perl5-5.42) || (curl -sL https://www.cpan.org/src/5.0/perl-5.42.2.tar.gz | tar xz -C /tmp && cd /tmp/perl-5.42.2 && ./Configure -des -Dprefix=/usr/local -Dusedevel && make -j$(getconf NPROCESSORS_ONLN) && sudo make install && sudo ln -sf /usr/local/bin/perl5.42.2 /usr/local/bin/perl)
+      gcc_pkg: sudo pkg install -y gcc
       version: '6.4.2'
   freebsd-x64:
     name: FreeBSD
@@ -107,6 +108,7 @@ jobs:
       os: freebsd
       perl: "5.40"
       pkg: sudo pkg install -y perl5
+      gcc_pkg: sudo pkg install -y gcc
       version: '14.1'
   freebsd-arm64:
     name: FreeBSD
@@ -119,6 +121,7 @@ jobs:
       os: freebsd
       perl: "5.40"
       pkg: sudo pkg install -y perl5
+      gcc_pkg: sudo pkg install -y gcc
       version: '14.1'
   haiku:
     name: Haiku
@@ -131,6 +134,7 @@ jobs:
       os: haiku
       perl: "5.40"
       pkg: sudo pkgman install perl
+      gcc_pkg: sudo pkgman install gcc_x86
       version: r1beta5
   midnightbsd:
     name: MidnightBSD
@@ -143,6 +147,7 @@ jobs:
       os: midnightbsd
       perl: "5.40"
       pkg: sudo mport install perl5.40-5.40.2 || true; sudo ln -sf /usr/local/bin/perl5.40.2 /usr/local/bin/perl
+      gcc_pkg: sudo mport install gcc || true
       version: '4.0.4'
   netbsd-x64:
     name: NetBSD
@@ -155,6 +160,7 @@ jobs:
       os: netbsd
       perl: "5.40"
       pkg: sudo pkgin -y install perl p5-App-cpanminus p5-Module-Build-Tiny
+      gcc_pkg: sudo pkgin -y install gcc
       version: '10.1'
   netbsd-arm64:
     name: NetBSD
@@ -167,6 +173,7 @@ jobs:
       os: netbsd
       perl: "5.40"
       pkg: sudo pkgin -y install perl p5-App-cpanminus p5-Module-Build-Tiny
+      gcc_pkg: sudo pkgin -y install gcc
       version: '10.1'
   omnios:
     name: OmniOS
@@ -179,6 +186,7 @@ jobs:
       os: omnios
       perl: "5.40"
       pkg: sudo pkg install perl || [ $? -eq 4 ]
+      gcc_pkg: sudo pkg install developer/gcc49 || sudo pkg install gcc || true
       version: r151058
   openbsd-x64:
     name: OpenBSD
@@ -191,6 +199,7 @@ jobs:
       os: openbsd
       perl: "5.40"
       pkg: sudo pkg_add perl
+      gcc_pkg: sudo pkg_add gcc
       version: '7.8'
   openbsd-arm64:
     name: OpenBSD
@@ -203,6 +212,7 @@ jobs:
       os: openbsd
       perl: "5.40"
       pkg: sudo pkg_add perl
+      gcc_pkg: sudo pkg_add gcc
       version: '7.8'
   results:
     if: always()

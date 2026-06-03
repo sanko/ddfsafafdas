@@ -499,7 +499,39 @@ class Brocken::Target::Architecture::ARM64::Emit {
         r9  => 9,
         r10 => 10,
         r11 => 11,
-        r14 => 28
+        r14 => 28,
+        w0  => 0,
+        w1  => 1,
+        w2  => 2,
+        w3  => 3,
+        w4  => 4,
+        w5  => 5,
+        w6  => 6,
+        w7  => 7,
+        w8  => 8,
+        w9  => 9,
+        w10 => 10,
+        w11 => 11,
+        w12 => 12,
+        w13 => 13,
+        w14 => 14,
+        w15 => 15,
+        w16 => 16,
+        w17 => 17,
+        w18 => 18,
+        w19 => 19,
+        w20 => 20,
+        w21 => 21,
+        w22 => 22,
+        w23 => 23,
+        w24 => 24,
+        w25 => 25,
+        w26 => 26,
+        w27 => 27,
+        w28 => 28,
+        w29 => 29,
+        w30 => 30,
+        wzr => 31
     };
     field $code : reader = '';
     field %labels;
@@ -696,6 +728,13 @@ class Brocken::Target::Architecture::ARM64::Emit {
         my $rd = $self->reg($d);
         my $rb = $self->reg($b);
         $code .= pack( 'L<', 0x91000000 | ( ( $disp & 0xFFF ) << 10 ) | ( $rb << 5 ) | $rd );
+    }
+
+    method inc_byte_data($data_offset) {
+        $self->lea_rva( 'x9', "DATA:$data_offset" );
+        $self->load_reg_mem_byte( 'w8', 'x9' );
+        $self->add_imm( 'x8', 1 );
+        $self->store_mem_disp_byte( 'x9', 0, 'w8' );
     }
 
     method lea_rva ( $reg, $target_rva, $text_rva = 0 ) {
