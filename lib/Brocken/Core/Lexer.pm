@@ -57,12 +57,12 @@ class Brocken::Core::Lexer {
             }
 
             # Robust String Lexing: Handles \" and \n and UTF-8 correctly
-            if ( $remaining =~ /^"((?:[^"\\\$]|\\.|\$[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)*)"/s ) {
+            if ( $remaining =~ /^"((?:[^"\\\$]|\\.|\$[\p{L}\p{So}_][\p{L}\p{So}\p{N}_]*)*)"/s ) {
                 my $full_match = $&;
                 my $content    = $1;
                 my @parts;
                 my $interp = 0;
-                while ( $content =~ /((?:[^"\\\$]|\\.)*)(\$[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)?/g ) {
+                while ( $content =~ /((?:[^"\\\$]|\\.)*)(\$[\p{L}\p{So}_][\p{L}\p{So}\p{N}_]*)?/g ) {
                     my $lit = $1;
                     my $var = $2;
                     $lit =~ s/\\n/\n/g;
@@ -110,7 +110,7 @@ class Brocken::Core::Lexer {
                 $self->_advance( length($val) );
                 next;
             }
-            if ( $remaining =~ /^([\$@%]?[\p{L}\p{S}_][\p{L}\p{S}\p{N}_]*)/ ) {
+            if ( $remaining =~ /^([\$@%]?[\p{L}\p{So}_][\p{L}\p{So}\p{N}_]*)/ ) {
                 my $val  = $1;
                 my $type = $KEYWORDS{$val} ? 'KEYWORD' : ( $val =~ /^[\$@%]/ ? 'VAR' : 'IDENT' );
                 push @tokens, $self->_make_token( $type, $val );

@@ -24,7 +24,7 @@ subtest 'Float DLL generation with XMM ABI' => sub {
     my $source = <<'BROCKEN';
 sub pass_float(Float $x) {
     say 'The value of $x: '. $x;
-    return $x + 1;
+    return $x+1;
 }
 BROCKEN
     my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
