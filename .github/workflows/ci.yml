@@ -145,9 +145,9 @@ jobs:
       arch: x86-64
       host: ubuntu-latest
       os: midnightbsd
-      perl: "5.40"
-      pkg: sudo mport install perl5.40-5.40.2 || true; sudo ln -sf /usr/local/bin/perl5.40.2 /usr/local/bin/perl
       gcc_pkg: sudo mport install gcc || true
+      perl: "5.42"
+      pkg: sudo mport install perl5.42-5.42.2 || true; sudo ln -sf /usr/local/bin/perl5.42.2 /usr/local/bin/perl
       version: '4.0.4'
   netbsd-x64:
     name: NetBSD

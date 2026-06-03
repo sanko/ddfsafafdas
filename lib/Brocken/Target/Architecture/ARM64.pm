@@ -4,25 +4,11 @@ no warnings 'portable', 'experimental::class';
 
 class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
 
-    method registers() {
-        return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27)];
-    }
-
-    method fp_registers() {
-        return [qw(d8 d9 d10 d11 d12 d13 d14 d15)];
-    }
-
-    method _abi_arg_reg($idx) {
-        return (qw[x0 x1 x2 x3 x4 x5 x6 x7])[$idx] // $idx;
-    }
-
-    method _abi_fp_arg_reg($idx) {
-        return (qw[d0 d1 d2 d3 d4 d5 d6 d7])[$idx] // "d$idx";
-    }
-
-    method _abi_fp_return_reg() {
-        return 'd0';
-    }
+    method registers() { return [qw(x19 x20 x21 x22 x23 x24 x25 x26 x27)]; }
+    method fp_registers() { return [qw(d8 d9 d10 d11 d12 d13 d14 d15)]; }
+    method _abi_arg_reg($idx) { return (qw[x0 x1 x2 x3 x4 x5 x6 x7])[$idx] // $idx; }
+    method _abi_fp_arg_reg($idx) { return (qw[d0 d1 d2 d3 d4 d5 d6 d7])[$idx] // "d$idx"; }
+    method _abi_fp_return_reg() { return 'd0'; }
 
     method compile_intrinsic( $as, $inst, $reg_map, $driver ) {
         my $op    = $inst->{op};
@@ -32,16 +18,83 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             $as->lea_rva( $d_reg, 0, $driver->text_rva );
             return;
         }
+        # FIX: Missing OS Bootstrapping & Pointer recovery logic
+        if ( $op eq 'intrinsic_save_stack_ptr' ) {
+            $as->lea_rva( 'x16', "DATA:" . $inst->{args}[0] );
+            $as->store_mem_disp_reg( 'x16', 0, 'sp' );
+            return;
+        }
+        if ( $op eq 'intrinsic_get_saved_stack_ptr' ) {
+            $as->lea_rva( 'x16', "DATA:" . $inst->{args}[0] );
+            $as->load_reg_mem( $d_reg, 'x16', 0 );
+            return;
+        }
+        if ( $op eq 'intrinsic_get_unix_envp' ) {
+            $as->lea_rva( 'x16', "DATA:" . $inst->{args}[0] );
+            $as->load_reg_mem( 'x17', 'x16', 0 );
+            $as->load_reg_mem( 'x16', 'x17', 0 );
+            $as->mov_imm( 'x15', 8 );
+            $as->mul_reg( 'x16', 'x16', 'x15' );
+            $as->add_reg( 'x16', 'x17', 'x16' );
+            $as->add_imm( 'x16', 16 );
+            $as->mov_reg( $d_reg, 'x16' );
+            return;
+        }
+
+        # FIX: Missing Exception Catch/Throw recovery logic
+        if ( $op eq 'intrinsic_throw' ) {
+            my $exc = $v->( $inst->{args}[0] );
+            $as->load_reg_mem( 'x16', 'x28', $driver->iso_offset('current_fcb') );
+            if ( $inst->{args}[0] =~ /^%/ ) {
+                $as->store_mem_disp_reg( 'x16', $driver->fcb_offset('exception_obj'), $reg_map->{ $inst->{args}[0] } );
+            }
+            else {
+                $as->mov_imm( 'x17', $exc );
+                $as->store_mem_disp_reg( 'x16', $driver->fcb_offset('exception_obj'), 'x17' );
+            }
+            $as->call_label('M_unwind');
+            return;
+        }
+        if ( $op eq 'intrinsic_get_exception' ) {
+            $as->load_reg_mem( 'x16',  'x28', $driver->iso_offset('current_fcb') );
+            $as->load_reg_mem( $d_reg, 'x16', $driver->fcb_offset('exception_obj') );
+            return;
+        }
+        if ( $op eq 'intrinsic_clear_exception' ) {
+            $as->load_reg_mem( 'x16', 'x28', $driver->iso_offset('current_fcb') );
+            $as->mov_imm( 'x17', 0 );
+            $as->store_mem_disp_reg( 'x16', $driver->fcb_offset('exception_obj'), 'x17' );
+            return;
+        }
+        if ( $op eq 'intrinsic_restore_context' ) {
+            my $target_bp = $reg_map->{ $inst->{args}[0] };
+            my $target_pc = $reg_map->{ $inst->{args}[1] };
+            my $source_bp = $reg_map->{ $inst->{args}[2] };
+
+            $as->mov_reg( 'x16', $target_pc );
+            $as->mov_reg( 'x17', $target_bp );
+            $as->mov_reg( 'sp', $source_bp );
+
+            for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
+
+            $as->mov_reg( 'x29', 'x17' );
+            $as->mov_reg( 'sp', 'x29' );
+            my $fsz = $driver->frame_local_size;
+            $fsz = ($fsz + 15) & ~15;
+            if ( $fsz <= 4095 ) { $as->sub_imm( 'sp', $fsz ); }
+            else {
+                $as->mov_imm( 'x15', $fsz );
+                $as->sub_reg( 'sp', 'sp', 'x15' );
+            }
+            $as->jmp_reg('x16');
+            return;
+        }
         return $driver->platform->emit_intrinsic( $self, $as, $inst, $reg_map, $driver );
     }
 
-    method new_assembler() {
-        return Brocken::Target::Architecture::ARM64::Emit->new();
-    }
+    method new_assembler() { return Brocken::Target::Architecture::ARM64::Emit->new(); }
 
-    method _compute_local_pos_offset( $driver, $slot ) {
-        return $driver->frame_local_size - $slot;
-    }
+    method _compute_local_pos_offset( $driver, $slot ) { return $driver->frame_local_size - $slot; }
 
     method _move_val_to_scratch( $as, $v, $inst, $reg_map, $idx = 0 ) {
         my $arg = $inst->{args}[$idx];
@@ -70,34 +123,21 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             elsif ( $src =~ /^[a-z]/i ) { $as->mov_reg( $d_reg, $src ) if $d_reg ne $src; }
             else                        { $as->mov_imm( $d_reg, $v->($src) ); }
         }
-        elsif ( $op eq 'ret' ) {
-            $as->ret();
-        }
-        elsif ( $op eq 'call_label' ) {
-            $as->call_label( $inst->{target} );
-        }
-        elsif ( $op eq 'call_rva' ) {
-            $as->call_rva( $inst->{target}, $driver->text_rva );
-        }
-        elsif ( $op eq 'label' ) {
-            $as->mark_label( $inst->{name} );
-        }
+        elsif ( $op eq 'ret' ) { $as->ret(); }
+        elsif ( $op eq 'call_label' ) { $as->call_label( $inst->{target} ); }
+        elsif ( $op eq 'call_rva' ) { $as->call_rva( $inst->{target}, $driver->text_rva ); }
+        elsif ( $op eq 'label' ) { $as->mark_label( $inst->{name} ); }
 
         # --- Function Prologue / Epilogue ---
-        elsif ( $op eq 'enter_func' || $op eq 'enter_leaf_func' ) {
+        elsif ( $op eq 'enter_func' || $op eq 'enter_leaf_func' || $op eq 'push_frame' ) {
             for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
-            $as->mov_reg( 'x29', 'sp' );
+
+            my $reg_save_size = scalar( @{ $driver->preserved_regs() } ) * 8;
+            if ( $reg_save_size % 16 != 0 ) { $as->sub_imm( 'sp', 8 ); }
+
+            $as->lea_reg_disp( 'x29', 'sp', 0 );
             my $fsz = $driver->frame_local_size;
-            if ( $fsz <= 4095 ) { $as->sub_imm( 'sp', $fsz ); }
-            else {
-                $as->mov_imm( 'x16', $fsz );
-                $as->sub_reg( 'sp', 'sp', 'x16' );
-            }
-        }
-        elsif ( $op eq 'push_frame' ) {
-            for my $r ( @{ $driver->preserved_regs() } ) { $as->push_reg($r); }
-            $as->mov_reg( 'x29', 'sp' );
-            my $fsz = $driver->frame_local_size;
+            $fsz = ($fsz + 15) & ~15;
             if ( $fsz <= 4095 ) { $as->sub_imm( 'sp', $fsz ); }
             else {
                 $as->mov_imm( 'x16', $fsz );
@@ -117,16 +157,21 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
                 else                { $as->mov_imm( 'x0', $v->($arg) ); }
             }
             my $fsz = $driver->frame_local_size;
+            $fsz = ($fsz + 15) & ~15;
             if ( $fsz <= 4095 ) { $as->add_imm( 'sp', $fsz ); }
             else {
                 $as->mov_imm( 'x16', $fsz );
                 $as->add_reg( 'sp', 'sp', 'x16' );
             }
+
+            my $reg_save_size = scalar( @{ $driver->preserved_regs() } ) * 8;
+            if ( $reg_save_size % 16 != 0 ) { $as->add_imm( 'sp', 8 ); }
+
             for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
             $as->ret();
         }
 
-        # --- Local Load / Store (register spills & lower-level stack slots) ---
+        # --- Local Load / Store ---
         elsif ( $op eq 'local_store' ) {
             my $slot = $inst->{args}[0];
             my $pos  = $self->_compute_local_pos_offset( $driver, $slot );
@@ -204,26 +249,26 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
                     if ( $imm == 0 ) { $as->mov_reg( $dst, 'xzr' ); }
                     else             { $as->mov_imm( $dst, $imm ); }
                 }
-
-                # Unconditionally mirror to FP registers
-                if ( $i < 8 ) {
-                    $as->fmov_x_to_d( "d$i", $dst );
-                }
+                if ( $i < 8 ) { $as->fmov_x_to_d( "d$i", $dst ); }
             }
             if ( $op =~ /^tail_call_/ ) {
                 my $fsz = $driver->frame_local_size;
+                $fsz = ($fsz + 15) & ~15;
                 if ( $fsz <= 4095 ) { $as->add_imm( 'sp', $fsz ); }
                 else                { $as->mov_imm( 'x16', $fsz ); $as->add_reg( 'sp', 'sp', 'x16' ); }
+
+                my $reg_save_size = scalar( @{ $driver->preserved_regs() } ) * 8;
+                if ( $reg_save_size % 16 != 0 ) { $as->add_imm( 'sp', 8 ); }
+
                 for my $r ( reverse @{ $driver->preserved_regs() } ) { $as->pop_reg($r); }
                 if   ( $op eq 'tail_call_func' ) { $as->jmp($target); }
                 else                             { $as->jmp_reg('x16'); }
             }
             else {
                 if   ( $op eq 'call_func' ) { $as->call_label($target); }
-                else                        { $as->append_code( pack( 'L<', 0xD63F0200 ) ); }    # blr x16
+                else                        { $as->append_code( pack( 'L<', 0xD63F0200 ) ); }
                 if ( defined $d_reg ) {
-                    if ( $inst->{type} &&
-                        ( $inst->{type} eq 'double' || $inst->{type} eq 'float' || $inst->{type} eq 'Float' || $inst->{type} eq 'Double' ) ) {
+                    if ( $inst->{type} && ( $inst->{type} eq 'double' || $inst->{type} =~ /float/i ) ) {
                         $as->fmov_d_to_x( $d_reg, 'd0' );
                     }
                     else {
@@ -268,7 +313,6 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             my $fhdr           = $aligned_sz | ( $psz & 0xC000000000000000 );
             $as->mov_imm( 'x16', $fhdr );
             $as->store_mem_disp_reg( 'x29', $hdr_offset, 'x16' );
-
             for ( my $off = $payload_offset; $off < $hdr_offset + $aligned_sz; $off += 8 ) {
                 $as->mov_imm( 'x16', 0 );
                 $as->store_mem_disp_reg( 'x29', $off, 'x16' );
@@ -283,7 +327,8 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             if    ( $l_raw !~ /^%/ && $l_raw !~ /^[a-z]/i ) { $as->mov_imm( 'x16', $v->($l_raw) ); }
             elsif ( $l_raw =~ /^[a-z]/i ) { $as->mov_reg( 'x16',  $l_raw ); $l_reg = 'x16'; }
             if    ( $l_reg ne $d_reg )    { $as->mov_reg( $d_reg, $l_reg ); }
-            if    ( $r_raw =~ /^%/ ) {
+
+            if ( $r_raw =~ /^%/ ) {
                 my $rr = $reg_map->{$r_raw};
                 if    ( $op eq 'add' ) { $as->add_reg( $d_reg, $d_reg, $rr ); }
                 elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, $d_reg, $rr ); }
@@ -294,16 +339,22 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             }
             else {
                 my $imm = $v->($r_raw);
-                if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $imm ); }
-                elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $imm ); }
+                if ( $imm > 4095 || $imm < 0 ) {
+                    $as->mov_imm( 'x17', $imm );
+                    if    ( $op eq 'add' ) { $as->add_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'sub' ) { $as->sub_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'mul' ) { $as->mul_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'and' ) { $as->and_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'or' )  { $as->or_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'xor' ) { $as->xor_reg( $d_reg, $d_reg, 'x17' ); }
+                }
                 else {
-                    if    ( $imm > 4095 || $imm < 0 ) { $as->mov_imm( 'x16', $imm ); }
-                    if    ( $op eq 'add' )            { $as->add_imm( $d_reg, $imm ); }
-                    elsif ( $op eq 'sub' )            { $as->sub_imm( $d_reg, $imm ); }
-                    elsif ( $op eq 'mul' )            { $as->mul_reg( $d_reg, $d_reg, 'x16' ); }
-                    elsif ( $op eq 'and' )            { $as->and_reg( $d_reg, $d_reg, 'x16' ); }
-                    elsif ( $op eq 'or' )             { $as->or_reg( $d_reg, $d_reg, 'x16' ); }
-                    elsif ( $op eq 'xor' )            { $as->xor_reg( $d_reg, $d_reg, 'x16' ); }
+                    if    ( $op eq 'add' ) { $as->add_imm( $d_reg, $imm ); }
+                    elsif ( $op eq 'sub' ) { $as->sub_imm( $d_reg, $imm ); }
+                    elsif ( $op eq 'mul' ) { $as->mov_imm( 'x17', $imm ); $as->mul_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'and' ) { $as->mov_imm( 'x17', $imm ); $as->and_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'or' )  { $as->mov_imm( 'x17', $imm ); $as->or_reg( $d_reg, $d_reg, 'x17' ); }
+                    elsif ( $op eq 'xor' ) { $as->mov_imm( 'x17', $imm ); $as->xor_reg( $d_reg, $d_reg, 'x17' ); }
                 }
             }
         }
@@ -312,14 +363,22 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
         elsif ( $op =~ /^(div|mod)$/ ) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
             my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'x16';
-            if ( $l_raw !~ /^%/ ) { $as->mov_imm( 'x16', $v->($l_raw) ); $l_reg = 'x16'; }
-            $as->mov_reg( 'x16', $l_reg );
-            if ( $r_raw =~ /^%/ ) { $as->sdiv_reg( 'x17', 'x16', $reg_map->{$r_raw} ); }
-            else                  { $as->mov_imm( 'x17', $v->($r_raw) ); $as->sdiv_reg( 'x17', 'x16', 'x17' ); }
-            if ( $op eq 'div' ) { $as->mov_reg( $d_reg, 'x17' ); }
+            if ( $l_raw !~ /^%/ && $l_raw !~ /^[a-z]/i ) { $as->mov_imm( 'x16', $v->($l_raw) ); $l_reg = 'x16'; }
+            elsif ( $l_raw =~ /^[a-z]/i ) { $as->mov_reg( 'x16', $l_raw ); $l_reg = 'x16'; }
+
+            my $r_reg;
+            if ( $r_raw =~ /^%/ ) { $r_reg = $reg_map->{$r_raw}; }
             else {
-                $as->mul_reg( 'x17', 'x17', ( $r_raw =~ /^%/ ? $reg_map->{$r_raw} : 'x17' ) );
-                $as->sub_reg( $d_reg, 'x16', 'x17' );
+                $as->mov_imm( 'x17', $v->($r_raw) );
+                $r_reg = 'x17';
+            }
+            $as->sdiv_reg( 'x15', $l_reg, $r_reg );
+            if ( $op eq 'div' ) {
+                $as->mov_reg( $d_reg, 'x15' );
+            }
+            else {
+                $as->mul_reg( 'x15', 'x15', $r_reg );
+                $as->sub_reg( $d_reg, $l_reg, 'x15' );
             }
         }
 
@@ -346,14 +405,22 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             my ( $l_raw, $r_raw ) = @{ $inst->{args} };
             my $l_reg = ( $l_raw =~ /^%/ ) ? $reg_map->{$l_raw} : 'x16';
             if ( $l_raw !~ /^%/ ) { $as->mov_imm( 'x16', $v->($l_raw) ); $l_reg = 'x16'; }
-            if ( $r_raw =~ /^%/ ) { $as->cmp_reg_reg( $l_reg, $reg_map->{$r_raw} ); }
+
+            if ( $r_raw =~ /^%/ ) {
+                $as->cmp_reg_reg( $l_reg, $reg_map->{$r_raw} );
+            }
             else {
                 my $imm = $v->($r_raw);
-                if ( $imm > 4095 || $imm < 0 ) { $as->mov_imm( 'x17', $imm ); $as->cmp_reg_reg( $l_reg, 'x17' ); }
-                else                           { $as->cmp_reg_imm( $l_reg, $imm ); }
+                if ( $imm > 4095 || $imm < 0 ) {
+                    $as->mov_imm( 'x17', $imm );
+                    $as->cmp_reg_reg( $l_reg, 'x17' );
+                }
+                else {
+                    $as->cmp_reg_imm( $l_reg, $imm );
+                }
             }
             my $cc = { eq => 0, ne => 1, lt => 0xB, gt => 0xC, le => 0xD, ge => 0xA }->{ substr( $op, 4 ) };
-            $as->cset( $d_reg, $cc );
+            $as->setcc( $cc, $d_reg );
         }
 
         # --- Reference Counting ---
@@ -363,11 +430,9 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             my $obj       = $reg_map->{ $inst->{args}[0] };
             my $rc_adj    = 1 << 48;
             if ($is_atomic) {
-
-                # Use load-linked/store-conditional for atomic ref counting
                 $as->ldxr_reg( 'x16', $obj );
-                my $adj = $is_inc ? $rc_adj : -$rc_adj;
-                $as->add_imm( 'x17', $obj, -8 );
+                $as->mov_reg( 'x17', $obj );
+                $as->sub_imm( 'x17', 8 );
                 $as->add_reg( 'x16', 'x16', ( $is_inc ? 'x16' : 'x17' ) );
                 $as->stxr_reg( 'x16', 'x16', 'x17' );
             }
@@ -402,7 +467,7 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
             my $arg_idx = $inst->{args}[0];
             $as->mov_reg( $d_reg, $self->_abi_arg_reg($arg_idx) );
         }
-        elsif ( $op eq 'get_sp' ) { $as->mov_reg( $d_reg, 'sp' ); }
+        elsif ( $op eq 'get_sp' ) { $as->lea_reg_disp( $d_reg, 'sp', 0 ); }
         elsif ( $op eq 'get_bp' ) { $as->mov_reg( $d_reg, 'x29' ); }
         elsif ( $op eq 'cvt_f32_f64' ) {
             my $src   = $inst->{args}[0];
@@ -439,99 +504,19 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
 
 class Brocken::Target::Architecture::ARM64::Emit {
     state $REG_MAP = {
-        x0  => 0,
-        x1  => 1,
-        x2  => 2,
-        x3  => 3,
-        x4  => 4,
-        x5  => 5,
-        x6  => 6,
-        x7  => 7,
-        x8  => 8,
-        x9  => 9,
-        x10 => 10,
-        x11 => 11,
-        x12 => 12,
-        x13 => 13,
-        x14 => 14,
-        x15 => 15,
-        x16 => 16,
-        x17 => 17,
-        x18 => 18,
-        x19 => 19,
-        x20 => 20,
-        x21 => 21,
-        x22 => 22,
-        x23 => 23,
-        x24 => 24,
-        x25 => 25,
-        x26 => 26,
-        x27 => 27,
-        x28 => 28,
-        x29 => 29,
-        x30 => 30,
-        sp  => 31,
-        xzr => 31,
-        rsp => 31,
-        d0  => 0,
-        d1  => 1,
-        d2  => 2,
-        d3  => 3,
-        d4  => 4,
-        d5  => 5,
-        d6  => 6,
-        d7  => 7,
-        d8  => 8,
-        d9  => 9,
-        d10 => 10,
-        d11 => 11,
-        d12 => 12,
-        d13 => 13,
-        d14 => 14,
-        d15 => 15,
-        rax => 0,
-        rcx => 1,
-        rdx => 2,
-        rbx => 3,
-        rsi => 6,
-        rdi => 7,
-        r8  => 8,
-        r9  => 9,
-        r10 => 10,
-        r11 => 11,
-        r14 => 28,
-        w0  => 0,
-        w1  => 1,
-        w2  => 2,
-        w3  => 3,
-        w4  => 4,
-        w5  => 5,
-        w6  => 6,
-        w7  => 7,
-        w8  => 8,
-        w9  => 9,
-        w10 => 10,
-        w11 => 11,
-        w12 => 12,
-        w13 => 13,
-        w14 => 14,
-        w15 => 15,
-        w16 => 16,
-        w17 => 17,
-        w18 => 18,
-        w19 => 19,
-        w20 => 20,
-        w21 => 21,
-        w22 => 22,
-        w23 => 23,
-        w24 => 24,
-        w25 => 25,
-        w26 => 26,
-        w27 => 27,
-        w28 => 28,
-        w29 => 29,
-        w30 => 30,
-        wzr => 31
+        x0  => 0,  x1  => 1,  x2  => 2,  x3  => 3,  x4  => 4,  x5  => 5,  x6  => 6,  x7  => 7,
+        x8  => 8,  x9  => 9,  x10 => 10, x11 => 11, x12 => 12, x13 => 13, x14 => 14, x15 => 15,
+        x16 => 16, x17 => 17, x18 => 18, x19 => 19, x20 => 20, x21 => 21, x22 => 22, x23 => 23,
+        x24 => 24, x25 => 25, x26 => 26, x27 => 27, x28 => 28, x29 => 29, x30 => 30, sp  => 31,
+        xzr => 31, rsp => 31,
+        d0  => 0,  d1  => 1,  d2  => 2,  d3  => 3,  d4  => 4,  d5  => 5,  d6  => 6,  d7  => 7,
+        d8  => 8,  d9  => 9,  d10 => 10, d11 => 11, d12 => 12, d13 => 13, d14 => 14, d15 => 15,
+        rax => 0,  rcx => 1,  rdx => 2,  rbx => 3,  rsi => 6,  rdi => 7,  r8  => 8,  r9  => 9,
+        r10 => 10, r11 => 11, r14 => 28,
+        w0  => 0,  w1  => 1,  w2  => 2,  w3  => 3,  w4  => 4,  w5  => 5,  w6  => 6,  w7  => 7,
+        w8  => 8,  w9  => 9,  w10 => 10, w11 => 11, w12 => 12, w13 => 13, w14 => 14, w15 => 15,
+        w16 => 16, w17 => 17, w18 => 18, w19 => 19, w20 => 20, w21 => 21, w22 => 22, w23 => 23,
+        w24 => 24, w25 => 25, w26 => 26, w27 => 27, w28 => 28, w29 => 29, w30 => 30, wzr => 31
     };
     field $code : reader = '';
     field %labels;
@@ -562,12 +547,23 @@ class Brocken::Target::Architecture::ARM64::Emit {
     }
 
     method mov_reg ( $dest, $src ) {
-        my $d = $self->reg($dest);
-        my $s = $self->reg($src);
-        $code .= pack( 'L<', 0xAA0003E0 | ( $s << 16 ) | $d );
+        my $rd = $self->reg($dest);
+        my $rs = $self->reg($src);
+        if ( $rd == 31 || $rs == 31 ) {
+            $code .= pack( 'L<', 0x91000000 | ( $rs << 5 ) | $rd );
+        }
+        else {
+            $code .= pack( 'L<', 0xAA0003E0 | ( $rs << 16 ) | $rd );
+        }
     }
-    method push_reg($reg) { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF81F0FE0 | $r ); }
-    method pop_reg($reg)  { my $r = $self->reg($reg); $code .= pack( 'L<', 0xF84107E0 | $r ); }
+    method push_reg($reg) {
+        my $r = $self->reg($reg);
+        $code .= pack( 'L<', 0xF81F0FE0 | $r );
+    }
+    method pop_reg($reg)  {
+        my $r = $self->reg($reg);
+        $code .= pack( 'L<', 0xF84107E0 | $r );
+    }
 
     method add_imm ( $reg, $imm ) {
         my $r = $self->reg($reg);
@@ -583,14 +579,24 @@ class Brocken::Target::Architecture::ARM64::Emit {
         my $rd  = $self->reg($d);
         my $rs1 = $self->reg($s1);
         my $rs2 = defined $s2 ? $self->reg($s2) : $rd;
-        $code .= pack( 'L<', 0x8B000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
+        if ( $rd == 31 || $rs1 == 31 ) {
+            $code .= pack( 'L<', 0x8B206000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
+        }
+        else {
+            $code .= pack( 'L<', 0x8B000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
+        }
     }
 
     method sub_reg ( $d, $s1, $s2 = undef ) {
         my $rd  = $self->reg($d);
         my $rs1 = $self->reg($s1);
         my $rs2 = defined $s2 ? $self->reg($s2) : $rd;
-        $code .= pack( 'L<', 0xCB000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
+        if ( $rd == 31 || $rs1 == 31 ) {
+            $code .= pack( 'L<', 0xCB206000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
+        }
+        else {
+            $code .= pack( 'L<', 0xCB000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
+        }
     }
 
     method mul_reg ( $d, $s1, $s2 = undef ) {
@@ -666,13 +672,19 @@ class Brocken::Target::Architecture::ARM64::Emit {
 
     method setcc ( $cc, $r ) {
         my $ri = $self->reg($r);
-        $code .= pack( 'L<', 0x1A9F07E0 | ( $cc << 12 ) | $ri );
+        my $inv_cond = $cc ^ 1;
+        $code .= pack( 'L<', 0x1A9F07E0 | ( $inv_cond << 12 ) | $ri );
     }
 
     method load_reg_mem( $dest, $src, $disp = 0 ) {
         my $d = $self->reg($dest);
         my $s = $self->reg($src);
-        $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( $s << 5 ) | $d );
+        if ( $s == 31 ) {
+            $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( 31 << 5 ) | $d );
+        }
+        else {
+            $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( $s << 5 ) | $d );
+        }
     }
 
     method ldur_reg_mem( $dest, $src, $disp = 0 ) {
@@ -697,31 +709,56 @@ class Brocken::Target::Architecture::ARM64::Emit {
     method load_reg_mem_byte( $dest, $src, $disp = 0 ) {
         my $d = $self->reg($dest);
         my $s = $self->reg($src);
-        $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( $s << 5 ) | $d );
+        if ( $s == 31 ) {
+            $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( 31 << 5 ) | $d );
+        }
+        else {
+            $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( $s << 5 ) | $d );
+        }
     }
 
     method store_mem_disp_reg( $base, $disp, $src ) {
         my $b = $self->reg($base);
         my $s = $self->reg($src);
-        $code .= pack( 'L<', 0xF9000000 | ( ( $disp >> 3 ) << 10 ) | ( $b << 5 ) | $s );
+        if ( $b == 31 ) {
+            $code .= pack( 'L<', 0xF9000000 | ( ( $disp >> 3 ) << 10 ) | ( 31 << 5 ) | $s );
+        }
+        else {
+            $code .= pack( 'L<', 0xF9000000 | ( ( $disp >> 3 ) << 10 ) | ( $b << 5 ) | $s );
+        }
     }
 
     method stur_mem_disp_reg( $base, $disp, $src ) {
         my $b = $self->reg($base);
         my $s = $self->reg($src);
-        $code .= pack( 'L<', 0xF8000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
+        if ( $b == 31 ) {
+            $code .= pack( 'L<', 0xF8000000 | ( ( $disp & 0x1FF ) << 12 ) | ( 31 << 5 ) | $s );
+        }
+        else {
+            $code .= pack( 'L<', 0xF8000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
+        }
     }
 
     method sturb_mem_disp_reg( $base, $disp, $src ) {
         my $b = $self->reg($base);
         my $s = $self->reg($src);
-        $code .= pack( 'L<', 0x38000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
+        if ( $b == 31 ) {
+            $code .= pack( 'L<', 0x38000000 | ( ( $disp & 0x1FF ) << 12 ) | ( 31 << 5 ) | $s );
+        }
+        else {
+            $code .= pack( 'L<', 0x38000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
+        }
     }
 
     method store_mem_disp_byte( $base, $disp, $src ) {
         my $b = $self->reg($base);
         my $s = $self->reg($src);
-        $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( $b << 5 ) | $s );
+        if ( $b == 31 ) {
+            $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( 31 << 5 ) | $s );
+        }
+        else {
+            $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( $b << 5 ) | $s );
+        }
     }
 
     method lea_reg_disp ( $d, $b, $disp ) {
@@ -769,13 +806,9 @@ class Brocken::Target::Architecture::ARM64::Emit {
         $code .= pack( 'L<', 0xB5000000 | $ri );
     }
 
-    method syscall( $os = '', $num = 0 ) {
-        if    ( $os eq 'macos' )              { $code .= pack( 'L<', 0xD4001001 ) }
-        elsif ( $os eq 'netbsd' && $num > 0 ) { $code .= pack( 'L<', 0xD4000001 | ( ( $num & 0xFFFF ) << 5 ) ) }
-        else {
-            $code .= pack( 'L<', 0xD4000001 );
-            if ( $os eq 'openbsd' ) { $code .= pack( 'L<', 0x14000002 ) . pack( 'L<', 0xD4200000 ) }
-        }
+    method syscall( $os = '' ) {
+        if ( $os eq 'macos' ) { $code .= pack( 'L<', 0xD4001001 ) }
+        else                  { $code .= pack( 'L<', 0xD4000001 ) }
     }
 
     method jcc ( $cc, $label ) {
@@ -852,11 +885,6 @@ class Brocken::Target::Architecture::ARM64::Emit {
     method str_d_mem ( $d, $s, $off ) {
         my ( $rd, $rs ) = ( $self->reg($d), $self->reg($s) );
         $code .= pack( 'L<', 0xFD000000 | ( ( $off >> 3 ) << 10 ) | ( $rs << 5 ) | $rd );
-    }
-
-    method cset( $reg, $cond ) {
-        my $r = $self->reg($reg);
-        $code .= pack( 'L<', 0x9A9F07E0 | ( $cond << 12 ) | $r );
     }
 
     method jmp_reg($reg) {

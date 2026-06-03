@@ -18,6 +18,17 @@ jobs:
       - name: Detect host arch
         shell: pwsh
         run: |
+          $hwArch = (Get-CimInstance Win32_Processor).Architecture
+          Write-Output "WMI Processor Architecture: $hwArch (0=x86 5=ARM 9=x64 12=ARM64)"
+          if ($hwArch -eq 12) {
+            "BROCKEN_ARCH=arm64" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } elseif ($hwArch -eq 9) {
+            "BROCKEN_ARCH=x64" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } elseif ($hwArch -eq 5) {
+            "BROCKEN_ARCH=arm" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+            "BROCKEN_ARCH=x64" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
           perl -Ilib -MBrocken::Host -E 'say "Brocken::Host: os=", &Brocken::Host::os(), " arch=", &Brocken::Host::arch()'
           Write-Output "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
           Write-Output "PROCESSOR_ARCHITECTUREW6432=$env:PROCESSOR_ARCHITECTUREW6432"

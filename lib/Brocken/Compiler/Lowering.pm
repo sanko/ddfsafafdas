@@ -832,7 +832,7 @@ package Brocken::Compiler::Lowering {
                 [ $driver->iso_offset('nursery_limit'), $builder->emit( 'add', 'ptr', [ $raw_nursery, 65536 ] ) ] );
 
             # --- Tenured Heap Initialization (Two 2MB Semi-Spaces) ---
-            my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4194304] );
+            my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4259840] );                  # Padded to prevent out-of-bounds on 64KB alignment
             my $mask     = $builder->emit( 'constant',        'i64', [ hex("FFFFFFFFFFFF0000") ] );
             my $hp       = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, 65535 ] ), $mask ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_base'),  $hp ] );
@@ -2909,7 +2909,7 @@ package Brocken::Compiler::Lowering {
                 [ $driver->iso_offset('nursery_limit'), $builder->emit( 'add', 'ptr', [ $raw_nursery, 65536 ] ) ] );
 
             # --- Tenured Heap Initialization (Two 2MB Semi-Spaces) ---
-            my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4194304] );
+            my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4259840] );                  # Padded to prevent out-of-bounds on 64KB alignment
             my $mask     = $builder->emit( 'constant',        'i64', [ hex("FFFFFFFFFFFF0000") ] );
             my $hp       = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, 65535 ] ), $mask ] );
             $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_base'),  $hp ] );

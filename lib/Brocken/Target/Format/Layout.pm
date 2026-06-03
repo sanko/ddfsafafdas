@@ -10,14 +10,15 @@ package Brocken::Target::Format::Layout {
         field $header_size : reader = 0;
 
         method add_section( $name, $size, $flags ) {
-            warn "Layout: Adding section $name (size: $size)\n" if $ENV{BROCKEN_JIT_DEBUG};
             push @sections, { name => $name, size => ( $size || 1 ), flags => $flags, rva => 0, off => 0 };
         }
 
         method calculate($min_hdr) {
             $header_size = ( $min_hdr + $file_align - 1 ) & ~( $file_align - 1 );
             my $curr_off = $header_size;
-            my $curr_rva = 0x1000;
+            # Fix: RVA must mathematically align with file offset on strict formats (Mach-O)
+            my $curr_rva = ( $header_size + $section_align - 1 ) & ~( $section_align - 1 );
+
             for my $s (@sections) {
                 $s->{off} = $curr_off;
                 $s->{rva} = $curr_rva;
