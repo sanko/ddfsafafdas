@@ -4,6 +4,7 @@ use Test2::V0;
 use File::Temp qw(tempdir);
 use File::Spec;
 use Brocken::Compiler::Pipeline;
+use Brocken::Host;
 
 # 1. Define the Brocken Shared Library Source Code
 my $lib_source = q{
@@ -22,7 +23,7 @@ my $lib_filename = File::Spec->catfile( $dir, "${lib_prefix}brockenlib${lib_ext}
 
 # Normalize Windows backslashes to forward slashes for Brocken string safety
 $lib_filename =~ s{\\}{/}g;
-my $compiler_lib = Brocken::Compiler::Pipeline->new( type => 'shared', arch => 'x64', os => $^O eq 'MSWin32' ? 'win64' : 'linux', debug => 1 );
+my $compiler_lib = Brocken::Compiler::Pipeline->new( type => 'shared', arch => Brocken::Host::arch(), os => Brocken::Host::os(), debug => 1 );
 eval { $compiler_lib->compile_source( $lib_source, $lib_filename ); };
 if ( my $err = $@ ) {
     bail_out("Shared library compilation failed: $err");
@@ -44,7 +45,7 @@ my $main_source = qq{
 };
 my $exe_filename = File::Spec->catfile( $dir, "test_main" . ( $^O eq 'MSWin32' ? '.exe' : '' ) );
 $exe_filename =~ s{\\}{/}g;
-my $compiler_main = Brocken::Compiler::Pipeline->new( type => 'exe', arch => 'x64', os => $^O eq 'MSWin32' ? 'win64' : 'linux', debug => 1 );
+my $compiler_main = Brocken::Compiler::Pipeline->new( type => 'exe', arch => Brocken::Host::arch(), os => Brocken::Host::os(), debug => 1 );
 eval { $compiler_main->compile_source( $main_source, $exe_filename ); };
 if ( my $err = $@ ) {
     bail_out("Main program compilation failed: $err");

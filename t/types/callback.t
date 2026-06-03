@@ -9,6 +9,7 @@ use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
 use Brocken::Codegen;
+use Brocken::Host;
 
 BEGIN {
     eval { require Affix; Affix->import(); 1 } or plan skip_all => "Affix not available";
@@ -43,13 +44,14 @@ sub return_null() {
 BROCKEN
     my $tokens2   = Brocken::Core::Lexer->new( source => $source2 )->lex();
     my $ast2      = Brocken::Core::Parser->new( tokens => $tokens2 )->parse();
-    my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
-    my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
+    my $target_os = Brocken::Host::os();
+    my $arch      = Brocken::Host::arch();
+    my $out_ext   = $^O eq 'MSWin32' ? '.dll' : '.so';
     my $out_name  = "test_fun${out_ext}";
     my $out_file  = ( $^O eq 'MSWin32' ? '' : './' ) . $out_name;
 
     # 1. Instantiate the pipeline with debug symbols enabled (debug => 4)
-    my $driver   = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 4 );
+    my $driver   = Brocken::Compiler::Pipeline->new( os => $target_os, arch => $arch, type => 'shared', debug => 4 );
     my $ds       = Brocken::Compiler::DataSegment->new();
     my $lowering = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
@@ -62,8 +64,8 @@ BROCKEN
     # Calculate text size and pre-layout, passing the debug level as the fifth parameter
     my @insts     = $lowering->builder->instructions;
     my $text_size = scalar(@insts) * 64 + 8192;
-    $format->pre_layout( $text_size, length($data), 'x64', $target_os, $driver->debug );
-    my $codegen = Brocken::Codegen->new( arch => 'x64' );
+    $format->pre_layout( $text_size, length($data), $arch, $target_os, $driver->debug );
+    my $codegen = Brocken::Codegen->new( arch => $arch );
     $codegen->compile( \@insts, $driver );
     my $as = $driver->as;
     $as->resolve( $driver->text_rva, $driver->data_rva );
@@ -95,7 +97,7 @@ BROCKEN
     my @exports = sort(qw(pass_callback return_null));
     $format->set_exported_funcs( \@exports );
     my $text = $as->code;
-    $format->write_bin( $out_file, $text, $data, 'x64', $target_os, 'shared' );
+    $format->write_bin( $out_file, $text, $data, $arch, $target_os, 'shared' );
     ok( -f $out_file, 'Callback shared library generated with debug symbols' );
     affix $out_file, 'pass_callback', [ Callback [ [Int] => Int ] ], Int;
     affix $out_file, 'return_null',   [],                            Int;

@@ -11,6 +11,7 @@ use Brocken::Compiler::DataSegment;
 use Brocken::Compiler::Lowering;
 use Brocken::Compiler::Optimizer;
 use Brocken::Codegen;
+use Brocken::Host;
 #
 subtest 'Float type parsing' => sub {
     my $source = 'sub test_float(Float $x) { return $x; }';
@@ -27,13 +28,14 @@ sub pass_float(Float $x) {
     return $x+1;
 }
 BROCKEN
-    my $target_os = $^O eq 'MSWin32' ? 'win64' : 'linux';
-    my $out_ext   = $^O eq 'MSWin32' ? '.dll'  : '.so';
+    my $target_os = Brocken::Host::os();
+    my $arch      = Brocken::Host::arch();
+    my $out_ext   = $^O eq 'MSWin32' ? '.dll' : '.so';
     my $out_name  = "test_float${out_ext}";
     my $out_file  = ( $^O eq 'MSWin32' ? '' : './' ) . $out_name;
     my $tokens    = Brocken::Core::Lexer->new( source => $source )->lex();
     my $ast       = Brocken::Core::Parser->new( tokens => $tokens )->parse();
-    my $driver    = Brocken::Compiler::Pipeline->new( os => $target_os, arch => 'x64', type => 'shared', debug => 0 );
+    my $driver    = Brocken::Compiler::Pipeline->new( os => $target_os, arch => $arch, type => 'shared', debug => 0 );
     my $ds        = Brocken::Compiler::DataSegment->new();
     my $lowering  = Brocken::Compiler::Lowering->new( driver => $driver, data_segment => $ds );
     $lowering->set_skip_runtime(1);
@@ -42,8 +44,8 @@ BROCKEN
     $optimizer->optimize( $lowering->builder );
     my $format = $driver->format;
     my $data   = $ds->raw_data();
-    $format->pre_layout( 65536, length($data), 'x64', $target_os );
-    my $codegen = Brocken::Codegen->new( arch => 'x64' );
+    $format->pre_layout( 65536, length($data), $arch, $target_os );
+    my $codegen = Brocken::Codegen->new( arch => $arch );
     my @insts   = $lowering->builder->instructions;
     $codegen->compile( \@insts, $driver );
     my $as = $driver->as;
@@ -53,7 +55,7 @@ BROCKEN
     my @exports = sort(qw(pass_float));
     $format->set_exported_funcs( \@exports );
     my $text = $as->code;
-    $format->write_bin( $out_name, $text, $data, 'x64', $target_os, 'shared' );
+    $format->write_bin( $out_name, $text, $data, $arch, $target_os, 'shared' );
     ok( -f $out_name, 'Float shared library generated with XMM ABI' );
 
     # Test Float pass-through

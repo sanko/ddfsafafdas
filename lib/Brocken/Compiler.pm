@@ -22,20 +22,22 @@ package Brocken::Compiler {
         field @source_locs;
         field @func_ranges;
         #
-        field $source_file            : reader : writer = 'source.brocken';
-        field $line_table_ptr_offset  : reader : writer = undef;
-        field $line_table_size_offset : reader : writer = undef;
-        #
         field %debug_func_params;
-        field %debug_func_locals;
-        #
-        field $global_iso_offset      : reader : writer = undef;
-        field $exception_table_offset : reader : writer = undef;
-        field $data_segment           : reader : writer = undef;
-        field $coverage               : param  : reader = undef;
-        field $coverage_table_offset  : reader = undef;
-        field $coverage_table_size    : reader = undef;
-        field $coverage_probe_lines   : reader = undef;
+        field $source_file            : reader = 'source.brocken';
+        field $line_table_ptr_offset  : reader = undef;
+        field $line_table_size_offset : reader = undef;
+        field $global_iso_offset      : reader = undef;
+        field $exception_table_offset : reader = undef;
+        field $data_segment           : reader = undef;
+        method set_line_table_ptr_offset  ($val) { $line_table_ptr_offset  = $val }
+        method set_line_table_size_offset ($val) { $line_table_size_offset = $val }
+        method set_global_iso_offset      ($val) { $global_iso_offset      = $val }
+        method set_exception_table_offset ($val) { $exception_table_offset = $val }
+        method set_data_segment           ($val) { $data_segment           = $val }
+        field $coverage              : param : reader = undef;
+        field $coverage_table_offset : reader = undef;
+        field $coverage_table_size   : reader = undef;
+        field $coverage_probe_lines  : reader = undef;
 
         # Parser selection: 'pratt' (current) or 'cfg' (new CFG-based parser)
         field $parser : param : reader = 'pratt';
