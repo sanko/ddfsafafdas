@@ -119,7 +119,7 @@ package Brocken::Format::PE {
             my $num_syms        = length($strtab)             ? 1                                                : 0;
             my $sym_off         = $num_syms                   ? ( 132 + 20 + 240 + scalar( $l->sections ) * 40 ) : 0;
             my $characteristics = ( $self->type eq 'shared' ) ? 0x2022                                           : 0x0022;
-            print $fh pack( 'S< S< L< L< L< S< S<', $m_type, scalar( $l->sections ), time(), $sym_off, $num_syms, 240, $characteristics );
+            print $fh pack( 'S< S< L< L< L< S< S<', $m_type, scalar( $l->sections ), $self->effective_timestamp, $sym_off, $num_syms, 240, $characteristics );
 
             # Optional Header
             my $soc  = ( $l->get('.text')->{size} + $fa - 1 ) & ~( $fa - 1 );
@@ -298,7 +298,7 @@ package Brocken::Format::PE {
             my $name_data_off = $ot_off + ( 2 * $num_exports );
             my $edat          = pack(
                 'L< L< S< S< L< L< L< L< L< L< L<',
-                0, time(),       0, 0, $base_rva + $name_data_off,
+                0, $self->effective_timestamp, 0, 0, $base_rva + $name_data_off,
                 1, $num_exports, $num_exports,
                 $base_rva + $eat_off,
                 $base_rva + $npt_off,

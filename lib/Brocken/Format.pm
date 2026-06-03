@@ -11,9 +11,14 @@ class Brocken::Format {
     field $exported_funcs : reader = [];
     field $preserved_regs : reader = [];
     field $frame_size    : reader = 0;
+    field $timestamp     : reader = undef;
     #
     method set_preserved_regs($r) { $preserved_regs = $r; }
     method set_frame_size($s)     { $frame_size    = $s; }
+    method set_timestamp($t)      { $timestamp     = $t; }
+    # Default to the current time when not explicitly set. Pass 0 to
+    # write a deterministic build (e.g. for reproducible-build tests).
+    method effective_timestamp()   { $timestamp // time() }
     method set_debug_data($d)     { $debug_data     = $d; }
     method debug_section($name)   { return $self->debug_data->{$name} // ''; }
     method set_func_ranges($r)    { $func_ranges = $r; }
