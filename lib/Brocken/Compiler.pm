@@ -23,6 +23,7 @@ package Brocken::Compiler {
         field @func_ranges;
         #
         field %debug_func_params;
+        field %debug_func_locals;
         field $source_file            : reader = 'source.brocken';
         field $line_table_ptr_offset  : reader = undef;
         field $line_table_size_offset : reader = undef;
