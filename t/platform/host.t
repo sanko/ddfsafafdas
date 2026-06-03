@@ -3,8 +3,9 @@ use utf8;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
-use lib 'lib';
+use lib 'lib', '../../lib';
 use Brocken::Host;
+#
 subtest 'os() returns a known value' => sub {
     my $os = Brocken::Host::os();
     like $os, qr/^(win64|macos|linux|freebsd|netbsd|openbsd|dragonfly|haiku|midnightbsd|solaris)$/, "os($os) is a recognised platform";
@@ -49,4 +50,5 @@ subtest 'Compiler override still works' => sub {
     is $c->os,   'freebsd', 'os override sticks';
     is $c->arch, 'arm64',   'arch override sticks';
 };
+#
 done_testing;

@@ -162,7 +162,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     ( $inst->{type} eq 'double' || $inst->{type} eq 'float' || $inst->{type} eq 'Float' || $inst->{type} eq 'Double' ) );
             if ( $is_float && $op =~ /^(add|sub|mul|div)$/ ) {
                 my $is_32 = ( $inst->{type} eq 'float' || $inst->{type} eq 'Float' );
-
                 if ( $l_raw =~ /^%/ ) {
                     if ($is_32) { $as->movd_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
                     else        { $as->movq_reg_xmm( 'xmm0', $reg_map->{$l_raw} ); }
@@ -193,7 +192,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                     elsif ( $op eq 'mul' ) { $as->mulsd_reg( 'xmm0', 'xmm1' ) }
                     elsif ( $op eq 'div' ) { $as->divsd_reg( 'xmm0', 'xmm1' ) }
                 }
-
                 if ( defined $d_reg ) {
                     if ($is_32) { $as->movd_xmm_reg( $d_reg, 'xmm0' ); }
                     else        { $as->movq_xmm_reg( $d_reg, 'xmm0' ); }
@@ -464,8 +462,7 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             my $slot           = $inst->{slot};
             my $hdr_offset     = -$slot;
             my $payload_offset = -$slot + 8;
-
-            my $fhdr = $aligned_sz | ( $psz & hex("C000000000000000") );
+            my $fhdr           = $aligned_sz | ( $psz & hex("C000000000000000") );
             $as->mov_imm( 'r11', $fhdr );
             $as->store_mem_disp_reg( 'rbp', $hdr_offset, 'r11' );
 
@@ -473,7 +470,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
                 $as->mov_imm( 'r11', 0 );
                 $as->store_mem_disp_reg( 'rbp', $off, 'r11' );
             }
-
             $as->lea_reg_disp( $d_reg, 'rbp', $payload_offset );
         }
         elsif ( $op eq 'shadow_pop' ) {
@@ -487,7 +483,6 @@ class Brocken::Target::Architecture::x64 : isa(Brocken::Target) {
             my $is_atomic = $1 eq 'atomic';
             my $is_inc    = $2 eq 'inc';
             my $obj       = $reg_map->{ $inst->{args}[0] };
-
             $as->mov_imm( 'r11', 1 << 48 );
             $as->lock() if $is_atomic;
             if ($is_inc) { $as->add_mem_disp_reg( $obj, -8, 'r11' ); }

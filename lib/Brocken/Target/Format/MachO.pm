@@ -26,7 +26,7 @@ class Brocken::Target::Format::MachO : isa(Brocken::Target::Format) {
         my $imports = { dlopen => 0, dlsym => 8, pthread_create => 16 };
         return $self->layout->get('.got')->{rva} + ( $imports->{$name} // die "Unknown Mach-O import: $name" );
     }
-    method image_base () { return 0x100000000; }
+    method image_base () { return hex('100000000'); }
 
     method write_bin( $f, $text, $data, $arch, $os, $type ) {
         my $l              = $self->layout;

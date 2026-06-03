@@ -58,7 +58,7 @@ class Brocken::Target::Format::PE : isa(Brocken::Target::Format) {
             $l->add_section( '.debug_pubnames', 4096, 0x42000040 );
         }
     }
-    method image_base () { return 0x140000000; }
+    method image_base () { return hex('140000000'); }
 
     method write_bin( $filename, $text, $data, $arch, $os, $type ) {
         warn "PE: write_bin start\n" if $ENV{BROCKEN_JIT_DEBUG};

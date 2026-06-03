@@ -7,10 +7,11 @@ package Brocken::Compiler {
     use Brocken::Core::Scope;
 
     class Brocken::Compiler {
-        field $arch  : param : reader = undef;
-        field $os    : param : reader = undef;
-        field $type  : param : reader = 'exe';
-        field $debug : param : reader = 0;
+        field $triplet : param : reader = undef;
+        field $arch    : param : reader = undef;
+        field $os      : param : reader = undef;
+        field $type    : param : reader = 'exe';
+        field $debug   : param : reader = 0;
         #
         field $target   : reader;
         field $platform : reader;
@@ -47,6 +48,12 @@ package Brocken::Compiler {
         #
         ADJUST {
             $optimizations = { escape => 1, tail_call => 1, leaf => 1, dce => 1, loop_fuse => 1, %$optimizations };
+            if ($triplet) {
+                require Brocken::Triplet;
+                my $t = Brocken::Triplet->new($triplet);
+                $os   //= $t->os;
+                $arch //= $t->arch;
+            }
             require Brocken::Host;
             $os   //= Brocken::Host::os();
             $arch //= Brocken::Host::arch();
