@@ -6,8 +6,8 @@
 | Linux | RISC-V | ❌ |
 | macOS | Intel | ❌ |
 | macOS | Apple Silicon | ❌ |
-| Windows | Intel | ❌ |
-| Windows | ARM | ❌ |
+| Windows | Intel | ✅ |
+| Windows | ARM | ✅ |
 | DragonFly BSD | Intel | ❌ |
 | FreeBSD | Intel | ❌ |
 | FreeBSD | ARM | ❌ |
