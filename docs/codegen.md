@@ -3,8 +3,8 @@
 Three layers:
 
 - `Brocken::Codegen` - register allocator + instruction dispatcher
-- `Brocken::Target::X64` - maps IR opcodes to x64 machine code
-- `Brocken::Target::X64::Emit` - low-level encoder (REX, ModR/M, immediates, fixups)
+- `Brocken::Target::Architecture::x64` - maps IR opcodes to x64 machine code
+- `Brocken::Target::Architecture::x64::Emit` - low-level encoder (REX, ModR/M, immediates, fixups)
 
 ## Complete IR Instruction Set
 

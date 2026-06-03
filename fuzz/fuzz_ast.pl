@@ -75,7 +75,7 @@ if ( @failures && $VERBOSE ) {
 # --- Core check logic ---
 sub _run_ast_checks {
     my ($ast) = @_;
-    require Brocken;    # defines Brocken::Scope
+    require Brocken;    # defines Brocken::Core::Scope
     require Brocken::Compiler;
     require Brocken::Compiler::DataSegment;
     require Brocken::Compiler::Lowering;
@@ -101,8 +101,8 @@ sub _run_ast_checks {
     }
 
     # Check 3: Codegen (if well-formed, should compile)
-    require Brocken::Target::X64;
-    require Brocken::Target::X64::Emit;
+    require Brocken::Target::Architecture::x64;
+    require Brocken::Target::Architecture::x64::Emit;
     require Brocken::Codegen;
     my $codegen = Brocken::Codegen->new( arch => 'x64' );
     $codegen->compile( $ir, $driver );

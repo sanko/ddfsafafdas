@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Target::OS::Windows : isa(Brocken::Platform) {
+class Brocken::Target::OS::Windows : isa(Brocken::Target::OS) {
     method format_name()  {'PE'}
     method shadow_space() {32}
 

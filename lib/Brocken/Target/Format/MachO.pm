@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 
-class Brocken::Target::Format::MachO : isa(Brocken::Format) {
+class Brocken::Target::Format::MachO : isa(Brocken::Target::Format) {
     no warnings 'portable';
 
     method _setup_layout( $l, $t, $d, $a, $o, $dbg = 0 ) {

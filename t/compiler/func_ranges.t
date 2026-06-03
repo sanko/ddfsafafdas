@@ -3,7 +3,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use Test2::V0;
 use lib 'lib';
-require Brocken::Format;
+require Brocken::Target::Format;
 require Brocken::Target::Format::PE;
 use Brocken::TestHelpers qw(make_fake_funcs);
 subtest 'set_func_ranges and reader' => sub {

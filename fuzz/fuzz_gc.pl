@@ -113,8 +113,8 @@ use Brocken;
 
 my \$source = do { open my \$fh, '<', '$src_file'; local \$/; <\$fh> };
 my \$p = Brocken::Compiler->new(debug => 0);
-my \$tokens = Brocken::Lexer->new(source => \$source)->lex();
-my \$ast = Brocken::Parser->new(tokens => \$tokens)->parse();
+my \$tokens = Brocken::Core::Lexer->new(source => \$source)->lex();
+my \$ast = Brocken::Core::Parser->new(tokens => \$tokens)->parse();
 my \$ds = Brocken::Compiler::DataSegment->new();
 my \$lowering = Brocken::Compiler::Lowering->new(data_segment => \$ds, driver => \$p);
 \$lowering->lower_program(\$ast);

@@ -161,7 +161,7 @@ Brocken::Emit::ARM64 - ARM64 emitter (alternate entry point)
 
 =head1 DESCRIPTION
 
-Duplicate/shadow of Brocken::Target::ARM64::Emit. Provides the same A64 instruction encoding interface. May be
-consolidated in a future refactor.
+Duplicate/shadow of Brocken::Target::Architecture::ARM64::Emit. Provides the same A64 instruction encoding interface.
+May be consolidated in a future refactor.
 
 =cut

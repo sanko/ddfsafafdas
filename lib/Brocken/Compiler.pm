@@ -3,8 +3,8 @@ package Brocken::Compiler {
     use utf8;
     use feature 'class';
     no warnings 'portable', 'experimental::class';
-    use Brocken::Symbol;
-    use Brocken::Scope;
+    use Brocken::Core::Symbol;
+    use Brocken::Core::Scope;
 
     class Brocken::Compiler {
         field $arch  : param : reader = undef;
@@ -59,32 +59,32 @@ package Brocken::Compiler {
             }
             $arch //= $detected_arch;
             if ( $os eq 'win64' ) {
-                require Brocken::Platform::Windows;
-                require Brocken::Format::PE;
-                $platform = Brocken::Platform::Windows->new( os => $os );
-                $format   = Brocken::Format::PE->new( type => $type );
+                require Brocken::Target::OS::Windows;
+                require Brocken::Target::Format::PE;
+                $platform = Brocken::Target::OS::Windows->new( os => $os );
+                $format   = Brocken::Target::Format::PE->new( type => $type );
             }
             elsif ( $os =~ /^(linux|freebsd|openbsd|netbsd|dragonfly)$/ ) {
-                require Brocken::Platform::Linux;
-                require Brocken::Format::ELF;
-                $platform = Brocken::Platform::Linux->new( os => $os );
-                $format   = Brocken::Format::ELF->new( type => $type );
+                require Brocken::Target::OS::Linux;
+                require Brocken::Target::Format::ELF;
+                $platform = Brocken::Target::OS::Linux->new( os => $os );
+                $format   = Brocken::Target::Format::ELF->new( type => $type );
             }
             elsif ( $os eq 'macos' ) {
-                require Brocken::Platform::Darwin;
-                require Brocken::Format::MachO;
-                $platform = Brocken::Platform::Darwin->new( os => $os );
-                $format   = Brocken::Format::MachO->new( type => $type );
+                require Brocken::Target::OS::macOS;
+                require Brocken::Target::Format::MachO;
+                $platform = Brocken::Target::OS::macOS->new( os => $os );
+                $format   = Brocken::Target::Format::MachO->new( type => $type );
             }
             if ( $arch eq 'x64' ) {
-                require Brocken::Target::X64;
-                $target = Brocken::Target::X64->new( os => $os, arch => $arch );
-                $as     = Brocken::Target::X64::Emit->new();
+                require Brocken::Target::Architecture::x64;
+                $target = Brocken::Target::Architecture::x64->new( os => $os, arch => $arch );
+                $as     = Brocken::Target::Architecture::x64::Emit->new();
             }
             else {
-                require Brocken::Target::ARM64;
-                $target = Brocken::Target::ARM64->new( os => $os, arch => $arch );
-                $as     = Brocken::Target::ARM64::Emit->new();
+                require Brocken::Target::Architecture::ARM64;
+                $target = Brocken::Target::Architecture::ARM64->new( os => $os, arch => $arch );
+                $as     = Brocken::Target::Architecture::ARM64::Emit->new();
             }
         }
 
@@ -199,11 +199,11 @@ package Brocken::Compiler {
 
             method compile_source( $source, $output_file, $filename = undef ) {
                 $filename //= 'eval_' . ++$_x;
-                require Brocken::Lexer;
+                require Brocken::Core::Lexer;
                 require Brocken::Codegen;
                 require Brocken::Compiler::DataSegment;
                 $source_file = $filename;
-                my $tokens = Brocken::Lexer->new( source => $source, file => $filename )->lex();
+                my $tokens = Brocken::Core::Lexer->new( source => $source, file => $filename )->lex();
                 my $ds     = Brocken::Compiler::DataSegment->new();
                 my $lowerer;
 
@@ -222,9 +222,9 @@ package Brocken::Compiler {
                     $lowerer->lower();
                 }
                 else {
-                    require Brocken::Parser;
+                    require Brocken::Core::Parser;
                     require Brocken::Compiler::Lowering;
-                    my $ast = Brocken::Parser->new( tokens => $tokens )->parse();
+                    my $ast = Brocken::Core::Parser->new( tokens => $tokens )->parse();
                     $lowerer = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $self );
                     $lowerer->lower_program($ast);
                 }
@@ -274,8 +274,8 @@ package Brocken::Compiler {
 
                 if ( $self->debug ) {
                     $self->format->set_func_ranges( [ $self->func_ranges ] );
-                    require Brocken::Format::DWARF;
-                    my $dwarf = Brocken::Format::DWARF->new(
+                    require Brocken::Target::Format::DWARF;
+                    my $dwarf = Brocken::Target::Format::DWARF->new(
                         source_locs    => [ $self->source_locs ],
                         text_base      => $self->format->image_base + $self->text_rva,
                         func_ranges    => [ $self->func_ranges ],

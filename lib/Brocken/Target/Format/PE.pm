@@ -5,7 +5,7 @@ no warnings 'portable';
 no warnings 'experimental::class';
 use File::Basename qw(basename);
 
-class Brocken::Target::Format::PE : isa(Brocken::Format) {
+class Brocken::Target::Format::PE : isa(Brocken::Target::Format) {
     no warnings 'portable';
     our %IMPORTS = (
         ExitProcess                 => 0,
@@ -120,7 +120,8 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         my $num_syms        = length($strtab)             ? 1                                                : 0;
         my $sym_off         = $num_syms                   ? ( 132 + 20 + 240 + scalar( $l->sections ) * 40 ) : 0;
         my $characteristics = ( $self->type eq 'shared' ) ? 0x2022                                           : 0x0022;
-        print $fh pack( 'S< S< L< L< L< S< S<', $m_type, scalar( $l->sections ), $self->effective_timestamp, $sym_off, $num_syms, 240, $characteristics );
+        print $fh
+            pack( 'S< S< L< L< L< S< S<', $m_type, scalar( $l->sections ), $self->effective_timestamp, $sym_off, $num_syms, 240, $characteristics );
 
         # Optional Header
         my $soc  = ( $l->get('.text')->{size} + $fa - 1 ) & ~( $fa - 1 );
@@ -209,8 +210,22 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
 
         # SEH register numbers (AMD64 ABI)
         my %SEH_REG = (
-            rax => 0, rcx => 1, rdx => 2, rbx => 3, rsp => 4, rbp => 5, rsi => 6, rdi => 7,
-            r8  => 8, r9  => 9, r10 => 10, r11 => 11, r12 => 12, r13 => 13, r14 => 14, r15 => 15
+            rax => 0,
+            rcx => 1,
+            rdx => 2,
+            rbx => 3,
+            rsp => 4,
+            rbp => 5,
+            rsi => 6,
+            rdi => 7,
+            r8  => 8,
+            r9  => 9,
+            r10 => 10,
+            r11 => 11,
+            r12 => 12,
+            r13 => 13,
+            r14 => 14,
+            r15 => 15
         );
         my @regs = @{ $self->preserved_regs // [] };
 
@@ -219,8 +234,7 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         # otherwise the Windows unwinder will compute the wrong canonical CFA.
         my $fsz = $self->frame_size;
         if ( $fsz <= 0 ) {
-            die "PE.pm::_build_xdata: frame_size not set. "
-              . "Pipeline must call set_frame_size() before write_bin().";
+            die "PE.pm::_build_xdata: frame_size not set. " . "Pipeline must call set_frame_size() before write_bin().";
         }
         my $scaled = $fsz / 8;
         my $codes  = '';
@@ -234,7 +248,6 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         #
         # We mirror those exact byte counts so the UWOP CodeOffset values
         # line up with the real prologue bytes.
-
         # 1. Each preserved-reg push
         for my $r (@regs) {
             my $reg_num = $SEH_REG{$r};
@@ -265,8 +278,7 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         # 1. UWOP_ALLOC_LARGE (op=1) for sub rsp, $fsz
         #    OpInfo: 1 = 1-byte scaled size, 2 = 2-byte scaled size
         my $opinfo = ( $scaled > 0xFF ) ? 2 : 1;
-        $codes .= pack( 'CC', $prologue_size, ( $opinfo << 4 ) | 1 )
-              . ( $opinfo == 2 ? pack( 'S<', $scaled ) : pack( 'C', $scaled ) );
+        $codes .= pack( 'CC', $prologue_size, ( $opinfo << 4 ) | 1 ) . ( $opinfo == 2 ? pack( 'S<', $scaled ) : pack( 'C', $scaled ) );
 
         # 2. UWOP_SET_FPREG (op=3) at the mov rbp, rsp, if applicable
         if ($frame_reg) {
@@ -290,11 +302,9 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         #   byte 1: SizeOfProlog
         #   byte 2: CountOfCodes
         #   byte 3: FrameRegister (4 bits) | FrameRegisterOffset (4 bits)
-        my $hdr = pack( 'C C C C',
-            1,                                          # Version=1, Flags=0
-            $prologue_size,
-            $num_codes,
-            ( $frame_reg << 4 ) | ( $frame_reg_off & 0xF ),
+        my $hdr = pack(
+            'C C C C',      1,                                                            # Version=1, Flags=0
+            $prologue_size, $num_codes, ( $frame_reg << 4 ) | ( $frame_reg_off & 0xF ),
         );
         return $hdr . $codes;
     }
@@ -321,7 +331,8 @@ class Brocken::Target::Format::PE : isa(Brocken::Format) {
         my $name_data_off = $ot_off + ( 2 * $num_exports );
         my $edat          = pack(
             'L< L< S< S< L< L< L< L< L< L< L<',
-            0, $self->effective_timestamp, 0, 0, $base_rva + $name_data_off,
+            0, $self->effective_timestamp,
+            0, 0,            $base_rva + $name_data_off,
             1, $num_exports, $num_exports,
             $base_rva + $eat_off,
             $base_rva + $npt_off,

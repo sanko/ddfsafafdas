@@ -432,20 +432,20 @@ sub run_fuzz_target {
         $stats{lexer}++ if $target eq 'lexer';
 
         # Lexer phase
-        require Brocken::Lexer;
-        my $tokens = eval { Brocken::Lexer->new( source => $source )->lex() };
+        require Brocken::Core::Lexer;
+        my $tokens = eval { Brocken::Core::Lexer->new( source => $source )->lex() };
         if ($@) { die "LEXER: $@" }
         $stats{lexer}++ if $target eq 'all';
         if ( $target eq 'parser' || ( $target eq 'all' && $tokens && @$tokens > 0 ) ) {
             $stats{parser}++;
-            require Brocken::Parser;
-            my $ast = eval { Brocken::Parser->new( tokens => $tokens )->parse() };
+            require Brocken::Core::Parser;
+            my $ast = eval { Brocken::Core::Parser->new( tokens => $tokens )->parse() };
             if ($@) { die "PARSER: $@" }
 
             # Full compilation for source target
             if ( $target eq 'source' || ( $target eq 'all' && rand() < 0.3 ) ) {
                 $stats{compiler}++;
-                require Brocken;    # defines Brocken::Scope
+                require Brocken;    # defines Brocken::Core::Scope
                 require Brocken::Compiler;
                 require Brocken::Compiler::DataSegment;
                 require Brocken::Compiler::Lowering;
@@ -454,8 +454,8 @@ sub run_fuzz_target {
                 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $driver );
                 eval { $lowering->lower_program($ast) };
                 if ($@) { die "LOWERING: $@" }
-                require Brocken::Target::X64;
-                require Brocken::Target::X64::Emit;
+                require Brocken::Target::Architecture::x64;
+                require Brocken::Target::Architecture::x64::Emit;
                 require Brocken::Codegen;
                 my $codegen = Brocken::Codegen->new( arch => 'x64' );
                 eval { $codegen->compile( [ $lowering->builder->instructions() ], $driver ) };
@@ -468,7 +468,7 @@ sub run_fuzz_target {
     # IR-level targets
     my $ir = $data->{ir};
     if ( $target eq 'lowering' ) {
-        require Brocken;    # defines Brocken::Scope
+        require Brocken;    # defines Brocken::Core::Scope
         require Brocken::Compiler;
         require Brocken::Compiler::DataSegment;
         require Brocken::Compiler::Lowering;
@@ -502,8 +502,8 @@ sub run_fuzz_target {
 sub fuzz_codegen {
     my ($ir) = @_;
     require Brocken::Compiler;
-    require Brocken::Target::X64;
-    require Brocken::Target::X64::Emit;
+    require Brocken::Target::Architecture::x64;
+    require Brocken::Target::Architecture::x64::Emit;
     require Brocken::Codegen;
     my $driver  = Brocken::Compiler->new( debug => 0 );
     my $codegen = Brocken::Codegen->new( arch => 'x64' );
@@ -512,8 +512,8 @@ sub fuzz_codegen {
 
 sub fuzz_emitter {
     my ($instructions) = @_;
-    require Brocken::Target::X64::Emit;
-    my $as = Brocken::Target::X64::Emit->new;
+    require Brocken::Target::Architecture::x64::Emit;
+    my $as = Brocken::Target::Architecture::x64::Emit->new;
     for my $inst (@$instructions) {
         last if defined( $as->code ) && length( $as->code ) > 65536;
         eval { emit_random_instruction( $as, $inst ) };
@@ -522,16 +522,16 @@ sub fuzz_emitter {
 
 sub fuzz_format {
     my ($data) = @_;
-    require Brocken::Format::PE;
-    require Brocken::Format::ELF;
+    require Brocken::Target::Format::PE;
+    require Brocken::Target::Format::ELF;
 
     # PE write with random text/data
-    my $pe = Brocken::Format::PE->new;
+    my $pe = Brocken::Target::Format::PE->new;
     $pe->pre_layout( length($data) + 4096, 1024, 'x64', 'win64', 0 );
     $pe->write_bin( 'fuzz_tmp_pe.exe', $data, "\0" x 512, 'x64', 'win64' );
 
     # ELF write
-    my $elf = Brocken::Format::ELF->new;
+    my $elf = Brocken::Target::Format::ELF->new;
     $elf->pre_layout( length($data) + 4096, 1024, 'x64', 'linux', 0 );
     $elf->write_bin( 'fuzz_tmp_elf', $data, "\0" x 512, 'x64', 'linux' );
 }
@@ -544,7 +544,7 @@ sub generate_random_bytes {
 
 sub fuzz_dwarf {
     my ($ir) = @_;
-    require Brocken::Format::DWARF;
+    require Brocken::Target::Format::DWARF;
     my @sls   = ( { offset => 0, line => 1, col => 1 }, { offset => 64, line => 5, col => 8 }, { offset => 128, line => 10, col => 4 }, );
     my @funcs = (
         { name => 'fuzz_a', start => 0,   end => 96,  ctx_size => 64, params => [], locals => [] },
@@ -552,7 +552,7 @@ sub fuzz_dwarf {
     );
     my $text_base = 0x401000;
     my $eh_base   = 0x405000;
-    my $dw        = Brocken::Format::DWARF->new(
+    my $dw        = Brocken::Target::Format::DWARF->new(
         source_locs   => \@sls,
         text_base     => $text_base,
         func_ranges   => \@funcs,
@@ -569,8 +569,8 @@ sub fuzz_dwarf {
 
 sub fuzz_seh {
     my ($ir) = @_;
-    require Brocken::Format::PE;
-    my $pe    = Brocken::Format::PE->new;
+    require Brocken::Target::Format::PE;
+    my $pe    = Brocken::Target::Format::PE->new;
     my @funcs = (
         { name => 'fuzz_a', start => 0,   end => 96,  ctx_size => 64, params => [], locals => [] },
         { name => 'fuzz_b', start => 256, end => 384, ctx_size => 48, params => [], locals => [] },
@@ -649,12 +649,12 @@ use lib 'lib';
 # Replay script for last fuzz crash ($target)
 my \$source = $source;
 
-require Brocken::Lexer;
-my \$tokens = eval { Brocken::Lexer->new( source => \$source )->lex() };
+require Brocken::Core::Lexer;
+my \$tokens = eval { Brocken::Core::Lexer->new( source => \$source )->lex() };
 if (\$@) { die "Replay crash (lexer): \$@"; }
 
-require Brocken::Parser;
-my \$ast = eval { Brocken::Parser->new( tokens => \$tokens )->parse() };
+require Brocken::Core::Parser;
+my \$ast = eval { Brocken::Core::Parser->new( tokens => \$tokens )->parse() };
 if (\$@) { die "Replay crash (parser): \$@"; }
 
 say "Replay succeeded (no crash)";
@@ -669,8 +669,8 @@ use lib 'lib';
 # Replay script for last fuzz crash ($target)
 my \$ir = $entry;
 
-require Brocken::Target::X64;
-require Brocken::Target::X64::Emit;
+require Brocken::Target::Architecture::x64;
+require Brocken::Target::Architecture::x64::Emit;
 require Brocken::Codegen;
 
 my \$driver = Brocken::Compiler->new( debug => 0 );

@@ -35,7 +35,7 @@ To implement `defer`, we need to update the Lexer to recognize the keyword, the 
 
 ### 1. Add to the Lexer
 
-Update `%KEYWORDS` in `Brocken::Lexer`:
+Update `%KEYWORDS` in `Brocken::Core::Lexer`:
 
 ```perl
 my %KEYWORDS = map { $_ => 1 } qw[
@@ -194,10 +194,10 @@ Types are just strings: `Int`, `String`, `Any`, `Bool`, `Class`. To add one:
 
 ### 1. Platform module
 
-`lib/Brocken/Platform/YourOS.pm` - subclass `Brocken::Platform`:
+`lib/Brocken/Target/OS/YourOS.pm` - subclass `Brocken::Target::OS`:
 
 ```perl
-class Brocken::Platform::YourOS : isa(Brocken::Platform) {
+class Brocken::Target::OS::YourOS : isa(Brocken::Target::OS) {
     method format_name() { return 'YourFormat'; }
     method shadow_space() { return 0; }
     method emit_intrinsic($target, $as, $inst, $reg_map, $driver) { ... }
@@ -211,7 +211,7 @@ Required intrinsics:
 
 ### 2. Format module
 
-Subclass `Brocken::Format`. Implement `import_rva()` and `write_bin()`.
+Subclass `Brocken::Target::Format`. Implement `import_rva()` and `write_bin()`.
 
 ### 3. Wire it up
 
@@ -219,10 +219,10 @@ In `Compiler.pm` ADJUST:
 
 ```perl
 if ($os eq 'youros') {
-    require Brocken::Platform::YourOS;
-    require Brocken::Format::YourFormat;
-    $platform = Brocken::Platform::YourOS->new(...);
-    $format   = Brocken::Format::YourFormat->new();
+    require Brocken::Target::OS::YourOS;
+    require Brocken::Target::Format::YourFormat;
+    $platform = Brocken::Target::OS::YourOS->new(...);
+    $format   = Brocken::Target::Format::YourFormat->new();
 }
 ```
 

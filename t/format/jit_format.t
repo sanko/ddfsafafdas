@@ -8,7 +8,7 @@ require Brocken::Target::Format::JIT;
 subtest 'JIT instantiation' => sub {
     my $f = Brocken::Target::Format::JIT->new;
     ok $f->isa('Brocken::Target::Format::JIT'), 'isa JIT';
-    ok $f->isa('Brocken::Format'),              'isa Format base';
+    ok $f->isa('Brocken::Target::Format'),      'isa Format base';
 };
 subtest 'JIT import_rva after pre_layout' => sub {
     my $f = Brocken::Target::Format::JIT->new;

@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'portable', 'experimental::class';
 
-class Brocken::Target::Format::ELF : isa(Brocken::Format) {
+class Brocken::Target::Format::ELF : isa(Brocken::Target::Format) {
 
     method _detect_elf_info ( $ref = undef ) {
         my @candidates = $ref ? ($ref) : ( '/bin/sh', '/sbin/init', '/usr/bin/env', '/boot/system/bin/sh', '/boot/system/bin/env' );

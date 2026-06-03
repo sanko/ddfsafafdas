@@ -8,7 +8,7 @@ require Brocken::Target::Format::MachO;
 subtest 'MachO instantiation' => sub {
     my $f = Brocken::Target::Format::MachO->new;
     ok $f->isa('Brocken::Target::Format::MachO'), 'isa MachO';
-    ok $f->isa('Brocken::Format'),                'isa Format base';
+    ok $f->isa('Brocken::Target::Format'),        'isa Format base';
     is $f->type, 'exe', 'default type is exe';
 };
 subtest 'MachO image_base' => sub {

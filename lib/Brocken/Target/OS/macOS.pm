@@ -2,7 +2,7 @@ use v5.40;
 use feature 'class';
 no warnings 'experimental::class';
 
-class Brocken::Target::OS::macOS : isa(Brocken::Platform) {
+class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
     method format_name() {'MachO'}
 
     method emit_intrinsic( $target, $as, $inst, $reg_map, $driver ) {

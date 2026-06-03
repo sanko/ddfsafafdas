@@ -57,8 +57,8 @@ for my $iter ( 1 .. $ITERATIONS ) {
         local $SIG{__WARN__} = sub { };
         alarm($TIMEOUT);
         my $tokens = _generate_mutated_tokens();
-        require Brocken::Parser;
-        my $parser = Brocken::Parser->new( tokens => $tokens );
+        require Brocken::Core::Parser;
+        my $parser = Brocken::Core::Parser->new( tokens => $tokens );
         my $ast    = eval { $parser->parse() };
         if ($@) {
             my $err = $@;
@@ -69,7 +69,7 @@ for my $iter ( 1 .. $ITERATIONS ) {
 
         # If parse succeeded, try lowering
         if ( $ast && @$ast > 0 ) {
-            require Brocken;    # defines Brocken::Scope
+            require Brocken;    # defines Brocken::Core::Scope
             require Brocken::Compiler;
             require Brocken::Compiler::DataSegment;
             require Brocken::Compiler::Lowering;
@@ -124,23 +124,23 @@ sub _generate_mutated_tokens {
 
         # Take a seed source and lex it
         my $source = $SEEDS[ int( rand(@SEEDS) ) ];
-        require Brocken::Lexer;
-        return Brocken::Lexer->new( source => $source )->lex();
+        require Brocken::Core::Lexer;
+        return Brocken::Core::Lexer->new( source => $source )->lex();
     }
     if ( $strategy == 1 ) {
 
         # Lex a seed, then randomly insert/remove/reorder
         my $source = $SEEDS[ int( rand(@SEEDS) ) ];
-        require Brocken::Lexer;
-        my $tokens = Brocken::Lexer->new( source => $source )->lex();
+        require Brocken::Core::Lexer;
+        my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
         return _mutate_token_list($tokens);
     }
     if ( $strategy == 2 ) {
 
         # Lex a seed, corrupt random token values
         my $source = $SEEDS[ int( rand(@SEEDS) ) ];
-        require Brocken::Lexer;
-        my $tokens = Brocken::Lexer->new( source => $source )->lex();
+        require Brocken::Core::Lexer;
+        my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
         for my $t (@$tokens) {
             next if rand() > 0.2;
             if    ( $t->{type} eq 'NUM' )   { $t->{value} = int( rand(999999) ) }
@@ -161,15 +161,15 @@ sub _generate_mutated_tokens {
 
         # Generate random source, lex it (edge case coverage)
         my $source = _random_source_line();
-        require Brocken::Lexer;
-        return eval { Brocken::Lexer->new( source => $source )->lex() } // [ { type => 'EOF', value => 'EOF', line => 1, col => 1 } ];
+        require Brocken::Core::Lexer;
+        return eval { Brocken::Core::Lexer->new( source => $source )->lex() } // [ { type => 'EOF', value => 'EOF', line => 1, col => 1 } ];
     }
 
     # Strategy 5: Lex a seed, duplicate a random contiguous block
     {
         my $source = $SEEDS[ int( rand(@SEEDS) ) ];
-        require Brocken::Lexer;
-        my $tokens = Brocken::Lexer->new( source => $source )->lex();
+        require Brocken::Core::Lexer;
+        my $tokens = Brocken::Core::Lexer->new( source => $source )->lex();
         return $tokens if @$tokens < 3;
         my $start = int( rand( @$tokens - 2 ) );
         my $len   = 1 + int( rand(5) );

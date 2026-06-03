@@ -4,6 +4,7 @@ use feature 'class';
 no warnings 'portable', 'experimental::class';
 use lib 'lib';
 use Brocken;
+use Brocken::Compiler;
 use Carp::Always;
 $|++;
 my $source_code = <<'BROCKEN';
@@ -465,7 +466,7 @@ my $p = Brocken::Compiler->new( debug => $dbg, type => $type, ( $os ? ( os => $o
 say "Targeting OS: " . $p->os . " | Arch: " . $p->arch;
 say "Debug: " . $p->debug;
 my $tokens   = Brocken::Core::Lexer->new( source => $source_code )->lex();
-my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
+my $ast      = Brocken::Core::Parser->new( tokens => $tokens )->parse();
 my $ds       = Brocken::Compiler::DataSegment->new();
 my $lowering = Brocken::Compiler::Lowering->new( data_segment => $ds, driver => $p );
 $lowering->lower_program($ast);
@@ -492,13 +493,13 @@ if ( $p->type eq 'shared' ) {
     }
 
     # Pass exports to format (PE, ELF, MachO)
-    if ( $p->format isa Brocken::Format::PE ) {
+    if ( $p->format isa Brocken::Target::Format::PE ) {
         $p->format->set_exported_funcs( \@exports );
     }
-    elsif ( $p->format isa Brocken::Format::ELF ) {
+    elsif ( $p->format isa Brocken::Target::Format::ELF ) {
         $p->format->set_exported_funcs( \@exports );
     }
-    elsif ( $p->format isa Brocken::Format::MachO ) {
+    elsif ( $p->format isa Brocken::Target::Format::MachO ) {
         $p->format->set_exported_funcs( \@exports );
     }
 }
@@ -509,14 +510,14 @@ if ( $p->debug >= 1 ) {
         printf "  offset=0x%04X  line=%-4d col=%d\n", $sl->{offset}, $sl->{line}, $sl->{col};
     }
     say scalar(@sls) . " source location entries\n";
-    require Brocken::Format::DWARF;
+    require Brocken::Target::Format::DWARF;
     my $text_base     = $p->format->image_base + $p->format->rva_for('.text');
     my $eh_frame_base = 0;
     eval { $eh_frame_base = $p->format->image_base + $p->format->rva_for('.eh_frame'); };
     my @funcs = $p->func_ranges;
     $p->format->set_func_ranges( \@funcs );
     my %class_info = $lowering->class_info;
-    my $dw         = Brocken::Format::DWARF->new(
+    my $dw         = Brocken::Target::Format::DWARF->new(
         source_locs    => \@sls,
         text_base      => $text_base,
         eh_frame_base  => $eh_frame_base,

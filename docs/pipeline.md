@@ -3,8 +3,8 @@
 Seven phases. Each one transforms the program into a different representation. Here's the whole thing from `brocken.pl`'s point of view:
 
 ```perl
-my $tokens   = Brocken::Lexer->new( source => $source_code )->lex();
-my $ast      = Brocken::Parser->new( tokens => $tokens )->parse();
+my $tokens   = Brocken::Core::Lexer->new( source => $source_code )->lex();
+my $ast      = Brocken::Core::Parser->new( tokens => $tokens )->parse();
 my $ds       = Brocken::Compiler::DataSegment->new();
 my $lowering = Brocken::Compiler::Lowering->new(
     data_segment => $ds, driver => $p );

@@ -99,11 +99,11 @@ hashref. Each format module (PE, ELF) can then read them during `write_bin`.
 
 ## DWARF Sections
 
-All DWARF sections are built by `Brocken::Format::DWARF`. The constructor
+All DWARF sections are built by `Brocken::Target::Format::DWARF`. The constructor
 takes:
 
 ```perl
-my $dw = Brocken::Format::DWARF->new(
+my $dw = Brocken::Target::Format::DWARF->new(
     source_locs   => \@sls,       # [ { offset, line, col }, ... ]
     text_base     => $text_base,  # image_base + .text RVA
     func_ranges   => \@funcs,     # [ { name, start, end, ... }, ... ]
@@ -260,7 +260,7 @@ correct.
 ### Prologue (win64)
 
 The prologue that the SEH tables describe is emitted by `enter_func` in
-`Brocken::Target::X64`:
+`Brocken::Target::Architecture::x64`:
 
 ```asm
 push rbp        ; 1 byte   offset 0
@@ -476,10 +476,10 @@ if ($dbg >= 1) {
 
 ### DWARF module configuration
 
-The `Brocken::Format::DWARF` object is configured by `brocken.pl`:
+The `Brocken::Target::Format::DWARF` object is configured by `brocken.pl`:
 
 ```perl
-my $dw = Brocken::Format::DWARF->new(
+my $dw = Brocken::Target::Format::DWARF->new(
     source_locs   => \@sls,
     text_base     => $p->format->image_base + $p->format->rva_for('.text'),
     eh_frame_base => eval { $p->format->image_base + $p->format->rva_for('.eh_frame') } // 0,
