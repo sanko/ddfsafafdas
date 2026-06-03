@@ -1,5 +1,5 @@
 {
-"Linux:Intel": "failure"
+"Linux:Intel": "success"
 ,
 "Linux:ARM": "failure"
 ,
@@ -9,9 +9,9 @@
 ,
 "macOS:Apple Silicon": "failure"
 ,
-"Windows:Intel": "failure"
+"Windows:Intel": "success"
 ,
-"Windows:ARM": "failure"
+"Windows:ARM": "success"
 ,
 "DragonFly_BSD:Intel": "failure"
 ,
