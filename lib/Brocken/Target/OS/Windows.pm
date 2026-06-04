@@ -567,11 +567,10 @@ class Brocken::Target::OS::Windows : isa(Brocken::Target::OS) {
                     $as->sub_imm( 'sp', 16 );
                     $as->mov_imm( 'x0', -12 );
                     $as->call_rva( $driver->import_rva('GetStdHandle'), $driver->text_rva );
-                    $as->mov_reg( 'x1', 'x0' );
-                    $as->lea_rva( 'x2', "DATA:" . $driver->coverage_table_offset );
-                    $as->mov_imm( 'x3', $driver->coverage_table_size );
-                    $as->lea_reg_disp( 'x4', 'sp', 0 );
-                    $as->mov_imm( 'x5', 0 );
+                    $as->lea_rva( 'x1', "DATA:" . $driver->coverage_table_offset );
+                    $as->mov_imm( 'x2', $driver->coverage_table_size );
+                    $as->lea_reg_disp( 'x3', 'sp', 0 );
+                    $as->mov_imm( 'x4', 0 );
                     $as->call_rva( $driver->import_rva('WriteFile'), $driver->text_rva );
                     $as->add_imm( 'sp', 16 );
                 }

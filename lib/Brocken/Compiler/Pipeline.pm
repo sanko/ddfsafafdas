@@ -294,7 +294,6 @@ class Brocken::Compiler::Pipeline {
             $self->as->resolve( $self->text_rva, $self->data_rva );
             $self->format->set_func_ranges( [ $self->func_ranges ] );
             $self->format->set_labels( $self->as->labels );
-            $self->format->set_labels( $self->as->labels );
             $self->format->set_exported_funcs( $lowerer->exported_funcs );
 
             if ( $self->debug ) {

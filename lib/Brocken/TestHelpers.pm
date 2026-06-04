@@ -36,18 +36,8 @@ sub test_brocken (%args) {
     if ( $os ne 'win64' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
         $run = './' . $exe;
     }
-    my $output = eval {
-        local $SIG{ALRM} = sub { die "TIMEOUT\n" };
-        alarm($timeout);
-        open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
-        local $/;
-        my $out = <$fh>;
-        close $fh;
-        alarm(0);
-        $out;
-    };
+    my $output = _run_with_timeout( $run, $timeout );
     my $err = $@;
-    alarm(0);
     if ($err) {
         Test2::V0::fail("$name - execution failed: $err") if $name;
         return ( undef, "execution: $err" );
@@ -89,5 +79,48 @@ sub with_temp_file {
     require File::Temp;
     my $file = File::Temp->new( UNLINK => 1, SUFFIX => $suffix // '.bin' );
     $code->( $file->filename );
+}
+
+sub _run_with_timeout ( $run, $timeout = 30 ) {
+    if ( $^O eq 'MSWin32' ) {
+        require File::Temp;
+        my ( $out_fh, $out_path ) = File::Temp::tempfile( UNLINK => 1, SUFFIX => '.out' );
+        close $out_fh;
+        my $pid = system( 1, qq{"$run" > "$out_path" 2>&1} );
+        die "Cannot spawn $run: $!" if $pid < 0;
+        my $elapsed = 0;
+        while ( 1 ) {
+            my $kid = waitpid( $pid, 1 );
+            last if $kid == $pid;
+            if ( $elapsed >= $timeout ) {
+                `taskkill /F /T /PID $pid 2>NUL`;
+                waitpid( $pid, 0 );
+                die "TIMEOUT\n";
+            }
+            select( undef, undef, undef, 0.1 );
+            $elapsed += 0.1;
+        }
+        open my $fh, '<:raw', $out_path or die "Cannot read $out_path: $!";
+        local $/;
+        my $out = <$fh>;
+        close $fh;
+        return $out;
+    }
+    else {
+        my $output = eval {
+            local $SIG{ALRM} = sub { die "TIMEOUT\n" };
+            alarm($timeout);
+            open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
+            local $/;
+            my $out = <$fh>;
+            close $fh;
+            alarm(0);
+            $out;
+        };
+        my $err = $@;
+        alarm(0);
+        die $err if $err;
+        return $output;
+    }
 }
 1;

@@ -503,20 +503,22 @@ class Brocken::Target::Architecture::ARM64 : isa(Brocken::Target) {
 }
 
 class Brocken::Target::Architecture::ARM64::Emit {
-    state $REG_MAP = {
-        x0  => 0,  x1  => 1,  x2  => 2,  x3  => 3,  x4  => 4,  x5  => 5,  x6  => 6,  x7  => 7,
-        x8  => 8,  x9  => 9,  x10 => 10, x11 => 11, x12 => 12, x13 => 13, x14 => 14, x15 => 15,
-        x16 => 16, x17 => 17, x18 => 18, x19 => 19, x20 => 20, x21 => 21, x22 => 22, x23 => 23,
-        x24 => 24, x25 => 25, x26 => 26, x27 => 27, x28 => 28, x29 => 29, x30 => 30, sp  => 31,
-        xzr => 31, rsp => 31,
-        d0  => 0,  d1  => 1,  d2  => 2,  d3  => 3,  d4  => 4,  d5  => 5,  d6  => 6,  d7  => 7,
-        d8  => 8,  d9  => 9,  d10 => 10, d11 => 11, d12 => 12, d13 => 13, d14 => 14, d15 => 15,
-        rax => 0,  rcx => 1,  rdx => 2,  rbx => 3,  rsi => 6,  rdi => 7,  r8  => 8,  r9  => 9,
-        r10 => 10, r11 => 11, r14 => 28,
-        w0  => 0,  w1  => 1,  w2  => 2,  w3  => 3,  w4  => 4,  w5  => 5,  w6  => 6,  w7  => 7,
-        w8  => 8,  w9  => 9,  w10 => 10, w11 => 11, w12 => 12, w13 => 13, w14 => 14, w15 => 15,
-        w16 => 16, w17 => 17, w18 => 18, w19 => 19, w20 => 20, w21 => 21, w22 => 22, w23 => 23,
-        w24 => 24, w25 => 25, w26 => 26, w27 => 27, w28 => 28, w29 => 29, w30 => 30, wzr => 31
+    use constant {
+        REG_MAP => {
+            x0  => 0,  x1  => 1,  x2  => 2,  x3  => 3,  x4  => 4,  x5  => 5,  x6  => 6,  x7  => 7,
+            x8  => 8,  x9  => 9,  x10 => 10, x11 => 11, x12 => 12, x13 => 13, x14 => 14, x15 => 15,
+            x16 => 16, x17 => 17, x18 => 18, x19 => 19, x20 => 20, x21 => 21, x22 => 22, x23 => 23,
+            x24 => 24, x25 => 25, x26 => 26, x27 => 27, x28 => 28, x29 => 29, x30 => 30, sp  => 31,
+            xzr => 31, rsp => 31,
+            d0  => 0,  d1  => 1,  d2  => 2,  d3  => 3,  d4  => 4,  d5  => 5,  d6  => 6,  d7  => 7,
+            d8  => 8,  d9  => 9,  d10 => 10, d11 => 11, d12 => 12, d13 => 13, d14 => 14, d15 => 15,
+            rax => 0,  rcx => 1,  rdx => 2,  rbx => 3,  rsi => 6,  rdi => 7,  r8  => 8,  r9  => 9,
+            r10 => 10, r11 => 11, r14 => 28,
+            w0  => 0,  w1  => 1,  w2  => 2,  w3  => 3,  w4  => 4,  w5  => 5,  w6  => 6,  w7  => 7,
+            w8  => 8,  w9  => 9,  w10 => 10, w11 => 11, w12 => 12, w13 => 13, w14 => 14, w15 => 15,
+            w16 => 16, w17 => 17, w18 => 18, w19 => 19, w20 => 20, w21 => 21, w22 => 22, w23 => 23,
+            w24 => 24, w25 => 25, w26 => 26, w27 => 27, w28 => 28, w29 => 29, w30 => 30, wzr => 31
+        },
     };
     field $code : reader = '';
     field %labels;
@@ -525,8 +527,8 @@ class Brocken::Target::Architecture::ARM64::Emit {
 
     method reg($r) {
         my $name = lc( $r // '' );
-        die "Unknown ARM64 register: $r" unless exists $REG_MAP->{$name};
-        return $REG_MAP->{$name};
+        die "Unknown ARM64 register: $r" unless exists REG_MAP->{$name};
+        return REG_MAP->{$name};
     }
     method label($key)        { $labels{$key} // () }
     method ret ()             { $code .= pack( 'L<', 0xD65F03C0 ) }
@@ -556,13 +558,17 @@ class Brocken::Target::Architecture::ARM64::Emit {
             $code .= pack( 'L<', 0xAA0003E0 | ( $rs << 16 ) | $rd );
         }
     }
+
     method push_reg($reg) {
         my $r = $self->reg($reg);
-        $code .= pack( 'L<', 0xF81F0FE0 | $r );
+        $code .= pack( 'L<', 0xD10043FF );                     # SUB SP, SP, #16
+        $code .= pack( 'L<', 0xF90003E0 | $r );                # STR Xt, [SP]
     }
-    method pop_reg($reg)  {
+
+    method pop_reg($reg) {
         my $r = $self->reg($reg);
-        $code .= pack( 'L<', 0xF84107E0 | $r );
+        $code .= pack( 'L<', 0xF94003E0 | $r );                # LDR Xt, [SP]
+        $code .= pack( 'L<', 0x910043FF );                     # ADD SP, SP, #16
     }
 
     method add_imm ( $reg, $imm ) {
@@ -579,24 +585,14 @@ class Brocken::Target::Architecture::ARM64::Emit {
         my $rd  = $self->reg($d);
         my $rs1 = $self->reg($s1);
         my $rs2 = defined $s2 ? $self->reg($s2) : $rd;
-        if ( $rd == 31 || $rs1 == 31 ) {
-            $code .= pack( 'L<', 0x8B206000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
-        }
-        else {
-            $code .= pack( 'L<', 0x8B000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
-        }
+        $code .= pack( 'L<', 0x8B000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
     }
 
     method sub_reg ( $d, $s1, $s2 = undef ) {
         my $rd  = $self->reg($d);
         my $rs1 = $self->reg($s1);
         my $rs2 = defined $s2 ? $self->reg($s2) : $rd;
-        if ( $rd == 31 || $rs1 == 31 ) {
-            $code .= pack( 'L<', 0xCB206000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
-        }
-        else {
-            $code .= pack( 'L<', 0xCB000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
-        }
+        $code .= pack( 'L<', 0xCB000000 | ( $rs2 << 16 ) | ( $rs1 << 5 ) | $rd );
     }
 
     method mul_reg ( $d, $s1, $s2 = undef ) {
@@ -650,13 +646,11 @@ class Brocken::Target::Architecture::ARM64::Emit {
         if ( !defined $amt ) { $amt = $s; $s = $d }
         $self->lsr_imm( $d, $s, $amt );
     }
-    method lsr_reg_imm ( $d, $s, $amt ) { $self->lsr_imm( $d, $s, $amt ) }
 
     method cmp_reg_imm ( $reg, $imm ) {
         my $r = $self->reg($reg);
         $code .= pack( 'L<', 0xF1000000 | ( ( $imm & 0xFFF ) << 10 ) | ( $r << 5 ) | 31 );
     }
-    method cmp_reg_imm_32 ( $r, $imm ) { $self->cmp_reg_imm( $r, $imm ) }
 
     method cmp_reg_reg ( $l, $r ) {
         my $rl = $self->reg($l);
@@ -671,94 +665,43 @@ class Brocken::Target::Architecture::ARM64::Emit {
     }
 
     method setcc ( $cc, $r ) {
-        my $ri = $self->reg($r);
+        my $rd = $self->reg($r);
         my $inv_cond = $cc ^ 1;
-        $code .= pack( 'L<', 0x1A9F07E0 | ( $inv_cond << 12 ) | $ri );
+        $code .= pack( 'L<', 0x9A9F07E0 | ( $inv_cond << 12 ) | $rd );
     }
 
     method load_reg_mem( $dest, $src, $disp = 0 ) {
         my $d = $self->reg($dest);
         my $s = $self->reg($src);
-        if ( $s == 31 ) {
-            $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( 31 << 5 ) | $d );
-        }
-        else {
+        if ( $disp >= 0 ) {
             $code .= pack( 'L<', 0xF9400000 | ( ( $disp >> 3 ) << 10 ) | ( $s << 5 ) | $d );
         }
-    }
-
-    method ldur_reg_mem( $dest, $src, $disp = 0 ) {
-        my $d = $self->reg($dest);
-        my $s = $self->reg($src);
-        $code .= pack( 'L<', 0xF8400000 | ( ( $disp & 0x1FF ) << 12 ) | ( $s << 5 ) | $d );
-    }
-
-    method ldxr_reg ( $t, $n ) {
-        my $rt = $self->reg($t);
-        my $rn = $self->reg($n);
-        $code .= pack( 'L<', 0xC85F7C00 | ( $rn << 5 ) | $rt );
-    }
-
-    method stxr_reg ( $s, $t, $n ) {
-        my $rs = $self->reg($s);
-        my $rt = $self->reg($t);
-        my $rn = $self->reg($n);
-        $code .= pack( 'L<', 0xC8007C00 | ( $rn << 5 ) | ( $rs << 16 ) | $rt );
+        else {
+            $code .= pack( 'L<', 0xF8400000 | ( ( $disp & 0x1FF ) << 12 ) | ( $s << 5 ) | $d );
+        }
     }
 
     method load_reg_mem_byte( $dest, $src, $disp = 0 ) {
         my $d = $self->reg($dest);
         my $s = $self->reg($src);
-        if ( $s == 31 ) {
-            $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( 31 << 5 ) | $d );
-        }
-        else {
-            $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( $s << 5 ) | $d );
-        }
+        $code .= pack( 'L<', 0x39400000 | ( $disp << 10 ) | ( $s << 5 ) | $d );
     }
 
     method store_mem_disp_reg( $base, $disp, $src ) {
         my $b = $self->reg($base);
         my $s = $self->reg($src);
-        if ( $b == 31 ) {
-            $code .= pack( 'L<', 0xF9000000 | ( ( $disp >> 3 ) << 10 ) | ( 31 << 5 ) | $s );
-        }
-        else {
+        if ( $disp >= 0 ) {
             $code .= pack( 'L<', 0xF9000000 | ( ( $disp >> 3 ) << 10 ) | ( $b << 5 ) | $s );
-        }
-    }
-
-    method stur_mem_disp_reg( $base, $disp, $src ) {
-        my $b = $self->reg($base);
-        my $s = $self->reg($src);
-        if ( $b == 31 ) {
-            $code .= pack( 'L<', 0xF8000000 | ( ( $disp & 0x1FF ) << 12 ) | ( 31 << 5 ) | $s );
         }
         else {
             $code .= pack( 'L<', 0xF8000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
         }
     }
 
-    method sturb_mem_disp_reg( $base, $disp, $src ) {
-        my $b = $self->reg($base);
-        my $s = $self->reg($src);
-        if ( $b == 31 ) {
-            $code .= pack( 'L<', 0x38000000 | ( ( $disp & 0x1FF ) << 12 ) | ( 31 << 5 ) | $s );
-        }
-        else {
-            $code .= pack( 'L<', 0x38000000 | ( ( $disp & 0x1FF ) << 12 ) | ( $b << 5 ) | $s );
-        }
-    }
-
     method store_mem_disp_byte( $base, $disp, $src ) {
         my $b = $self->reg($base);
         my $s = $self->reg($src);
-        if ( $b == 31 ) {
-            $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( 31 << 5 ) | $s );
-        }
-        else {
-            $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( $b << 5 ) | $s );
-        }
+        $code .= pack( 'L<', 0x39000000 | ( $disp << 10 ) | ( $b << 5 ) | $s );
     }
 
     method lea_reg_disp ( $d, $b, $disp ) {
@@ -774,29 +717,37 @@ class Brocken::Target::Architecture::ARM64::Emit {
         $self->store_mem_disp_byte( 'x9', 0, 'w8' );
     }
 
-    method lea_rva ( $reg, $target_rva, $text_rva = 0 ) {
+    method lea_rva ( $reg, $target, $text_rva = 0 ) {
         my $r = $self->reg($reg);
-        if ( $target_rva =~ /^DATA:(\d+)$/ ) {
-            push @fixups, { offset => length($code), target => $1, type => 'adrp_data', reg => $r };
+        if ( $target =~ /^(DATA|TEXT):(\d+)$/i ) {
+            my $prefix = uc $1;
+            push @fixups, { offset => length($code), target => [ $prefix, $2 ], type => 'adrp', reg => $r };
             $code .= pack( 'L<', 0x90000000 | $r );
+            push @fixups, { offset => length($code), target => [ $prefix, $2 ], type => 'add_page', reg => $r };
             $code .= pack( 'L<', 0x91000000 | ( $r << 5 ) | $r );
-            return;
         }
-        my $off = ( $target_rva =~ /^\d+$/ ) ? $target_rva - ( $text_rva + length($code) ) : 0;
-        push @fixups, { offset => length($code), target => $target_rva, type => 'adr', reg => $r } if $target_rva !~ /^\d+$/;
-        my $immlo = $off & 0x3;
-        my $immhi = ( $off >> 2 ) & 0x7FFFF;
-        $code .= pack( 'L<', 0x10000000 | ( $immlo << 29 ) | ( $immhi << 5 ) | $r );
+        elsif ( $target =~ /^([A-Z_]\w*)$/i ) {
+            push @fixups, { offset => length($code), target => $target, type => 'adrp', reg => $r };
+            $code .= pack( 'L<', 0x90000000 | $r );
+            push @fixups, { offset => length($code), target => $target, type => 'add_page', reg => $r };
+            $code .= pack( 'L<', 0x91000000 | ( $r << 5 ) | $r );
+        }
+        else {
+            my $off = $target - ( $text_rva + length($code) );
+            my $immlo = $off & 0x3;
+            my $immhi = ( $off >> 2 ) & 0x7FFFF;
+            $code .= pack( 'L<', 0x10000000 | ( $immlo << 29 ) | ( $immhi << 5 ) | $r );
+        }
     }
 
     method call_rva ( $target_rva, $text_rva ) {
         $self->lea_rva( 'x16', $target_rva, $text_rva );
-        $code .= pack( 'L<', 0xF9400000 | ( 16 << 5 ) | 16 );
-        $code .= pack( 'L<', 0xD63F0200 );
+        $code .= pack( 'L<', 0xF9400200 | ( 16 << 5 ) | 16 );
+        $code .= pack( 'L<', 0xD63F0200 | ( 16 << 5 ) );
     }
 
     method call_label ($label) {
-        push @fixups, { offset => length($code), target => $label, type => 'call' };
+        push @fixups, { offset => length($code), target => $label, type => 'uncond_bl' };
         $code .= pack( 'L<', 0x94000000 );
     }
 
@@ -807,20 +758,29 @@ class Brocken::Target::Architecture::ARM64::Emit {
     }
 
     method syscall( $os = '' ) {
-        if ( $os eq 'macos' ) { $code .= pack( 'L<', 0xD4001001 ) }
-        else                  { $code .= pack( 'L<', 0xD4000001 ) }
+        if ( $os eq 'macos' ) {
+            $code .= pack( 'L<', 0xD4000001 );
+        }
+        else {
+            $code .= pack( 'L<', 0xD4000001 );
+            if ( $os eq 'openbsd' ) {
+                $code .= pack( 'L<', 0x14000002 );
+                $code .= pack( 'L<', 0xD4200000 );
+            }
+        }
     }
 
     method jcc ( $cc, $label ) {
-        push @fixups, { offset => length($code), target => $label, type => 'cond', cc => $cc };
+        push @fixups, { offset => length($code), target => $label, type => 'cond_b_cc', cc => $cc };
         $code .= pack( 'L<', 0x54000000 | $cc );
     }
 
     method jmp ($label) {
-        push @fixups, { offset => length($code), target => $label, type => 'uncond' };
+        push @fixups, { offset => length($code), target => $label, type => 'uncond_b' };
         $code .= pack( 'L<', 0x14000000 );
     }
     method mark_label ($name) { $labels{$name} = length $code }
+    method halt ()            { $code .= pack( 'L<', 0xD4200000 ) }
 
     method fadd_reg ( $d, $s1, $s2 ) {
         my ( $rd, $rs1, $rs2 ) = ( $self->reg($d), $self->reg($s1), $self->reg($s2) );
@@ -904,47 +864,40 @@ class Brocken::Target::Architecture::ARM64::Emit {
 
     method resolve ( $text_rva, $data_rva ) {
         for (@fixups) {
+            my $fixup = $_;
             my $target_off;
-            if ( $_->{type} ne 'adrp_data' ) {
-                $target_off = $labels{ $_->{target} }
-                    // ( ( $_->{type} eq 'adr' && $_->{target} =~ /^\d+$/ ) ? undef : die "Undefined label: $_->{target}" );
+            if ( ref $fixup->{target} eq 'ARRAY' ) {
+                my ( $prefix, $num ) = @{ $fixup->{target} };
+                $target_off = $prefix eq 'DATA' ? $data_rva + $num : $num;
             }
-            if ( $_->{type} eq 'cond' ) {
-                my $off   = ( $target_off - $_->{offset} ) / 4;
-                my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
+            else {
+                $target_off = $labels{ $fixup->{target} };
+                die "Undefined target label: $fixup->{target}" unless defined $target_off;
+            }
+            my $off = ( $target_off - $fixup->{offset} ) / 4;
+            my $instr = unpack( 'L<', substr( $code, $fixup->{offset}, 4 ) );
+            if ( $fixup->{type} eq 'cond_b_cc' ) {
                 $instr |= ( $off & 0x7FFFF ) << 5;
-                substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
             }
-            elsif ( $_->{type} eq 'call' || $_->{type} eq 'uncond' ) {
-                my $off   = ( $target_off - $_->{offset} ) / 4;
-                my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
+            elsif ( $fixup->{type} eq 'cbnz' ) {
+                $instr |= ( $off & 0x7FFFF ) << 5;
+            }
+            elsif ( $fixup->{type} eq 'uncond_b' || $fixup->{type} eq 'uncond_bl' ) {
                 $instr |= ( $off & 0x3FFFFFF );
-                substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
             }
-            elsif ( $_->{type} eq 'cbnz' ) {
-                my $off   = ( $target_off - $_->{offset} ) / 4;
-                my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
-                $instr |= ( $off & 0x7FFFF ) << 5;
-                substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
+            elsif ( $fixup->{type} eq 'adrp' ) {
+                my $target_page = $target_off & ~0xFFF;
+                my $source_page = $fixup->{offset} & ~0xFFF;
+                my $page_delta  = ( $target_page - $source_page ) >> 12;
+                my $immlo       = $page_delta & 0x3;
+                my $immhi       = ( $page_delta >> 2 ) & 0x7FFFF;
+                $instr |= ( $immlo << 29 ) | ( $immhi << 5 );
             }
-            elsif ( $_->{type} eq 'adr' ) {
-                my $off   = ( $target_off - $_->{offset} );
-                my $instr = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
-                $instr |= ( ( $off & 0x3 ) << 29 ) | ( ( ( $off >> 2 ) & 0x7FFFF ) << 5 );
-                substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
+            elsif ( $fixup->{type} eq 'add_page' ) {
+                my $page_offset = $target_off & 0xFFF;
+                $instr |= ( $page_offset << 10 );
             }
-            elsif ( $_->{type} eq 'adrp_data' ) {
-                my $trva   = $data_rva + $_->{target};
-                my $pc     = $text_rva + $_->{offset};
-                my $p_diff = ( $trva & ~0xFFF ) - ( $pc & ~0xFFF );
-                my $imm    = $p_diff >> 12;
-                my $instr  = unpack( 'L<', substr( $code, $_->{offset}, 4 ) );
-                $instr |= ( ( $imm & 0x3 ) << 29 ) | ( ( $imm & 0x1FFFFC ) << 3 );
-                substr( $code, $_->{offset}, 4, pack( 'L<', $instr ) );
-                my $instr2 = unpack( 'L<', substr( $code, $_->{offset} + 4, 4 ) );
-                $instr2 |= ( $trva & 0xFFF ) << 10;
-                substr( $code, $_->{offset} + 4, 4, pack( 'L<', $instr2 ) );
-            }
+            substr( $code, $fixup->{offset}, 4, pack( 'L<', $instr ) );
         }
     }
 }

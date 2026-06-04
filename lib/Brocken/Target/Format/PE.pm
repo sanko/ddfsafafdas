@@ -85,15 +85,25 @@ class Brocken::Target::Format::PE : isa(Brocken::Target::Format) {
         my ( $pdata_data, $xdata_data ) = ( '', '' );
         my $pdata_rva  = 0;
         my $pdata_size = 0;
-        if ( $os eq 'win64' && $arch eq 'x64' && $self->func_ranges && @{ $self->func_ranges } ) {
-            warn "PE: Building .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n" if $ENV{BROCKEN_JIT_DEBUG};
-            warn "PE: building SEH...\n"                                                          if $ENV{BROCKEN_JIT_DEBUG};
-            $xdata_data               = $self->_build_xdata;
-            $pdata_data               = $self->_build_pdata( $l->get('.text')->{rva}, $l->get('.xdata')->{rva} );
-            $l->get('.pdata')->{size} = length($pdata_data);
-            $l->get('.xdata')->{size} = length($xdata_data);
-            $pdata_rva                = $l->get('.pdata')->{rva};
-            $pdata_size               = length($pdata_data);
+        if ( $os eq 'win64' && $self->func_ranges && @{ $self->func_ranges } ) {
+            if ( $arch eq 'x64' ) {
+                warn "PE: Building .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n" if $ENV{BROCKEN_JIT_DEBUG};
+                warn "PE: building SEH...\n"                                                          if $ENV{BROCKEN_JIT_DEBUG};
+                $xdata_data               = $self->_build_xdata;
+                $pdata_data               = $self->_build_pdata( $l->get('.text')->{rva}, $l->get('.xdata')->{rva} );
+                $l->get('.pdata')->{size} = length($pdata_data);
+                $l->get('.xdata')->{size} = length($xdata_data);
+                $pdata_rva                = $l->get('.pdata')->{rva};
+                $pdata_size               = length($pdata_data);
+            }
+            elsif ( $arch eq 'arm64' ) {
+                warn "PE: Building ARM64 .pdata for " . scalar( @{ $self->func_ranges } ) . " functions.\n" if $ENV{BROCKEN_JIT_DEBUG};
+                ( $pdata_data, $xdata_data ) = $self->_build_arm64_pdata( $l->get('.text')->{rva}, $l->get('.xdata')->{rva} );
+                $l->get('.pdata')->{size} = length($pdata_data);
+                $l->get('.xdata')->{size} = length($xdata_data);
+                $pdata_rva                = $l->get('.pdata')->{rva};
+                $pdata_size               = length($pdata_data);
+            }
         }
         if ( $ENV{BROCKEN_JIT_DEBUG} ) {
             for my $s ( $l->sections ) {
@@ -318,6 +328,20 @@ class Brocken::Target::Format::PE : isa(Brocken::Target::Format) {
             $data .= pack( 'L< L< L<', $text_rva + $fn->{start}, $text_rva + ( $fn->{end} // ( $fn->{start} + 1 ) ), $xdata_rva );
         }
         return $data;
+    }
+
+    method _build_arm64_pdata ( $text_rva, $xdata_rva ) {
+        my $pdata = '';
+        my $xdata = '';
+        my $xdata_off = 0;
+        for my $fn ( sort { $a->{start} <=> $b->{start} } @{ $self->func_ranges } ) {
+            my $start = $text_rva + $fn->{start};
+            my $xdata_rva_entry = $xdata_rva + $xdata_off;
+            $pdata .= pack( 'L< L<', $start, $xdata_rva_entry | 3 );
+            $xdata .= pack( 'C C C C', 0, 0, 0, 0 );
+            $xdata_off += 4;
+        }
+        return ( $pdata, $xdata );
     }
 
     method _build_edata_raw( $base_rva, $filename ) {
