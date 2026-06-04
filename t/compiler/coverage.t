@@ -18,8 +18,11 @@ sub compile_and_capture_coverage {
         return ( undef, undef, undef, $err );
     }
     my $stderr_file = "cov_$$.bin";
-    my $stdout      = `"$exe" 2>"$stderr_file"`;
-    my $status      = $?;
+    local $SIG{ALRM} = sub { die "TIMEOUT\n" };
+    alarm(30);
+    my $stdout = eval { `"$exe" 2>"$stderr_file"` };
+    my $status = $?;
+    alarm(0);
     my $stderr      = '';
     if ( -e $stderr_file ) {
         open my $fh2, '<:raw', $stderr_file or warn "Cannot open $stderr_file: $!";

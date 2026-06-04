@@ -36,18 +36,7 @@ sub test_brocken (%args) {
     if ( $os ne 'win64' && $exe !~ m{^/} && $exe !~ m{^\./} ) {
         $run = './' . $exe;
     }
-    my $output = eval {
-        local $SIG{ALRM} = sub { die "TIMEOUT\n" };
-        alarm($timeout);
-        open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
-        local $/;
-        my $out = <$fh>;
-        close $fh;
-        alarm(0);
-        $out;
-    };
-    my $err = $@;
-    alarm(0);
+    my ( $output, $err ) = _run_with_timeout( $run, $timeout );
     if ($err) {
         Test2::V0::fail("$name - execution failed: $err") if $name;
         return ( undef, "execution: $err" );
@@ -64,6 +53,53 @@ sub test_brocken (%args) {
         Test2::V0::is( $output, $expected, $name );
     }
     return ( $output, undef );
+}
+
+sub _run_with_timeout { my ( $run, $timeout ) = @_;
+    if ( $^O eq 'MSWin32' ) {
+        require Time::HiRes;
+        require POSIX;
+        my $tmp_out = File::Temp->new( UNLINK => 1, SUFFIX => '.out', EXLOCK => 0 );
+        my $out_path = $tmp_out->filename;
+        close $tmp_out;
+        my $pid = system( 1, "cmd /c \"$run\" > \"$out_path\" 2>&1" );
+        return ( undef, "spawn failed" ) if !defined($pid) || $pid <= 0;
+        my $start = time;
+        my $done;
+        while ( time - $start < $timeout ) {
+            Time::HiRes::sleep(0.1);
+            my $ret = waitpid( $pid, &POSIX::WNOHANG );
+            if ( $ret == $pid || $ret == -1 ) {
+                $done = 1;
+                last;
+            }
+        }
+        if ( !$done ) {
+            system( 1, "taskkill /F /T /PID $pid 2>nul" );
+            waitpid( $pid, 0 );
+            return ( undef, "TIMEOUT" );
+        }
+        open my $fh, '<:raw', $out_path or return ( undef, "cannot read output: $!" );
+        local $/;
+        my $out = <$fh>;
+        close $fh;
+        return ( $out, undef );
+    }
+    else {
+        local $SIG{ALRM} = sub { die "TIMEOUT\n" };
+        alarm($timeout);
+        open my $fh, '-|', "$run 2>&1" or die "Cannot run $run: $!";
+        my $out;
+        while (1) {
+            my $buf;
+            my $n = sysread( $fh, $buf, 65536 );
+            last if !defined($n) || $n == 0;
+            $out .= $buf;
+        }
+        close $fh;
+        alarm(0);
+        return ( $out, undef );
+    }
 }
 
 sub make_fake_funcs {
