@@ -3,6 +3,7 @@ jobs:
   build:
     name: "${{ inputs.title != '' && inputs.title || (inputs.flags == '-Dusethreads' && 'Strawberry' || 'Default') }}"
     runs-on: '${{ inputs.os }}'
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5.0.0
         with:
