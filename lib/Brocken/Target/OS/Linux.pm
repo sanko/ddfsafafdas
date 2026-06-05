@@ -1,23 +1,22 @@
 use v5.40;
 use feature 'class';
-no warnings 'experimental::class';
+no warnings 'portable', 'experimental::class';
 
 class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
     method format_name() {'ELF'}
 
     method emit_intrinsic( $target, $as, $inst, $reg_map, $driver ) {
-        my $op   = $inst->{op};
-        my $v    = sub { $target->val( $reg_map, shift ) };
-        my $arch = $driver->arch;
-        my $os   = $driver->os;
-
-        my $SYS_write = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 1 : 64 ) : 4;
+        my $op        = $inst->{op};
+        my $v         = sub { $target->val( $reg_map, shift ) };
+        my $arch      = $driver->arch;
+        my $os        = $driver->os;
+        my $SYS_write = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 1  : 64 ) : 4;
         my $SYS_exit  = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 60 : 93 ) : 1;
         my $SYS_open  = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 2  : 56 ) : 5;
         my $SYS_close = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 3  : 57 ) : 6;
         my $SYS_read  = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 0  : 63 ) : 3;
-        my $SYS_mmap  = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 9  : 222 ) : ( ( $os eq 'freebsd' || $os eq 'dragonfly' ) ? 477 : 197 );
-
+        my $SYS_mmap  = ( $os eq 'linux' || $arch eq 'riscv64' ) ? ( ( $arch eq 'x64' ) ? 9  : 222 ) :
+            ( ( $os eq 'freebsd' || $os eq 'dragonfly' ) ? 477 : 197 );
         my $MAP_FLAGS = ( $os eq 'linux' ) ? 0x22 : 0x1002;
 
         if ( $op eq 'intrinsic_alloc' ) {
@@ -30,7 +29,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'rdx', 3 );
                 $as->mov_imm( 'r10', $MAP_FLAGS );
                 $as->mov_imm( 'r8',  -1 );
-                $as->mov_imm( 'r9',  0 );
+                $as->mov_imm( 'r9',   0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
@@ -42,7 +41,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'x2', 3 );
                 $as->mov_imm( 'x3', $MAP_FLAGS );
                 $as->mov_imm( 'x4', -1 );
-                $as->mov_imm( 'x5', 0 );
+                $as->mov_imm( 'x5',  0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'x0' );
             }
@@ -54,7 +53,7 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'a2', 3 );
                 $as->mov_imm( 'a3', $MAP_FLAGS );
                 $as->mov_imm( 'a4', -1 );
-                $as->mov_imm( 'a5', 0 );
+                $as->mov_imm( 'a5',  0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'a0' );
             }
@@ -138,7 +137,6 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
                 $as->syscall();
                 $as->load_reg_mem( 'rax', 'rsp', 0 );
                 $as->add_imm( 'rsp', 16 );
-
                 $as->mov_imm( 'r10', 10000000 );
                 $as->mul_reg( 'rax', 'r10' );
                 $as->mov_imm( 'r11', 116444736000000000 );
@@ -271,6 +269,8 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 1 );
                 $as->mov_imm( 'x8', $SYS_write );
@@ -298,6 +298,8 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 2 );
                 $as->mov_imm( 'x8', $SYS_write );
@@ -659,13 +661,11 @@ class Brocken::Target::OS::Linux : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x16', 'x0' );
                 $as->ldur_reg_mem( 'x17', 'x28', $driver->iso_offset('current_fcb') );
-
                 $as->lea_reg_disp( 'x15', 'sp', 0 );
                 $as->stur_mem_disp_reg( 'x17', $driver->fcb_offset('sp'),          'x15' );
                 $as->stur_mem_disp_reg( 'x16', $driver->fcb_offset('caller'),      'x17' );
                 $as->stur_mem_disp_reg( 'x28', $driver->iso_offset('current_fcb'), 'x16' );
                 $as->ldur_reg_mem( 'x15', 'x16', $driver->fcb_offset('sp') );
-
                 $as->lea_reg_disp( 'sp', 'x15', 0 );
                 $as->mov_reg( 'x0', 'x1' );
             }

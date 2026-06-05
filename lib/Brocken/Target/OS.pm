@@ -274,8 +274,9 @@ class Brocken::Target::OS {
             return 'x64';
         }
     }
-    method text_rva () { return 0; }
-    method data_rva () { return 0; }
+    method shadow_space () { return 0; }
+    method text_rva ()     { return 0; }
+    method data_rva ()     { return 0; }
 
     method write_syscall_args ( $as, $arch, $data_rva, $off, $text_rva, $len ) {
         if ( $arch eq 'arm64' ) {

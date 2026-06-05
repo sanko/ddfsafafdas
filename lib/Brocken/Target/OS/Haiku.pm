@@ -12,19 +12,18 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
 
         # Standard recent Haiku kernel syscalls mappings.
         # Haiku breaks ABIs frequently. Ideally, one uses libroot FFI mappings.
-        my $SYS_exit          = 33;  # _kern_exit_team
-        my $SYS_open          = 104; # _kern_open
-        my $SYS_read          = 111; # _kern_read
-        my $SYS_write         = 112; # _kern_write
-        my $SYS_close         = 114; # _kern_close
-        my $SYS_fstat         = 127; # _kern_read_stat
-        my $SYS_nanosleep     = 143; # _kern_snooze_etc
-        my $SYS_mmap          = 159; # _kern_map_file / _kern_create_area mapping
-        my $SYS_getpid        = 31;  # _kern_get_current_team
+        my $SYS_exit      = 33;     # _kern_exit_team
+        my $SYS_open      = 104;    # _kern_open
+        my $SYS_read      = 111;    # _kern_read
+        my $SYS_write     = 112;    # _kern_write
+        my $SYS_close     = 114;    # _kern_close
+        my $SYS_fstat     = 127;    # _kern_read_stat
+        my $SYS_nanosleep = 143;    # _kern_snooze_etc
+        my $SYS_mmap      = 159;    # _kern_map_file / _kern_create_area mapping
+        my $SYS_getpid    = 31;     # _kern_get_current_team
 
         # Haiku specific mmap parameters. Best-effort adaptation.
         my $MAP_FLAGS = 0x1002;
-
         if ( $op eq 'intrinsic_alloc' ) {
             my $d = $reg_map->{ $inst->{dest} };
             if ( $arch eq 'x64' ) {
@@ -35,7 +34,7 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'rdx', 3 );
                 $as->mov_imm( 'r10', $MAP_FLAGS );
                 $as->mov_imm( 'r8',  -1 );
-                $as->mov_imm( 'r9',  0 );
+                $as->mov_imm( 'r9',   0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
@@ -47,7 +46,7 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'x2', 3 );
                 $as->mov_imm( 'x3', $MAP_FLAGS );
                 $as->mov_imm( 'x4', -1 );
-                $as->mov_imm( 'x5', 0 );
+                $as->mov_imm( 'x5',  0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'x0' );
             }
@@ -103,10 +102,12 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
             }
         }
         elsif ( $op eq 'intrinsic_get_system_filetime' ) {
+
             # Haiku fallback: return 0 for now as proper system_time requires _kern_system_time conversions
             $as->mov_imm( $reg_map->{ $inst->{dest} }, 0 );
         }
         elsif ( $op eq 'intrinsic_get_module_filename' ) {
+
             # Haiku fallback: return 0 (fail gracefully, FFI APIs needed)
             $as->mov_imm( $reg_map->{ $inst->{dest} }, 0 );
         }
@@ -153,6 +154,8 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 1 );
                 $as->mov_imm( 'x8', $SYS_write );
@@ -172,6 +175,8 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 2 );
                 $as->mov_imm( 'x8', $SYS_write );
@@ -235,7 +240,7 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
                 $as->load_reg_mem_byte( 'rax', $mode, 16 );
                 $as->cmp_reg_imm( 'rax', ord('r') );
                 $as->jcc( $driver->cc('ne'), $l_write );
-                $as->mov_imm( 'rsi', 0 );       # O_RDONLY
+                $as->mov_imm( 'rsi', 0 );    # O_RDONLY
                 $as->mov_imm( 'rdx', 0 );
                 $as->jmp($l_call);
                 $as->mark_label($l_write);
@@ -259,7 +264,7 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'x1', 0x601 );
                 $as->mov_imm( 'x2', 0644 );
                 $as->mark_label($l_call);
-                $as->mov_imm( 'x8', $SYS_open );
+                $as->mov_imm( 'x16', $SYS_open );
                 $as->syscall();
                 $as->mov_reg( $reg_map->{ $inst->{dest} }, 'x0' );
             }
@@ -271,7 +276,7 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
                 $as->mov_reg( 'rsi', 'rsp' );
                 $as->mov_imm( 'rax', $SYS_fstat );
                 $as->syscall();
-                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 48 ); # st_size offset on Haiku typically 48
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 48 );    # st_size offset on Haiku typically 48
                 $as->add_imm( 'rsp', 144 );
             }
             elsif ( $arch eq 'arm64' ) {
@@ -350,8 +355,8 @@ class Brocken::Target::OS::Haiku : isa(Brocken::Target::OS) {
                 $as->stur_mem_disp_reg( 'sp', 0, 'x0' );
                 $as->stur_mem_disp_reg( 'sp', 8, 'x1' );
                 $as->lea_reg_disp( 'x0', 'sp', 0 );
-                $as->mov_imm( 'x1', 0 );
-                $as->mov_imm( 'x8', $SYS_nanosleep );
+                $as->mov_imm( 'x1',  0 );
+                $as->mov_imm( 'x16', $SYS_nanosleep );
                 $as->syscall();
                 $as->add_imm( 'sp', 16 );
             }

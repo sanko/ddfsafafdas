@@ -2208,9 +2208,22 @@ class Brocken::Compiler::Runtime {
         $builder->emit( 'leave_func', 'ptr',  [ $builder->emit( 'local_load', 'ptr', [$ns_p_slot] ) ] );
     }
 
+    method _trace($msg) {
+        return unless $driver->debug >= 4;
+        $builder->emit( 'intrinsic_print_stderr', 'void', [ $builder->emit( 'load_data_addr', 'ptr', [ $data_segment->add_string($msg) ] ) ] );
+    }
+
+    method _trace_reg( $msg, $reg ) {
+        return unless $driver->debug >= 4;
+        $self->_trace($msg);
+        $builder->emit( 'call_func', 'void', [ 'M_print_int', $builder->emit( 'or', 'i64', [ $reg, 1 ] ) ] );
+        $self->_trace("\n");
+    }
+
     method _emit_runtime_init_sub() {
         $builder->emit_label('M_runtime_init');
         $builder->emit( 'enter_func', 'void', [] );
+        $self->_trace("M_runtime_init enter\n");
         my $giso_ptr     = $builder->emit( 'load_data_addr', 'ptr', [ $driver->global_iso_offset ] );
         my $l_done       = $builder->new_label();
         my $l_init       = $builder->new_label();
@@ -2218,6 +2231,7 @@ class Brocken::Compiler::Runtime {
         $builder->emit_cond_br( $builder->emit( 'cmp_ne', 'Int', [ $existing_iso, 0 ] ), $l_done, $l_init );
         $builder->emit_label($l_init);
         my $iso = $builder->emit( 'intrinsic_alloc', 'ptr', [1024] );
+        $self->_trace("M_runtime_init: alloc 1024 ok\n");
         $builder->emit( 'set_isolate_ctx', 'void', [$iso] );
         $builder->emit( 'store_mem_disp',  'void', [ $giso_ptr, 0, $iso ] );
         my $extab_off_ptr = $builder->emit( 'load_data_addr', 'ptr', [ $driver->exception_table_offset ] );
@@ -2230,20 +2244,23 @@ class Brocken::Compiler::Runtime {
         my $rlt_ptr     = $builder->emit( 'add',            'ptr', [ $data_base,   $rlt_off ] );
         $builder->emit( 'store_mem_disp', 'void', [ $rlt_off_ptr, 0, $rlt_ptr ] );
         my $ms = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
+        $self->_trace("M_runtime_init: alloc 1MB ok\n");
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_base'),  $ms ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_ptr'),   $ms ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('mark_stack_limit'), $builder->emit( 'add', 'ptr', [ $ms, 1048576 ] ) ] );
 
         # --- Generational Nursery Initialization (64KB) ---
         my $raw_nursery = $builder->emit( 'intrinsic_alloc', 'ptr', [65536] );
+        $self->_trace("M_runtime_init: nursery 64KB ok\n");
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_base'),  $raw_nursery ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_ptr'),   $raw_nursery ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('nursery_limit'), $builder->emit( 'add', 'ptr', [ $raw_nursery, 65536 ] ) ] );
 
         # --- Tenured Heap Initialization (Two 2MB Semi-Spaces) ---
-        my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4259840] );                     # Padded to prevent out-of-bounds on 64KB alignment
-        my $mask     = $builder->emit( 'constant',        'i64', [ hex("FFFFFFFFFFFF0000") ] );
-        my $hp       = $builder->emit( 'and',             'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, 65535 ] ), $mask ] );
+        my $raw_heap = $builder->emit( 'intrinsic_alloc', 'ptr', [4259840] );    # Padded to prevent out-of-bounds on 64KB alignment
+        $self->_trace("M_runtime_init: heap ok\n");
+        my $mask = $builder->emit( 'constant', 'i64', [ hex("FFFFFFFFFFFF0000") ] );
+        my $hp   = $builder->emit( 'and', 'i64', [ $builder->emit( 'add', 'ptr', [ $raw_heap, 65535 ] ), $mask ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_base'),  $hp ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_ptr'),   $builder->emit( 'add', 'ptr', [ $hp, 1024 ] ) ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('heap_limit'), $builder->emit( 'add', 'ptr', [ $hp, 2097152 ] ) ] );
@@ -2255,12 +2272,14 @@ class Brocken::Compiler::Runtime {
 
         # --- Heap Block Signature ---
         $builder->emit( 'store_mem_disp', 'void', [ $hp, 8, $builder->emit( 'constant', 'i64', [0x424b4e4845415036] ) ] );
+        $self->_trace("M_runtime_init: state table ok\n");
         my $stm = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('state_ptr'), $stm ] );
         my $fcb = $builder->emit( 'call_func', 'ptr', [ 'M_gc_alloc', $builder->emit( 'constant', 'i64', [ 64 | hex("C000000000000000") ] ) ] );
         $builder->emit( 'store_iso_disp', 'void', [ $driver->iso_offset('current_fcb'), $fcb ] );
         $builder->emit( 'store_mem_disp', 'void', [ $iso, $driver->iso_offset('fiber_head'), $fcb ] );
         my $sh = $builder->emit( 'intrinsic_alloc', 'ptr', [1048576] );
+        $self->_trace("M_runtime_init: shadow stack ok\n");
         $builder->emit( 'store_mem_disp', 'void', [ $fcb, $driver->fcb_offset('shadow_base'), $sh ] );
         $builder->emit( 'store_mem_disp', 'void', [ $fcb, $driver->fcb_offset('shadow_ptr'),  $sh ] );
         $builder->emit( 'store_mem_disp', 'void',
@@ -2368,6 +2387,7 @@ class Brocken::Compiler::Runtime {
         }
         $builder->emit_jump($l_done);
         $builder->emit_label($l_done);
+        $self->_trace("M_runtime_init complete\n");
         my $active_iso = $builder->emit( 'load_mem_disp', 'i64', [ $giso_ptr, 0 ] );
         $builder->emit( 'set_isolate_ctx', 'void', [$active_iso] );
         my $curr_fcb = $builder->emit( 'load_iso_disp', 'ptr', [ $driver->iso_offset('current_fcb') ] );

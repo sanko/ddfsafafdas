@@ -16,9 +16,9 @@ package Brocken::Target::Format::Layout {
         method calculate($min_hdr) {
             $header_size = ( $min_hdr + $file_align - 1 ) & ~( $file_align - 1 );
             my $curr_off = $header_size;
+
             # Fix: RVA must mathematically align with file offset on strict formats (Mach-O)
             my $curr_rva = ( $header_size + $section_align - 1 ) & ~( $section_align - 1 );
-
             for my $s (@sections) {
                 $s->{off} = $curr_off;
                 $s->{rva} = $curr_rva;

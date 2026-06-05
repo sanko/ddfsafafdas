@@ -7,10 +7,9 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
     method format_name() {'ELF'}
 
     method emit_intrinsic( $target, $as, $inst, $reg_map, $driver ) {
-        my $op   = $inst->{op};
-        my $v    = sub { $target->val( $reg_map, shift ) };
-        my $arch = $driver->arch;
-
+        my $op                = $inst->{op};
+        my $v                 = sub { $target->val( $reg_map, shift ) };
+        my $arch              = $driver->arch;
         my $SYS_exit          = 1;
         my $SYS_read          = 3;
         my $SYS_write         = 4;
@@ -22,8 +21,7 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
         my $SYS_clock_gettime = 232;
         my $SYS_nanosleep     = 240;
         my $SYS_mmap          = 477;
-
-        my $MAP_FLAGS = 0x1002; # MAP_PRIVATE | MAP_ANON
+        my $MAP_FLAGS         = 0x1002;                                    # MAP_PRIVATE | MAP_ANON
 
         if ( $op eq 'intrinsic_alloc' ) {
             my $d = $reg_map->{ $inst->{dest} };
@@ -35,7 +33,7 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'rdx', 3 );
                 $as->mov_imm( 'r10', $MAP_FLAGS );
                 $as->mov_imm( 'r8',  -1 );
-                $as->mov_imm( 'r9',  0 );
+                $as->mov_imm( 'r9',   0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
@@ -47,7 +45,7 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'x2', 3 );
                 $as->mov_imm( 'x3', $MAP_FLAGS );
                 $as->mov_imm( 'x4', -1 );
-                $as->mov_imm( 'x5', 0 );
+                $as->mov_imm( 'x5',  0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'x0' );
             }
@@ -112,7 +110,6 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->syscall();
                 $as->load_reg_mem( 'rax', 'rsp', 0 );
                 $as->add_imm( 'rsp', 16 );
-
                 $as->mov_imm( 'r10', 10000000 );
                 $as->mul_reg( 'rax', 'r10' );
                 $as->mov_imm( 'r11', 116444736000000000 );
@@ -127,7 +124,6 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->syscall();
                 $as->load_reg_mem( 'x0', 'sp', 0 );
                 $as->add_imm( 'sp', 16 );
-
                 $as->mov_imm( 'x16', 10000000 );
                 $as->mul_reg( 'x0', 'x0', 'x16' );
                 $as->mov_imm( 'x17', 116444736000000000 );
@@ -165,7 +161,7 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->store_mem_disp_reg( 'sp', 8, 'x16' );
                 $as->mov_imm( 'x16', $val1 );
                 $as->store_mem_disp_reg( 'sp', 0, 'x16' );
-                $as->mov_imm( 'x8',  $SYS_readlink );
+                $as->mov_imm( 'x8', $SYS_readlink );
                 $as->lea_reg_disp( 'x0', 'sp', 0 );
                 $as->mov_reg( 'x1', $buf );
                 $as->mov_imm( 'x2', 512 );
@@ -217,6 +213,8 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 1 );
                 $as->mov_imm( 'x8', $SYS_write );
@@ -236,6 +234,8 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
                 $as->mov_imm( 'x0', 2 );
                 $as->mov_imm( 'x8', $SYS_write );
@@ -299,11 +299,11 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->load_reg_mem_byte( 'rax', $mode, 16 );
                 $as->cmp_reg_imm( 'rax', ord('r') );
                 $as->jcc( $driver->cc('ne'), $l_write );
-                $as->mov_imm( 'rsi', 0 );       # O_RDONLY
+                $as->mov_imm( 'rsi', 0 );    # O_RDONLY
                 $as->mov_imm( 'rdx', 0 );
                 $as->jmp($l_call);
                 $as->mark_label($l_write);
-                $as->mov_imm( 'rsi', 0x601 );   # O_WRONLY | O_CREAT | O_TRUNC
+                $as->mov_imm( 'rsi', 0x601 );    # O_WRONLY | O_CREAT | O_TRUNC
                 $as->mov_imm( 'rdx', 0644 );
                 $as->mark_label($l_call);
                 $as->mov_imm( 'rax', $SYS_open );
@@ -323,7 +323,7 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'x1', 0x601 );
                 $as->mov_imm( 'x2', 0644 );
                 $as->mark_label($l_call);
-                $as->mov_imm( 'x8', $SYS_open );
+                $as->mov_imm( 'x16', $SYS_open );
                 $as->syscall();
                 $as->mov_reg( $reg_map->{ $inst->{dest} }, 'x0' );
             }
@@ -335,7 +335,7 @@ class Brocken::Target::OS::FreeBSD : isa(Brocken::Target::OS) {
                 $as->mov_reg( 'rsi', 'rsp' );
                 $as->mov_imm( 'rax', $SYS_fstat );
                 $as->syscall();
-                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 112 ); # st_size offset on FreeBSD
+                $as->load_reg_mem( $reg_map->{ $inst->{dest} }, 'rsp', 112 );    # st_size offset on FreeBSD
                 $as->add_imm( 'rsp', 144 );
             }
             elsif ( $arch eq 'arm64' ) {

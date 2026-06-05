@@ -7,24 +7,22 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
     method format_name() {'MachO'}
 
     method emit_intrinsic( $target, $as, $inst, $reg_map, $driver ) {
-        my $op   = $inst->{op};
-        my $v    = sub { $target->val( $reg_map, shift ) };
-        my $arch = $driver->arch;
-
-        my $SYS_BASE = 0x2000000;
-        my $SYS_exit = $SYS_BASE + 1;
-        my $SYS_read = $SYS_BASE + 3;
-        my $SYS_write = $SYS_BASE + 4;
-        my $SYS_open = $SYS_BASE + 5;
-        my $SYS_close = $SYS_BASE + 6;
-        my $SYS_getpid = $SYS_BASE + 20;
+        my $op                = $inst->{op};
+        my $v                 = sub { $target->val( $reg_map, shift ) };
+        my $arch              = $driver->arch;
+        my $SYS_BASE          = 0x2000000;
+        my $SYS_exit          = $SYS_BASE + 1;
+        my $SYS_read          = $SYS_BASE + 3;
+        my $SYS_write         = $SYS_BASE + 4;
+        my $SYS_open          = $SYS_BASE + 5;
+        my $SYS_close         = $SYS_BASE + 6;
+        my $SYS_getpid        = $SYS_BASE + 20;
         my $SYS_clock_gettime = $SYS_BASE + 116;
-        my $SYS_mmap = $SYS_BASE + 197;
-        my $SYS_nanosleep = $SYS_BASE + 240;
-        my $SYS_fstat64 = $SYS_BASE + 339;
-        my $SYS_proc_pidpath = $SYS_BASE + 348;
-
-        my $MAP_FLAGS = 0x1002;
+        my $SYS_mmap          = $SYS_BASE + 197;
+        my $SYS_nanosleep     = $SYS_BASE + 240;
+        my $SYS_fstat64       = $SYS_BASE + 339;
+        my $SYS_proc_pidpath  = $SYS_BASE + 348;
+        my $MAP_FLAGS         = 0x1002;
 
         if ( $op eq 'intrinsic_alloc' ) {
             my $d = $reg_map->{ $inst->{dest} };
@@ -36,19 +34,19 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
                 $as->mov_imm( 'rdx', 3 );
                 $as->mov_imm( 'r10', $MAP_FLAGS );
                 $as->mov_imm( 'r8',  -1 );
-                $as->mov_imm( 'r9',  0 );
+                $as->mov_imm( 'r9',   0 );
                 $as->syscall();
                 $as->mov_reg( $d, 'rax' );
             }
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_imm( 'x16', $SYS_mmap );
-                $as->mov_imm( 'x0', 0 );
+                $as->mov_imm( 'x0',  0 );
                 if ( $inst->{args}[0] =~ /^%/ ) { $as->mov_reg( 'x1', $reg_map->{ $inst->{args}[0] } ); }
                 else                            { $as->mov_imm( 'x1', $v->( $inst->{args}[0] ) ); }
                 $as->mov_imm( 'x2', 3 );
                 $as->mov_imm( 'x3', $MAP_FLAGS );
                 $as->mov_imm( 'x4', -1 );
-                $as->mov_imm( 'x5', 0 );
+                $as->mov_imm( 'x5',  0 );
                 $as->syscall('macos');
                 $as->mov_reg( $d, 'x0' );
             }
@@ -113,7 +111,6 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
                 $as->syscall();
                 $as->load_reg_mem( 'rax', 'rsp', 0 );
                 $as->add_imm( 'rsp', 16 );
-
                 $as->mov_imm( 'r10', 10000000 );
                 $as->mul_reg( 'rax', 'r10' );
                 $as->mov_imm( 'r11', 116444736000000000 );
@@ -123,12 +120,11 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->sub_imm( 'sp', 16 );
                 $as->mov_imm( 'x16', $SYS_clock_gettime );
-                $as->mov_imm( 'x0', 0 );
+                $as->mov_imm( 'x0',  0 );
                 $as->lea_reg_disp( 'x1', 'sp', 0 );
                 $as->syscall('macos');
                 $as->load_reg_mem( 'x0', 'sp', 0 );
                 $as->add_imm( 'sp', 16 );
-
                 $as->mov_imm( 'x16', 10000000 );
                 $as->mul_reg( 'x0', 'x0', 'x16' );
                 $as->mov_imm( 'x17', 116444736000000000 );
@@ -137,8 +133,8 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             }
         }
         elsif ( $op eq 'intrinsic_get_module_filename' ) {
-            my $d    = $reg_map->{ $inst->{dest} };
-            my $buf  = $reg_map->{ $inst->{args}[0] };
+            my $d   = $reg_map->{ $inst->{dest} };
+            my $buf = $reg_map->{ $inst->{args}[0] };
             if ( $arch eq 'x64' ) {
                 $as->mov_imm( 'rax', $SYS_getpid );
                 $as->syscall();
@@ -154,7 +150,7 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
                 $as->syscall('macos');
                 $as->mov_reg( 'x0', 'x0' );
                 $as->mov_reg( 'x1', $buf );
-                $as->mov_imm( 'x2', 512 );
+                $as->mov_imm( 'x2',  512 );
                 $as->mov_imm( 'x16', $SYS_proc_pidpath );
                 $as->syscall('macos');
                 $as->mov_reg( $d, 'x0' );
@@ -204,8 +200,10 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
-                $as->mov_imm( 'x0', 1 );
+                $as->mov_imm( 'x0',  1 );
                 $as->mov_imm( 'x16', $SYS_write );
                 $as->syscall('macos');
             }
@@ -223,8 +221,10 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             elsif ( $arch eq 'arm64' ) {
                 $as->mov_reg( 'x1', $p );
                 $as->ldur_reg_mem( 'x2', 'x1', 0 );
+                $as->mov_imm( 'x16', hex("FFFFFFFFFF") );
+                $as->and_reg( 'x2', 'x2', 'x16' );
                 $as->add_imm( 'x1', 16 );
-                $as->mov_imm( 'x0', 2 );
+                $as->mov_imm( 'x0',  2 );
                 $as->mov_imm( 'x16', $SYS_write );
                 $as->syscall('macos');
             }
@@ -234,26 +234,22 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             if ( $arch eq 'x64' ) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11';
                 $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
-                $as->sub_imm( 'rsp', 16 );
-                $as->store_mem_disp_byte( 'rsp', 0, $src );
+                $as->store_mem_disp_byte( 'rsp', 48, $src );
                 $as->mov_imm( 'rax', $SYS_write );
                 $as->mov_imm( 'rdi', 2 );
-                $as->mov_reg( 'rsi', 'rsp' );
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
                 $as->mov_imm( 'rdx', 1 );
                 $as->syscall();
-                $as->add_imm( 'rsp', 16 );
             }
             elsif ( $arch eq 'arm64' ) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x16';
                 $as->mov_imm( 'x16', $char ) if $inst->{args}[0] !~ /^%/;
-                $as->sub_imm( 'sp', 16 );
-                $as->sturb_mem_disp_reg( 'sp', 0, $src );
+                $as->sturb_mem_disp_reg( 'sp', 48, $src );
                 $as->mov_imm( 'x16', $SYS_write );
-                $as->mov_imm( 'x0', 2 );
-                $as->lea_reg_disp( 'x1', 'sp', 0 );
+                $as->mov_imm( 'x0',  2 );
+                $as->lea_reg_disp( 'x1', 'sp', 48 );
                 $as->mov_imm( 'x2', 1 );
                 $as->syscall('macos');
-                $as->add_imm( 'sp', 16 );
             }
         }
         elsif ( $op eq 'intrinsic_print_char' ) {
@@ -261,26 +257,22 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             if ( $arch eq 'x64' ) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'r11';
                 $as->mov_imm( 'r11', $char ) if $inst->{args}[0] !~ /^%/;
-                $as->sub_imm( 'rsp', 16 );
-                $as->store_mem_disp_byte( 'rsp', 0, $src );
+                $as->store_mem_disp_byte( 'rsp', 48, $src );
                 $as->mov_imm( 'rax', $SYS_write );
                 $as->mov_imm( 'rdi', 1 );
-                $as->mov_reg( 'rsi', 'rsp' );
+                $as->append_code( pack( 'CCCC', 0x48, 0x8D, 0x74, 0x24 ) . pack( 'C', 48 ) );
                 $as->mov_imm( 'rdx', 1 );
                 $as->syscall();
-                $as->add_imm( 'rsp', 16 );
             }
             elsif ( $arch eq 'arm64' ) {
                 my $src = ( $inst->{args}[0] =~ /^%/ ) ? $reg_map->{ $inst->{args}[0] } : 'x16';
                 $as->mov_imm( 'x16', $char ) if $inst->{args}[0] !~ /^%/;
-                $as->sub_imm( 'sp', 16 );
-                $as->sturb_mem_disp_reg( 'sp', 0, $src );
+                $as->sturb_mem_disp_reg( 'sp', 48, $src );
                 $as->mov_imm( 'x16', $SYS_write );
-                $as->mov_imm( 'x0', 1 );
-                $as->lea_reg_disp( 'x1', 'sp', 0 );
+                $as->mov_imm( 'x0',  1 );
+                $as->lea_reg_disp( 'x1', 'sp', 48 );
                 $as->mov_imm( 'x2', 1 );
                 $as->syscall('macos');
-                $as->add_imm( 'sp', 16 );
             }
         }
         elsif ( $op eq 'intrinsic_open' ) {
@@ -289,8 +281,9 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
             my $l_write = "intr_open_write_" . ++$open_id;
             my $l_call  = "intr_open_call_" . $open_id;
             if ( $arch eq 'x64' ) {
-                $as->mov_reg( 'rdi', $path );
-                $as->add_imm( 'rdi', 16 );
+                $as->mov_reg( 'r10', $path );
+                $as->add_imm( 'r10', 16 );
+                $as->mov_reg( 'rdi', 'r10' );
                 $as->load_reg_mem_byte( 'rax', $mode, 16 );
                 $as->cmp_reg_imm( 'rax', ord('r') );
                 $as->jcc( $driver->cc('ne'), $l_write );
@@ -409,7 +402,7 @@ class Brocken::Target::OS::macOS : isa(Brocken::Target::OS) {
                 $as->stur_mem_disp_reg( 'sp', 0, 'x0' );
                 $as->stur_mem_disp_reg( 'sp', 8, 'x1' );
                 $as->lea_reg_disp( 'x0', 'sp', 0 );
-                $as->mov_imm( 'x1', 0 );
+                $as->mov_imm( 'x1',  0 );
                 $as->mov_imm( 'x16', $SYS_nanosleep );
                 $as->syscall('macos');
                 $as->add_imm( 'sp', 16 );

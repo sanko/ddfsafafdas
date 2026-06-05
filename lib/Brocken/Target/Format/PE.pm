@@ -29,7 +29,8 @@ class Brocken::Target::Format::PE : isa(Brocken::Target::Format) {
         GetCommandLineA             => 144,
         LoadLibraryA                => 152,
         GetProcAddress              => 160,
-        CreateThread                => 168
+        CreateThread                => 168,
+        SetErrorMode                => 176
     );
 
     method import_rva($n) {
@@ -329,17 +330,17 @@ class Brocken::Target::Format::PE : isa(Brocken::Target::Format) {
         }
         return $data;
     }
-
     method _build_arm64_pdata ( $text_rva, $xdata_rva ) {
+         return ( '', '' );
         my $pdata = '';
         my $xdata = '';
-        my $xdata_off = 0;
         for my $fn ( sort { $a->{start} <=> $b->{start} } @{ $self->func_ranges } ) {
-            my $start = $text_rva + $fn->{start};
-            my $xdata_rva_entry = $xdata_rva + $xdata_off;
-            $pdata .= pack( 'L< L<', $start, $xdata_rva_entry | 3 );
-            $xdata .= pack( 'C C C C', 0, 0, 0, 0 );
-            $xdata_off += 4;
+            my $start    = $text_rva + $fn->{start};
+            my $len      = ( $fn->{end} // ( $fn->{start} + 4 ) ) - $fn->{start};
+            my $len_inst = int( $len / 4 );
+            if ( $len_inst > 0x7FF ) { $len_inst = 0x7FF; }
+            my $unwind_data = 1 | ( $len_inst << 2 );
+            $pdata .= pack( 'L< L<', $start, $unwind_data );
         }
         return ( $pdata, $xdata );
     }

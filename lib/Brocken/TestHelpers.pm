@@ -22,7 +22,8 @@ sub test_brocken (%args) {
     close $tmp_fh;
     my $filename = delete $opts->{filename};
     my $parser   = delete $opts->{parser} // delete $args{parser} // 'pratt';
-    my $p        = Brocken::Compiler::Pipeline->new( debug => 4, %$opts, parser => $parser, arch => $arch, os => $os );
+    my $debug    = delete $opts->{debug}  // delete $args{debug}  // 0;
+    my $p        = Brocken::Compiler::Pipeline->new( debug => $debug, %$opts, parser => $parser, arch => $arch, os => $os );
     eval { $p->compile_source( $source, $exe, $filename ); };
 
     if ( my $err = $@ ) {
@@ -37,12 +38,13 @@ sub test_brocken (%args) {
         $run = './' . $exe;
     }
     my $output = _run_with_timeout( $run, $timeout );
-    my $err = $@;
+    my $err    = $@;
     if ($err) {
         Test2::V0::fail("$name - execution failed: $err") if $name;
         return ( undef, "execution: $err" );
     }
-    chomp $output if defined $output;
+    $output =~ s/\r//g if defined $output;
+    chomp $output      if defined $output;
     if ( ref $expected eq 'ARRAY' ) {
         my @out_lines = split /\n/, $output;
         Test2::V0::is( \@out_lines, $expected, $name );
@@ -89,13 +91,20 @@ sub _run_with_timeout ( $run, $timeout = 30 ) {
         my $pid = system( 1, qq{"$run" > "$out_path" 2>&1} );
         die "Cannot spawn $run: $!" if $pid < 0;
         my $elapsed = 0;
-        while ( 1 ) {
+        while (1) {
             my $kid = waitpid( $pid, 1 );
             last if $kid == $pid;
             if ( $elapsed >= $timeout ) {
                 `taskkill /F /T /PID $pid 2>NUL`;
                 waitpid( $pid, 0 );
-                die "TIMEOUT\n";
+                my $partial = '';
+                if ( -e $out_path ) {
+                    open my $pfh, '<:raw', $out_path;
+                    local $/;
+                    $partial = <$pfh>;
+                    close $pfh;
+                }
+                die "TIMEOUT\n$partial";
             }
             select( undef, undef, undef, 0.1 );
             $elapsed += 0.1;

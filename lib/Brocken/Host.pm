@@ -31,14 +31,14 @@ sub arch {
         my $paW  = $ENV{PROCESSOR_ARCHITECTUREW6432} // '';
         my $comb = "$pa $paW";
         return 'arm64' if $comb =~ /ARM64/i;
-        return 'arm64' if $paW =~ /ARM64/i;
+        return 'arm64' if $paW  =~ /ARM64/i;
         if ( $pa eq 'AMD64' || $pa eq 'x86' ) {
             my $id = `reg query "HKLM\\HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0" /v "Identifier" 2>NUL`;
             return 'arm64' if defined $id && $id =~ /ARM/i;
         }
-        return 'x64'   if $comb =~ /AMD64|x86_64/i;
-        return 'x64'   if $comb =~ /x86/i;
-        return 'x64'   if $comb =~ /i\d86/i;
+        return 'x64' if $comb =~ /AMD64|x86_64/i;
+        return 'x64' if $comb =~ /x86/i;
+        return 'x64' if $comb =~ /i\d86/i;
         return 'arm';
     }
     my $m = `uname -m`;

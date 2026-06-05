@@ -65,19 +65,19 @@ class Brocken::Compiler::Pipeline {
         if ( $os eq 'win64' ) {
             require Brocken::Target::OS::Windows;
             require Brocken::Target::Format::PE;
-            $platform = Brocken::Target::OS::Windows->new( os => $os );
+            $platform = Brocken::Target::OS::Windows->new( name => $os );
             $format   = Brocken::Target::Format::PE->new( type => $type );
         }
         elsif ( $os =~ /^(linux|freebsd|openbsd|netbsd|dragonfly|solaris|haiku|midnightbsd)$/ ) {
             require Brocken::Target::OS::Linux;
             require Brocken::Target::Format::ELF;
-            $platform = Brocken::Target::OS::Linux->new( os => $os );
+            $platform = Brocken::Target::OS::Linux->new( name => $os );
             $format   = Brocken::Target::Format::ELF->new( type => $type );
         }
         elsif ( $os eq 'macos' ) {
             require Brocken::Target::OS::macOS;
             require Brocken::Target::Format::MachO;
-            $platform = Brocken::Target::OS::macOS->new( os => $os );
+            $platform = Brocken::Target::OS::macOS->new( name => $os );
             $format   = Brocken::Target::Format::MachO->new( type => $type );
         }
         if ( $arch eq 'x64' ) {
